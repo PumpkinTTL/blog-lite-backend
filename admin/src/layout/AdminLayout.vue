@@ -11,6 +11,9 @@ import {
   ImagesOutline,
   PeopleOutline,
   ShieldOutline,
+  MegaphoneOutline,
+  LinkOutline,
+  SettingsOutline,
   LogOutOutline,
   PersonOutline,
   MoonOutline,
@@ -38,6 +41,11 @@ const menuOptions: MenuOption[] = [
   { type: 'divider', key: 'd1' },
   { label: '用户管理', key: '/users', icon: renderIcon(PeopleOutline) },
   { label: '角色管理', key: '/roles', icon: renderIcon(ShieldOutline) },
+  { type: 'divider', key: 'd2' },
+  { label: '公告管理', key: '/announcements', icon: renderIcon(MegaphoneOutline) },
+  { label: '友情链接', key: '/friend-links', icon: renderIcon(LinkOutline) },
+  { type: 'divider', key: 'd3' },
+  { label: '系统设置', key: '/settings', icon: renderIcon(SettingsOutline) },
 ]
 
 const activeMenu = computed(() => {
@@ -73,6 +81,9 @@ const breadcrumbItems = computed(() => {
     '/media': '素材管理',
     '/users': '用户管理',
     '/roles': '角色管理',
+    '/announcements': '公告管理',
+    '/friend-links': '友情链接',
+    '/settings': '系统设置',
   }
   const path = route.path === '/' ? '/dashboard' : route.path
   const base = '/' + path.split('/')[1]

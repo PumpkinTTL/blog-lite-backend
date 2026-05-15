@@ -28,6 +28,7 @@ const rules: FormRules = {
 }
 
 const columns: DataTableColumns<User> = [
+  { title: 'ID', key: 'id', width: 70 },
   { title: '账号', key: 'username', width: 140 },
   { title: '昵称', key: 'nickname', width: 140 },
   {

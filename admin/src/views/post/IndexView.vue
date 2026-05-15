@@ -25,8 +25,11 @@ const statusOptions = [
 ]
 
 const columns: DataTableColumns<Post> = [
-  { title: '标题', key: 'title', ellipsis: { tooltip: true }, width: 260 },
-  { title: '分类', key: 'category', width: 120, render: (row) => row.category?.name || '-' },
+  { title: 'ID', key: 'id', width: 70 },
+  { title: '标题', key: 'title', ellipsis: { tooltip: true }, width: 200 },
+  { title: '内容预览', key: 'content', ellipsis: { tooltip: true }, width: 200, render: (row) => row.content?.replace(/[#*`\n]/g, '').slice(0, 80) || '-' },
+  { title: '作者', key: 'author', width: 100, render: (row) => row.author?.nickname || '-' },
+  { title: '分类', key: 'category', width: 100, render: (row) => row.category?.name || '-' },
   {
     title: '标签',
     key: 'tags',

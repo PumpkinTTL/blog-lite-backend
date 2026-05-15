@@ -9,6 +9,9 @@ import { CategoryModule } from './modules/category/category.module';
 import { TagModule } from './modules/tag/tag.module';
 import { MediaModule } from './modules/media/media.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { AnnouncementModule } from './modules/announcement/announcement.module';
+import { FriendLinkModule } from './modules/friend-link/friend-link.module';
+import { SettingModule } from './modules/setting/setting.module';
 
 @Module({
   imports: [
@@ -48,6 +51,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
         username: configService.getOrThrow<string>('DB_USERNAME'),
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_DATABASE'),
+        charset: 'utf8mb4',
         autoLoadEntities: true,
         synchronize:
           configService.get('DB_SYNCHRONIZE') === 'true' &&
@@ -63,6 +67,9 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     TagModule,
     MediaModule,
     DashboardModule,
+    AnnouncementModule,
+    FriendLinkModule,
+    SettingModule,
   ],
 })
 export class AppModule {}

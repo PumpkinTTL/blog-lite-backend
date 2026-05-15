@@ -23,6 +23,7 @@ const rules: FormRules = {
 }
 
 const columns: DataTableColumns<Role> = [
+  { title: 'ID', key: 'id', width: 70 },
   { title: '标识', key: 'name', width: 160 },
   { title: '显示名称', key: 'displayName', width: 160 },
   { title: '描述', key: 'description', ellipsis: { tooltip: true } },

@@ -14,6 +14,7 @@ async function seed() {
     username: process.env.DB_USERNAME || 'root',
     password: process.env.DB_PASSWORD || 'root',
     database: process.env.DB_DATABASE || 'blog-lite',
+    charset: 'utf8mb4',
   });
 
   await dataSource.initialize();

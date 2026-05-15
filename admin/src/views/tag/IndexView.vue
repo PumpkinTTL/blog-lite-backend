@@ -23,6 +23,7 @@ const rules: FormRules = {
 }
 
 const columns: DataTableColumns<Tag> = [
+  { title: 'ID', key: 'id', width: 70 },
   { title: '名称', key: 'name', width: 200 },
   { title: 'Slug', key: 'slug', width: 200 },
   { title: '创建时间', key: 'createdAt', width: 180 },
