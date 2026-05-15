@@ -30,6 +30,18 @@ const router = createRouter({
           meta: { title: '文章管理' },
         },
         {
+          path: 'posts/create',
+          name: 'post-create',
+          component: () => import('../views/post/PostEditView.vue'),
+          meta: { title: '新建文章' },
+        },
+        {
+          path: 'posts/:id/edit',
+          name: 'post-edit',
+          component: () => import('../views/post/PostEditView.vue'),
+          meta: { title: '编辑文章' },
+        },
+        {
           path: 'categories',
           name: 'categories',
           component: () => import('../views/category/IndexView.vue'),
@@ -53,14 +65,13 @@ const router = createRouter({
 })
 
 // 鉴权守卫
-router.beforeEach((to, _from, next) => {
+router.beforeEach((to) => {
   const token = localStorage.getItem('accessToken')
   if (to.meta.requiresAuth !== false && !token) {
-    next('/login')
-  } else if (to.path === '/login' && token) {
-    next('/dashboard')
-  } else {
-    next()
+    return '/login'
+  }
+  if (to.path === '/login' && token) {
+    return '/dashboard'
   }
 })
 

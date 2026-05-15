@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { PostEntity } from './entities/post.entity';
-import { TagEntity } from '../tag/entities/tag.entity';
-import { PostService } from './services/post.service';
-import { PostController } from './controllers/post.controller';
+import { PostEntity } from './post.entity';
+import { TagEntity } from '../tag/tag.entity';
+import { PostService } from './post.service';
+import { PostController } from './post.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([PostEntity, TagEntity])],

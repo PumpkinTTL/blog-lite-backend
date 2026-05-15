@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   ManyToMany,
 } from 'typeorm';
-import { PostEntity } from '../../post/entities/post.entity';
+import { PostEntity } from '../post/post.entity';
 
 @Entity('tags')
 export class TagEntity {

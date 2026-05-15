@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
-import { AuthService } from '../services/auth.service';
+import { AuthService } from './auth.service';
 
 @Injectable()
 export class AuthGuard implements CanActivate {

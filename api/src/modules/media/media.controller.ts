@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { MediaService } from '../services/media.service';
-import { MediaEntity } from '../entities/media.entity';
+import { MediaService } from './media.service';
+import { MediaEntity } from './media.entity';
 
 @Controller('media')
 export class MediaController {

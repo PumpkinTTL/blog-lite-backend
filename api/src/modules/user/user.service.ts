@@ -3,9 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcryptjs';
-import { UserEntity } from '../entities/user.entity';
-import { LoginDto } from '../dto';
-import { AuthService } from '../../auth/services/auth.service';
+import { UserEntity } from './user.entity';
+import { LoginDto } from './login.dto';
+import { AuthService } from '../auth/auth.service';
 
 export interface TokenPayload {
   accessToken: string;

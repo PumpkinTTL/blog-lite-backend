@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PostEntity } from '../../post/entities/post.entity';
-import { CategoryEntity } from '../../category/entities/category.entity';
-import { TagEntity } from '../../tag/entities/tag.entity';
-import { MediaEntity } from '../../media/entities/media.entity';
+import { PostEntity } from '../post/post.entity';
+import { CategoryEntity } from '../category/category.entity';
+import { TagEntity } from '../tag/tag.entity';
+import { MediaEntity } from '../media/media.entity';
 
 @Injectable()
 export class DashboardService {

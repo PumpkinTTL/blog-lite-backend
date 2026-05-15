@@ -6,7 +6,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { UserEntity } from '../../user/entities/user.entity';
+import { UserEntity } from '../user/user.entity';
 
 @Entity('media')
 export class MediaEntity {
