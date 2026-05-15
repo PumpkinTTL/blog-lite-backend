@@ -42,6 +42,8 @@ export class AuthService implements OnModuleInit {
     deviceId: string,
     accessCustomData?: Record<string, unknown>,
     refreshCustomData?: Record<string, unknown>,
+    accessTtl?: number,
+    refreshTtl?: number,
   ): Promise<AuthTokenResponse> {
     const body: Record<string, unknown> = {
       clientId: this.clientId,
@@ -51,6 +53,8 @@ export class AuthService implements OnModuleInit {
     };
     if (accessCustomData) body.accessCustomData = accessCustomData;
     if (refreshCustomData) body.refreshCustomData = refreshCustomData;
+    if (accessTtl) body.accessTtl = accessTtl;
+    if (refreshTtl) body.refreshTtl = refreshTtl;
 
     const { data } = await firstValueFrom(
       this.httpService.post(`${this.authCenterUrl}/auth/token`, body),

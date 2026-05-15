@@ -3,11 +3,13 @@ import type { Request } from 'express';
 import { UserService } from './user.service';
 import { LoginDto } from './login.dto';
 import { CreateUserDto, UpdateUserDto } from './user.dto';
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('user')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
+  @Public()
   @Post('login')
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     const fingerprint = req.body.fingerprint || '';

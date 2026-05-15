@@ -15,6 +15,9 @@ request.interceptors.request.use((config) => {
   return config
 })
 
+// 防止多次弹提示跳转
+let isRedirecting = false
+
 // 响应拦截器
 request.interceptors.response.use(
   (response) => response.data,
@@ -24,8 +27,20 @@ request.interceptors.response.use(
       localStorage.removeItem('accessToken')
       localStorage.removeItem('refreshToken')
       localStorage.removeItem('deviceId')
-      window.location.href = '/login'
-      return Promise.reject(new Error('登录已过期，请重新登录'))
+      if (!isRedirecting) {
+        isRedirecting = true
+        // 动态导入避免循环依赖，用 Naive UI 的 message 提示
+        import('naive-ui').then(({ createDiscreteApi }) => {
+          const { message } = createDiscreteApi(['message'])
+          message.warning('登录已过期，请重新登录', {
+            duration: 2000,
+            onAfterLeave: () => {
+              window.location.href = '/login'
+            },
+          })
+        })
+      }
+      return new Promise(() => {}) // 挂起，不触发页面内的错误处理
     }
     const message = error.response?.data?.message || error.message || '请求失败'
     return Promise.reject(new Error(message))

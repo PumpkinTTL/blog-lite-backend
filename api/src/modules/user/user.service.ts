@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { UserEntity } from './user.entity';
@@ -26,6 +27,7 @@ export class UserService {
     @InjectRepository(RoleEntity)
     private readonly roleRepo: Repository<RoleEntity>,
     private readonly authService: AuthService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -60,10 +62,16 @@ export class UserService {
     // 收集角色信息传给鉴权中心，后续 AT payload 里会带上
     const roles = user.roles.map((r) => r.name);
 
+    const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 900);
+    const refreshTtl = this.configService.get<number>('REFRESH_TOKEN_TTL', 604800);
+
     const tokenData = await this.authService.issueToken(
       user.id,
       deviceId,
       { roles, nickname: user.nickname },
+      undefined,
+      accessTtl,
+      refreshTtl,
     );
 
     this.logger.log(`用户 ${user.username} 登录成功，角色: [${roles.join(', ')}]`);

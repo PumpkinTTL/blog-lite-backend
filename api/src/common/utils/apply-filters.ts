@@ -1,4 +1,4 @@
-import { SelectQueryBuilder } from 'typeorm';
+import { SelectQueryBuilder, ObjectLiteral } from 'typeorm';
 
 export interface FilterConfig {
   /** 精确匹配字段 */
@@ -19,7 +19,7 @@ export interface FilterConfig {
  *   like: { keyword: 'test', fields: ['e.name', 'e.slug'] },
  * })
  */
-export function applyFilters<T>(
+export function applyFilters<T extends ObjectLiteral>(
   qb: SelectQueryBuilder<T>,
   filters: FilterConfig,
 ): SelectQueryBuilder<T> {
