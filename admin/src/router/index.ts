@@ -59,6 +59,18 @@ const router = createRouter({
           component: () => import('../views/media/IndexView.vue'),
           meta: { title: '素材管理' },
         },
+        {
+          path: 'users',
+          name: 'users',
+          component: () => import('../views/user/IndexView.vue'),
+          meta: { title: '用户管理' },
+        },
+        {
+          path: 'roles',
+          name: 'roles',
+          component: () => import('../views/role/IndexView.vue'),
+          meta: { title: '角色管理' },
+        },
       ],
     },
   ],

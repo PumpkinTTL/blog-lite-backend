@@ -9,6 +9,8 @@ import {
   FolderOutline,
   PricetagsOutline,
   ImagesOutline,
+  PeopleOutline,
+  ShieldOutline,
   LogOutOutline,
   PersonOutline,
   MoonOutline,
@@ -33,6 +35,9 @@ const menuOptions: MenuOption[] = [
   { label: '分类管理', key: '/categories', icon: renderIcon(FolderOutline) },
   { label: '标签管理', key: '/tags', icon: renderIcon(PricetagsOutline) },
   { label: '素材管理', key: '/media', icon: renderIcon(ImagesOutline) },
+  { type: 'divider', key: 'd1' },
+  { label: '用户管理', key: '/users', icon: renderIcon(PeopleOutline) },
+  { label: '角色管理', key: '/roles', icon: renderIcon(ShieldOutline) },
 ]
 
 const activeMenu = computed(() => {
@@ -66,6 +71,8 @@ const breadcrumbItems = computed(() => {
     '/categories': '分类管理',
     '/tags': '标签管理',
     '/media': '素材管理',
+    '/users': '用户管理',
+    '/roles': '角色管理',
   }
   const path = route.path === '/' ? '/dashboard' : route.path
   const base = '/' + path.split('/')[1]

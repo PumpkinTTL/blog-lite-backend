@@ -48,6 +48,7 @@ const columns: DataTableColumns<Post> = [
       }),
   },
   { title: '更新时间', key: 'updatedAt', width: 170, render: (row) => new Date(row.updatedAt).toLocaleString('zh-CN') },
+  { title: '阅读', key: 'viewCount', width: 80, render: (row) => row.viewCount || 0 },
   {
     title: '操作',
     key: 'actions',

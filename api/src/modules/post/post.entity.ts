@@ -66,4 +66,7 @@ export class PostEntity {
 
   @Column({ type: 'datetime', nullable: true, name: 'published_at', comment: '发布时间' })
   publishedAt: Date | null;
+
+  @Column({ type: 'int', default: 0, name: 'view_count', comment: '阅读量' })
+  viewCount: number;
 }

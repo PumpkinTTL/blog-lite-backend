@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { PostEntity } from './post.entity';
+import { PostViewEntity } from './post-view.entity';
 import { TagEntity } from '../tag/tag.entity';
 
 @Injectable()
@@ -9,6 +10,8 @@ export class PostService {
   constructor(
     @InjectRepository(PostEntity)
     private readonly postRepo: Repository<PostEntity>,
+    @InjectRepository(PostViewEntity)
+    private readonly postViewRepo: Repository<PostViewEntity>,
     @InjectRepository(TagEntity)
     private readonly tagRepo: Repository<TagEntity>,
   ) {}
@@ -39,7 +42,6 @@ export class PostService {
       post.tags = await this.tagRepo.findBy({ id: In(tagIds) });
     }
 
-    // 发布时自动设置 publishedAt
     if (post.status === 1 && !post.publishedAt) {
       post.publishedAt = new Date();
     }
@@ -59,7 +61,6 @@ export class PostService {
       post.tags = tagIds.length ? await this.tagRepo.findBy({ id: In(tagIds) }) : [];
     }
 
-    // 草稿→发布时设置 publishedAt
     if (postData.status === 1 && !post.publishedAt) {
       post.publishedAt = new Date();
     }
@@ -69,5 +70,33 @@ export class PostService {
 
   async remove(id: number) {
     await this.postRepo.delete(id);
+  }
+
+  /**
+   * 记录文章阅读：同一 IP 同一文章 24h 内只算一次
+   */
+  async recordView(postId: number, ip: string, userAgent?: string, userId?: number) {
+    const post = await this.postRepo.findOne({ where: { id: postId } });
+    if (!post) return;
+
+    // 24h 内同 IP 同文章去重
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const exists = await this.postViewRepo.findOne({
+      where: { postId, ip },
+      order: { viewedAt: 'DESC' },
+    });
+
+    if (!exists || exists.viewedAt < since) {
+      await this.postViewRepo.save(
+        this.postViewRepo.create({
+          postId,
+          ip,
+          userAgent: userAgent || null,
+          userId: userId || null,
+        }),
+      );
+      // 冗余计数 +1
+      await this.postRepo.increment({ id: postId }, 'viewCount', 1);
+    }
   }
 }

@@ -1,9 +1,10 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { UserEntity } from './user.entity';
+import { RoleEntity } from './role.entity';
 import { LoginDto } from './login.dto';
 import { AuthService } from '../auth/auth.service';
 
@@ -21,6 +22,8 @@ export class UserService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    @InjectRepository(RoleEntity)
+    private readonly roleRepo: Repository<RoleEntity>,
     private readonly authService: AuthService,
   ) {}
 
@@ -81,5 +84,59 @@ export class UserService {
       .leftJoinAndSelect('u.roles', 'r')
       .where('u.username = :username', { username })
       .getOne();
+  }
+
+  // ===== CRUD =====
+
+  async findAll(page = 1, pageSize = 20) {
+    const [list, total] = await this.userRepo.findAndCount({
+      relations: ['roles'],
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+    return { list, total, page, pageSize };
+  }
+
+  async findById(id: number) {
+    return this.userRepo.findOne({ where: { id }, relations: ['roles'] });
+  }
+
+  async create(data: Partial<UserEntity> & { roleIds?: number[] }) {
+    const { roleIds, password, ...userData } = data;
+    const user = this.userRepo.create(userData);
+
+    if (password) {
+      user.password = await bcrypt.hash(password, 10);
+    }
+
+    if (roleIds?.length) {
+      user.roles = await this.roleRepo.findBy({ id: In(roleIds) });
+    }
+
+    return this.userRepo.save(user);
+  }
+
+  async update(id: number, data: Partial<UserEntity> & { roleIds?: number[]; password?: string }) {
+    const { roleIds, password, ...userData } = data;
+
+    const user = await this.userRepo.findOne({ where: { id }, relations: ['roles'] });
+    if (!user) return null;
+
+    Object.assign(user, userData);
+
+    if (password) {
+      user.password = await bcrypt.hash(password, 10);
+    }
+
+    if (roleIds !== undefined) {
+      user.roles = roleIds.length ? await this.roleRepo.findBy({ id: In(roleIds) }) : [];
+    }
+
+    return this.userRepo.save(user);
+  }
+
+  async remove(id: number) {
+    await this.userRepo.delete(id);
   }
 }

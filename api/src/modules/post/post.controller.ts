@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { PostService } from './post.service';
 import { CreatePostDto, UpdatePostDto } from './post.dto';
 
@@ -24,6 +25,14 @@ export class PostController {
   async detail(@Param('id', ParseIntPipe) id: number) {
     const data = await this.postService.findById(id);
     return { success: true, data, message: 'ok' };
+  }
+
+  @Post(':id/view')
+  async recordView(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ua = req.headers['user-agent'] || '';
+    await this.postService.recordView(id, ip, ua);
+    return { success: true, message: 'ok' };
   }
 
   @Post()
