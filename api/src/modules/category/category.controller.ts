@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { CategoryService } from './category.service';
 import { CategoryEntity } from './category.entity';
 
@@ -7,8 +7,14 @@ export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 
   @Get()
-  async list() {
-    const data = await this.categoryService.findAll();
+  async list(
+    @Query('id') id?: string,
+    @Query('keyword') keyword?: string,
+  ) {
+    const data = await this.categoryService.findAll({
+      id: id !== undefined ? parseInt(id) : undefined,
+      keyword,
+    });
     return { success: true, data, message: 'ok' };
   }
 

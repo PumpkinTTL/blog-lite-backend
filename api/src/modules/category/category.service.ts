@@ -10,8 +10,16 @@ export class CategoryService {
     private readonly categoryRepo: Repository<CategoryEntity>,
   ) {}
 
-  async findAll() {
-    return this.categoryRepo.find({ order: { sortOrder: 'ASC' } });
+  async findAll(filters?: { id?: number; keyword?: string }) {
+    const qb = this.categoryRepo.createQueryBuilder('e');
+    if (filters?.id !== undefined) {
+      qb.andWhere('e.id = :id', { id: filters.id });
+    }
+    if (filters?.keyword) {
+      qb.andWhere('(e.name LIKE :kw OR e.slug LIKE :kw)', { kw: `%${filters.keyword}%` });
+    }
+    qb.orderBy('e.sortOrder', 'ASC');
+    return qb.getMany();
   }
 
   async findById(id: number) {

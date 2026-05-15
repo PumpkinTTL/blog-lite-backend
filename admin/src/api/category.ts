@@ -10,8 +10,8 @@ export interface Category {
   updatedAt: string
 }
 
-export function getCategories() {
-  return request.get('/category')
+export function getCategories(params?: { id?: number; keyword?: string }) {
+  return request.get('/category', { params })
 }
 
 export function getCategory(id: number) {

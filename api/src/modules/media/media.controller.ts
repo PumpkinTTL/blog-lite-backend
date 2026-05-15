@@ -7,10 +7,19 @@ export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 
   @Get()
-  async list(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+  async list(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('id') id?: string,
+    @Query('keyword') keyword?: string,
+  ) {
     const data = await this.mediaService.findAll(
       Math.max(parseInt(page || '1'), 1),
       Math.min(parseInt(pageSize || '20'), 100),
+      {
+        id: id !== undefined ? parseInt(id) : undefined,
+        keyword,
+      },
     );
     return { success: true, data, message: 'ok' };
   }

@@ -33,7 +33,11 @@ export interface Post {
 export interface PostListParams {
   page?: number
   pageSize?: number
+  id?: number
+  keyword?: string
   status?: number | string
+  categoryId?: number
+  tagId?: number
 }
 
 export interface PostListResult {

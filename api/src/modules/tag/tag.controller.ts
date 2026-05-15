@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { TagService } from './tag.service';
 import { TagEntity } from './tag.entity';
 
@@ -7,8 +7,14 @@ export class TagController {
   constructor(private readonly tagService: TagService) {}
 
   @Get()
-  async list() {
-    const data = await this.tagService.findAll();
+  async list(
+    @Query('id') id?: string,
+    @Query('keyword') keyword?: string,
+  ) {
+    const data = await this.tagService.findAll({
+      id: id !== undefined ? parseInt(id) : undefined,
+      keyword,
+    });
     return { success: true, data, message: 'ok' };
   }
 

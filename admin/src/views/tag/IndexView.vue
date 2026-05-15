@@ -2,7 +2,7 @@
 import { ref, onMounted, h } from 'vue'
 import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
-import { AddOutline, TrashOutline, CreateOutline, SearchOutline } from '@vicons/ionicons5'
+import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getTags, createTag, updateTag, deleteTag } from '../../api/tag'
 import type { Tag } from '../../api/tag'
 
@@ -10,7 +10,8 @@ const message = useMessage()
 const dialog = useDialog()
 const loading = ref(false)
 const tags = ref<Tag[]>([])
-const keyword = ref('')
+const searchId = ref('')
+const searchKeyword = ref('')
 const showModal = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref<FormInst | null>(null)
@@ -51,7 +52,10 @@ const columns: DataTableColumns<Tag> = [
 async function loadTags() {
   loading.value = true
   try {
-    const res = await getTags()
+    const params: any = {}
+    if (searchId.value) params.id = searchId.value
+    if (searchKeyword.value) params.keyword = searchKeyword.value
+    const res = await getTags(params)
     const payload = res.data
     tags.value = Array.isArray(payload) ? payload : (payload?.list || [])
   } catch {
@@ -59,6 +63,16 @@ async function loadTags() {
   } finally {
     loading.value = false
   }
+}
+
+function handleSearch() {
+  loadTags()
+}
+
+function handleReset() {
+  searchId.value = ''
+  searchKeyword.value = ''
+  loadTags()
 }
 
 function openCreate() {
@@ -123,23 +137,28 @@ onMounted(loadTags)
   <div class="page-wrapper">
     <div class="page-header">
       <h2 class="page-title">标签管理</h2>
-      <n-space>
-        <n-input v-model:value="keyword" placeholder="搜索标签..." clearable>
-          <template #prefix>
-            <n-icon><SearchOutline /></n-icon>
-          </template>
-        </n-input>
-        <n-button type="primary" @click="openCreate">
-          <template #icon><n-icon><AddOutline /></n-icon></template>
-          新建标签
-        </n-button>
-      </n-space>
+      <n-button type="primary" @click="openCreate">
+        <template #icon><n-icon><AddOutline /></n-icon></template>
+        新建标签
+      </n-button>
     </div>
+    <n-space class="search-bar" :size="12" align="center">
+      <n-input v-model:value="searchId" placeholder="ID" clearable style="width: 100px" @keyup.enter="handleSearch" />
+      <n-input v-model:value="searchKeyword" placeholder="搜索..." clearable @keyup.enter="handleSearch" />
+      <n-button type="primary" @click="handleSearch">
+        <template #icon><n-icon><SearchOutline /></n-icon></template>
+        搜索
+      </n-button>
+      <n-button @click="handleReset">
+        <template #icon><n-icon><RefreshOutline /></n-icon></template>
+        重置
+      </n-button>
+    </n-space>
 
     <n-card :bordered="false" class="table-card">
       <n-data-table
         :columns="columns"
-        :data="keyword ? tags.filter(t => t.name.includes(keyword) || t.slug.includes(keyword)) : tags"
+        :data="tags"
         :loading="loading"
         :bordered="false"
       />
@@ -187,5 +206,9 @@ onMounted(loadTags)
 
 .table-card {
   border-radius: 12px;
+}
+
+.search-bar {
+  margin-bottom: 12px;
 }
 </style>

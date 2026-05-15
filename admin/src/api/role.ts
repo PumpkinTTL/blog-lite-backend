@@ -8,8 +8,8 @@ export interface Role {
   createdAt: string
 }
 
-export function getRoles() {
-  return request.get('/role')
+export function getRoles(params?: { id?: number; keyword?: string }) {
+  return request.get('/role', { params })
 }
 
 export function getRole(id: number) {

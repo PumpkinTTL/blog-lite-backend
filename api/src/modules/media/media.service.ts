@@ -10,12 +10,21 @@ export class MediaService {
     private readonly mediaRepo: Repository<MediaEntity>,
   ) {}
 
-  async findAll(page = 1, pageSize = 20) {
-    const [list, total] = await this.mediaRepo.findAndCount({
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    });
+  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string }) {
+    const qb = this.mediaRepo.createQueryBuilder('e');
+
+    if (filters?.id !== undefined) {
+      qb.andWhere('e.id = :id', { id: filters.id });
+    }
+    if (filters?.keyword) {
+      qb.andWhere('e.originalName LIKE :kw', { kw: `%${filters.keyword}%` });
+    }
+
+    qb.orderBy('e.createdAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    const [list, total] = await qb.getManyAndCount();
     return { list, total, page, pageSize };
   }
 

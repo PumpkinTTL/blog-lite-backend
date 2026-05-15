@@ -12,11 +12,21 @@ export class PostController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('status') status?: string,
+    @Query('id') id?: string,
+    @Query('keyword') keyword?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('tagId') tagId?: string,
   ) {
     const data = await this.postService.findAll(
       Math.max(parseInt(page || '1'), 1),
       Math.min(parseInt(pageSize || '20'), 100),
-      status !== undefined ? parseInt(status) : undefined,
+      {
+        id: id !== undefined ? parseInt(id) : undefined,
+        keyword,
+        status: status !== undefined ? parseInt(status) : undefined,
+        categoryId: categoryId !== undefined ? parseInt(categoryId) : undefined,
+        tagId: tagId !== undefined ? parseInt(tagId) : undefined,
+      },
     );
     return { success: true, data, message: 'ok' };
   }

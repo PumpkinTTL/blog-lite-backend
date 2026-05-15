@@ -2,10 +2,11 @@
 import { ref, onMounted, h } from 'vue'
 import { NCard, NButton, NDataTable, NSpace, NTag, NInput, NIcon, NSelect, NPagination, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
-import { AddOutline, TrashOutline, CreateOutline, SearchOutline } from '@vicons/ionicons5'
+import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
 import { getPosts, deletePost } from '../../api/post'
 import type { Post } from '../../api/post'
+import { getCategories } from '../../api/category'
 
 const router = useRouter()
 const message = useMessage()
@@ -15,13 +16,17 @@ const posts = ref<Post[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
-const keyword = ref('')
-const statusFilter = ref<number | null>(null)
+const searchId = ref('')
+const searchKeyword = ref('')
+const searchStatus = ref<number | null>(null)
+const searchCategoryId = ref<number | null>(null)
+const categoryOptions = ref<{ label: string; value: number }[]>([])
 
 const statusOptions = [
   { label: '全部', value: null },
   { label: '草稿', value: 0 },
   { label: '已发布', value: 1 },
+  { label: '已下架', value: 2 },
 ]
 
 const columns: DataTableColumns<Post> = [
@@ -46,8 +51,11 @@ const columns: DataTableColumns<Post> = [
     key: 'status',
     width: 90,
     render: (row) =>
-      h(NTag, { size: 'small', type: row.status === 1 ? 'success' : 'default' }, {
-        default: () => (row.status === 1 ? '已发布' : '草稿'),
+      h(NTag, {
+        size: 'small',
+        type: row.status === 1 ? 'success' : row.status === 2 ? 'warning' : 'default',
+      }, {
+        default: () => row.status === 1 ? '已发布' : row.status === 2 ? '已下架' : '草稿',
       }),
   },
   { title: '更新时间', key: 'updatedAt', width: 170, render: (row) => new Date(row.updatedAt).toLocaleString('zh-CN') },
@@ -76,7 +84,10 @@ async function loadPosts() {
   loading.value = true
   try {
     const params: any = { page: page.value, pageSize: pageSize.value }
-    if (statusFilter.value !== null) params.status = statusFilter.value
+    if (searchId.value) params.id = searchId.value
+    if (searchKeyword.value) params.keyword = searchKeyword.value
+    if (searchStatus.value !== null) params.status = searchStatus.value
+    if (searchCategoryId.value !== null) params.categoryId = searchCategoryId.value
     const res = await getPosts(params)
     const payload = res.data
     if (payload?.list) {
@@ -90,6 +101,31 @@ async function loadPosts() {
     message.error('加载文章列表失败')
   } finally {
     loading.value = false
+  }
+}
+
+function handleSearch() {
+  page.value = 1
+  loadPosts()
+}
+
+function handleReset() {
+  searchId.value = ''
+  searchKeyword.value = ''
+  searchStatus.value = null
+  searchCategoryId.value = null
+  page.value = 1
+  loadPosts()
+}
+
+async function loadCategoryOptions() {
+  try {
+    const res = await getCategories()
+    const payload = res.data
+    const list = Array.isArray(payload) ? payload : (payload?.list || [])
+    categoryOptions.value = list.map((c: any) => ({ label: c.name, value: c.id }))
+  } catch {
+    // ignore
   }
 }
 
@@ -116,27 +152,32 @@ function handleDelete(row: Post) {
   })
 }
 
-onMounted(loadPosts)
+onMounted(() => { loadPosts(); loadCategoryOptions() })
 </script>
 
 <template>
   <div class="page-wrapper">
     <div class="page-header">
       <h2 class="page-title">文章管理</h2>
-      <n-space>
-        <n-select
-          v-model:value="statusFilter"
-          :options="statusOptions"
-          placeholder="状态筛选"
-          style="width: 120px"
-          @update:value="page = 1; loadPosts()"
-        />
-        <n-button type="primary" @click="router.push('/posts/create')">
-          <template #icon><n-icon><AddOutline /></n-icon></template>
-          新建文章
-        </n-button>
-      </n-space>
+      <n-button type="primary" @click="router.push('/posts/create')">
+        <template #icon><n-icon><AddOutline /></n-icon></template>
+        新建文章
+      </n-button>
     </div>
+    <n-space class="search-bar" :size="12" align="center">
+      <n-input v-model:value="searchId" placeholder="ID" clearable style="width: 100px" @keyup.enter="handleSearch" />
+      <n-input v-model:value="searchKeyword" placeholder="搜索..." clearable @keyup.enter="handleSearch" />
+      <n-select v-model:value="searchStatus" :options="statusOptions" placeholder="状态" style="width: 120px" clearable />
+      <n-select v-model:value="searchCategoryId" :options="categoryOptions" placeholder="分类" style="width: 150px" clearable />
+      <n-button type="primary" @click="handleSearch">
+        <template #icon><n-icon><SearchOutline /></n-icon></template>
+        搜索
+      </n-button>
+      <n-button @click="handleReset">
+        <template #icon><n-icon><RefreshOutline /></n-icon></template>
+        重置
+      </n-button>
+    </n-space>
 
     <n-card :bordered="false" class="table-card">
       <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" />
@@ -174,5 +215,9 @@ onMounted(loadPosts)
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+}
+
+.search-bar {
+  margin-bottom: 12px;
 }
 </style>

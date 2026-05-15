@@ -16,17 +16,34 @@ export class PostService {
     private readonly tagRepo: Repository<TagEntity>,
   ) {}
 
-  async findAll(page = 1, pageSize = 20, status?: number) {
-    const where: any = {};
-    if (status !== undefined) where.status = status;
+  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: number; categoryId?: number; tagId?: number }) {
+    const qb = this.postRepo.createQueryBuilder('p')
+      .leftJoinAndSelect('p.author', 'author')
+      .leftJoinAndSelect('p.category', 'category')
+      .leftJoinAndSelect('p.tags', 'tags');
 
-    const [list, total] = await this.postRepo.findAndCount({
-      where,
-      relations: ['author', 'category', 'tags'],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    });
+    if (filters?.id !== undefined) {
+      qb.andWhere('p.id = :id', { id: filters.id });
+    }
+    if (filters?.keyword) {
+      qb.andWhere('p.title LIKE :keyword', { keyword: `%${filters.keyword}%` });
+    }
+    if (filters?.status !== undefined) {
+      qb.andWhere('p.status = :status', { status: filters.status });
+    }
+    if (filters?.categoryId !== undefined) {
+      qb.andWhere('p.categoryId = :categoryId', { categoryId: filters.categoryId });
+    }
+    if (filters?.tagId !== undefined) {
+      qb.innerJoin('post_tags', 'pt', 'pt.post_id = p.id')
+        .andWhere('pt.tag_id = :tagId', { tagId: filters.tagId });
+    }
+
+    qb.orderBy('p.createdAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    const [list, total] = await qb.getManyAndCount();
     return { list, total, page, pageSize };
   }
 
@@ -44,6 +61,8 @@ export class PostService {
 
     if (post.status === 1 && !post.publishedAt) {
       post.publishedAt = new Date();
+    } else if (post.status === 2) {
+      post.publishedAt = null;
     }
 
     return this.postRepo.save(post);
@@ -63,6 +82,8 @@ export class PostService {
 
     if (postData.status === 1 && !post.publishedAt) {
       post.publishedAt = new Date();
+    } else if (postData.status === 2) {
+      post.publishedAt = null;
     }
 
     return this.postRepo.save(post);

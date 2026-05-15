@@ -33,7 +33,7 @@ export class PostEntity {
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'cover_image', comment: '封面图 URL' })
   coverImage: string | null;
 
-  @Column({ type: 'tinyint', default: 0, comment: '状态 0=草稿 1=已发布' })
+  @Column({ type: 'tinyint', default: 0, comment: '状态 0=草稿 1=已发布 2=已下架' })
   status: number;
 
   @ManyToOne(() => UserEntity)

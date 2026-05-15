@@ -10,8 +10,8 @@ export interface Media {
   updatedAt: string
 }
 
-export function getMediaList() {
-  return request.get('/media')
+export function getMediaList(params?: { page?: number; pageSize?: number; id?: number; keyword?: string }) {
+  return request.get('/media', { params })
 }
 
 export function uploadMedia(file: File) {

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, useMessage, useDialog } from 'naive-ui'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
-import { AddOutline, TrashOutline, CreateOutline } from '@vicons/ionicons5'
+import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getFriendLinks, createFriendLink, updateFriendLink, deleteFriendLink } from '../../api/friend-link'
 import type { FriendLink } from '../../api/friend-link'
 
@@ -10,6 +10,15 @@ const message = useMessage()
 const dialog = useDialog()
 const loading = ref(false)
 const list = ref<FriendLink[]>([])
+const searchId = ref('')
+const searchKeyword = ref('')
+const searchStatus = ref<number | null>(null)
+
+const friendLinkStatusOptions = [
+  { label: '全部', value: null },
+  { label: '显示', value: 1 },
+  { label: '隐藏', value: 0 },
+]
 const showModal = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref<FormInst | null>(null)
@@ -52,11 +61,26 @@ const columns: DataTableColumns<FriendLink> = [
 async function loadList() {
   loading.value = true
   try {
-    const res = await getFriendLinks()
+    const params: any = {}
+    if (searchId.value) params.id = searchId.value
+    if (searchKeyword.value) params.keyword = searchKeyword.value
+    if (searchStatus.value !== null) params.status = searchStatus.value
+    const res = await getFriendLinks(params)
     const payload = res.data
     list.value = Array.isArray(payload) ? payload : []
   } catch { message.error('加载失败') }
   finally { loading.value = false }
+}
+
+function handleSearch() {
+  loadList()
+}
+
+function handleReset() {
+  searchId.value = ''
+  searchKeyword.value = ''
+  searchStatus.value = null
+  loadList()
 }
 
 function openCreate() {
@@ -109,6 +133,19 @@ onMounted(loadList)
         新建友链
       </n-button>
     </div>
+    <n-space class="search-bar" :size="12" align="center">
+      <n-input v-model:value="searchId" placeholder="ID" clearable style="width: 100px" @keyup.enter="handleSearch" />
+      <n-input v-model:value="searchKeyword" placeholder="搜索..." clearable @keyup.enter="handleSearch" />
+      <n-select v-model:value="searchStatus" :options="friendLinkStatusOptions" placeholder="状态" style="width: 120px" clearable />
+      <n-button type="primary" @click="handleSearch">
+        <template #icon><n-icon><SearchOutline /></n-icon></template>
+        搜索
+      </n-button>
+      <n-button @click="handleReset">
+        <template #icon><n-icon><RefreshOutline /></n-icon></template>
+        重置
+      </n-button>
+    </n-space>
     <n-card :bordered="false" class="table-card">
       <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" />
     </n-card>
@@ -131,4 +168,5 @@ onMounted(loadList)
 .page-header { display: flex; align-items: center; justify-content: space-between; }
 .page-title { font-size: 20px; font-weight: 700; margin: 0; }
 .table-card { border-radius: 12px; }
+.search-bar { margin-bottom: 12px; }
 </style>

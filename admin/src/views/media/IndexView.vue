@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NCard, NButton, NGrid, NGi, NIcon, NUpload, NEmpty, NSpin, useMessage, useDialog } from 'naive-ui'
+import { NCard, NButton, NGrid, NGi, NIcon, NUpload, NEmpty, NSpin, NSpace, NInput, useMessage, useDialog } from 'naive-ui'
 import type { UploadFileInfo } from 'naive-ui'
-import { CloudUploadOutline, TrashOutline, ImageOutline } from '@vicons/ionicons5'
+import { CloudUploadOutline, TrashOutline, ImageOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getMediaList, uploadMedia, deleteMedia } from '../../api/media'
 import type { Media } from '../../api/media'
 
@@ -10,11 +10,16 @@ const message = useMessage()
 const dialog = useDialog()
 const loading = ref(false)
 const mediaList = ref<Media[]>([])
+const searchId = ref('')
+const searchKeyword = ref('')
 
 async function loadMedia() {
   loading.value = true
   try {
-    const res = await getMediaList()
+    const params: any = {}
+    if (searchId.value) params.id = searchId.value
+    if (searchKeyword.value) params.keyword = searchKeyword.value
+    const res = await getMediaList(params)
     const payload = res.data
     mediaList.value = Array.isArray(payload) ? payload : (payload?.list || [])
   } catch {
@@ -22,6 +27,16 @@ async function loadMedia() {
   } finally {
     loading.value = false
   }
+}
+
+function handleSearch() {
+  loadMedia()
+}
+
+function handleReset() {
+  searchId.value = ''
+  searchKeyword.value = ''
+  loadMedia()
 }
 
 async function handleUpload({ file }: { file: UploadFileInfo }) {
@@ -67,6 +82,18 @@ onMounted(loadMedia)
         </n-button>
       </n-upload>
     </div>
+    <n-space class="search-bar" :size="12" align="center">
+      <n-input v-model:value="searchId" placeholder="ID" clearable style="width: 100px" @keyup.enter="handleSearch" />
+      <n-input v-model:value="searchKeyword" placeholder="搜索..." clearable @keyup.enter="handleSearch" />
+      <n-button type="primary" @click="handleSearch">
+        <template #icon><n-icon><SearchOutline /></n-icon></template>
+        搜索
+      </n-button>
+      <n-button @click="handleReset">
+        <template #icon><n-icon><RefreshOutline /></n-icon></template>
+        重置
+      </n-button>
+    </n-space>
 
     <n-card :bordered="false" class="media-card">
       <n-spin :show="loading">
@@ -115,6 +142,7 @@ onMounted(loadMedia)
   margin: 0;
 }
 
+.search-bar { margin-bottom: 12px; }
 .media-card {
   border-radius: 12px;
 }

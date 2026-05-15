@@ -10,8 +10,20 @@ export class FriendLinkService {
     private readonly repo: Repository<FriendLinkEntity>,
   ) {}
 
-  async findAll() {
-    return this.repo.find({ relations: ['post'], order: { sortOrder: 'ASC', createdAt: 'DESC' } });
+  async findAll(filters?: { id?: number; keyword?: string; status?: number }) {
+    const qb = this.repo.createQueryBuilder('e')
+      .leftJoinAndSelect('e.post', 'post');
+    if (filters?.id !== undefined) {
+      qb.andWhere('e.id = :id', { id: filters.id });
+    }
+    if (filters?.keyword) {
+      qb.andWhere('e.name LIKE :kw', { kw: `%${filters.keyword}%` });
+    }
+    if (filters?.status !== undefined) {
+      qb.andWhere('e.status = :status', { status: filters.status });
+    }
+    qb.orderBy('e.sortOrder', 'ASC').addOrderBy('e.createdAt', 'DESC');
+    return qb.getMany();
   }
 
   async findById(id: number) {

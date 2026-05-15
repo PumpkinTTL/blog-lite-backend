@@ -10,8 +10,16 @@ export class TagService {
     private readonly tagRepo: Repository<TagEntity>,
   ) {}
 
-  async findAll() {
-    return this.tagRepo.find({ order: { createdAt: 'DESC' } });
+  async findAll(filters?: { id?: number; keyword?: string }) {
+    const qb = this.tagRepo.createQueryBuilder('e');
+    if (filters?.id !== undefined) {
+      qb.andWhere('e.id = :id', { id: filters.id });
+    }
+    if (filters?.keyword) {
+      qb.andWhere('(e.name LIKE :kw OR e.slug LIKE :kw)', { kw: `%${filters.keyword}%` });
+    }
+    qb.orderBy('e.createdAt', 'DESC');
+    return qb.getMany();
   }
 
   async findById(id: number) {

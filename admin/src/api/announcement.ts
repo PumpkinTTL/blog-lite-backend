@@ -10,8 +10,8 @@ export interface Announcement {
   updatedAt: string
 }
 
-export function getAnnouncements() {
-  return request.get('/announcement')
+export function getAnnouncements(params?: { id?: number; keyword?: string; status?: number }) {
+  return request.get('/announcement', { params })
 }
 
 export function createAnnouncement(data: any) {

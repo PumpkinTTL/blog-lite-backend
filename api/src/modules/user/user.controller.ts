@@ -27,10 +27,21 @@ export class UserController {
   // ===== 管理接口 =====
 
   @Get()
-  async list(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+  async list(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('id') id?: string,
+    @Query('keyword') keyword?: string,
+    @Query('status') status?: string,
+  ) {
     const data = await this.userService.findAll(
       Math.max(parseInt(page || '1'), 1),
       Math.min(parseInt(pageSize || '20'), 100),
+      {
+        id: id !== undefined ? parseInt(id) : undefined,
+        keyword,
+        status: status !== undefined ? parseInt(status) : undefined,
+      },
     );
     return { success: true, data, message: 'ok' };
   }

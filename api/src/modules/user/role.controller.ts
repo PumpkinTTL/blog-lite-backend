@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { RoleService } from './role.service';
 import { CreateRoleDto, UpdateRoleDto } from './role.dto';
 
@@ -7,8 +7,14 @@ export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
   @Get()
-  async list() {
-    const data = await this.roleService.findAll();
+  async list(
+    @Query('id') id?: string,
+    @Query('keyword') keyword?: string,
+  ) {
+    const data = await this.roleService.findAll({
+      id: id !== undefined ? parseInt(id) : undefined,
+      keyword,
+    });
     return { success: true, data, message: 'ok' };
   }
 

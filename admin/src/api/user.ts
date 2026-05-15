@@ -37,7 +37,7 @@ export interface User {
   updatedAt: string
 }
 
-export function getUsers(params?: { page?: number; pageSize?: number }) {
+export function getUsers(params?: { page?: number; pageSize?: number; id?: number; keyword?: string; status?: number }) {
   return request.get('/user', { params })
 }
 

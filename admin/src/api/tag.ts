@@ -8,8 +8,8 @@ export interface Tag {
   updatedAt: string
 }
 
-export function getTags() {
-  return request.get('/tag')
+export function getTags(params?: { id?: number; keyword?: string }) {
+  return request.get('/tag', { params })
 }
 
 export function getTag(id: number) {

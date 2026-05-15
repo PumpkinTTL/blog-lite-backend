@@ -88,13 +88,25 @@ export class UserService {
 
   // ===== CRUD =====
 
-  async findAll(page = 1, pageSize = 20) {
-    const [list, total] = await this.userRepo.findAndCount({
-      relations: ['roles'],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    });
+  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: number }) {
+    const qb = this.userRepo.createQueryBuilder('u')
+      .leftJoinAndSelect('u.roles', 'roles');
+
+    if (filters?.id !== undefined) {
+      qb.andWhere('u.id = :id', { id: filters.id });
+    }
+    if (filters?.keyword) {
+      qb.andWhere('(u.username LIKE :kw OR u.nickname LIKE :kw)', { kw: `%${filters.keyword}%` });
+    }
+    if (filters?.status !== undefined) {
+      qb.andWhere('u.status = :status', { status: filters.status });
+    }
+
+    qb.orderBy('u.createdAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    const [list, total] = await qb.getManyAndCount();
     return { list, total, page, pageSize };
   }
 

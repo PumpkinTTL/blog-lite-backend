@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { AnnouncementService } from './announcement.service';
 import { CreateAnnouncementDto, UpdateAnnouncementDto } from './announcement.dto';
 
@@ -7,8 +7,16 @@ export class AnnouncementController {
   constructor(private readonly service: AnnouncementService) {}
 
   @Get()
-  async list() {
-    const data = await this.service.findAll();
+  async list(
+    @Query('id') id?: string,
+    @Query('keyword') keyword?: string,
+    @Query('status') status?: string,
+  ) {
+    const data = await this.service.findAll({
+      id: id !== undefined ? parseInt(id) : undefined,
+      keyword,
+      status: status !== undefined ? parseInt(status) : undefined,
+    });
     return { success: true, data, message: 'ok' };
   }
 
