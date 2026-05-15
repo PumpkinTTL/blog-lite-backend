@@ -53,7 +53,7 @@ async function handleLogin() {
       localStorage.setItem('refreshToken', refreshToken)
       localStorage.setItem('deviceId', deviceId)
       message.success('登录成功')
-      router.push('/')
+      router.push('/dashboard')
     } else {
       message.error(res.message || '登录失败')
     }

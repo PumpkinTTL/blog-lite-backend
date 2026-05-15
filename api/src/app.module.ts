@@ -4,6 +4,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
+import { PostModule } from './modules/post/post.module';
+import { CategoryModule } from './modules/category/category.module';
+import { TagModule } from './modules/tag/tag.module';
+import { MediaModule } from './modules/media/media.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -53,6 +58,11 @@ import { UserModule } from './modules/user/user.module';
     }),
     UserModule,
     AuthModule,
+    PostModule,
+    CategoryModule,
+    TagModule,
+    MediaModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

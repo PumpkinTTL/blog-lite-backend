@@ -405,3 +405,11 @@ button,
     margin-bottom: 28px;
   }
 }
+
+/* ==============================
+   Admin Global Styles
+   ============================== */
+
+#app {
+  height: 100vh;
+}

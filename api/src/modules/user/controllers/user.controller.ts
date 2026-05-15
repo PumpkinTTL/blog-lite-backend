@@ -1,5 +1,5 @@
 import { Controller, Post, Body, Req, Logger } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { UserService } from '../services/user.service';
 import { LoginDto } from '../dto';
 
