@@ -3,3 +3,8 @@ dist/
 coverage/
 *.log
 *.local
+
+# Environment variables
+.env
+.env.*
+!.env.example

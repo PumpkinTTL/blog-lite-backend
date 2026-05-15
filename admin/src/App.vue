@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import HelloWorld from './components/HelloWorld.vue'
+import { naiveTheme, themeOverrides } from './theme'
 </script>
 
 <template>
-  <HelloWorld />
+  <n-config-provider :theme="naiveTheme" :theme-overrides="themeOverrides">
+    <n-message-provider>
+      <n-dialog-provider>
+        <n-notification-provider>
+          <router-view />
+        </n-notification-provider>
+      </n-dialog-provider>
+    </n-message-provider>
+  </n-config-provider>
 </template>
