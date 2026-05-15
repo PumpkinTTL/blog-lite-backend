@@ -121,8 +121,8 @@ async function loadRoleOptions() {
     const payload = res.data
     const list = Array.isArray(payload) ? payload : (payload?.list || [])
     roleOptions.value = list.map((r: Role) => ({ label: r.displayName, value: r.id }))
-  } catch {
-    // 不阻塞
+  } catch (e) {
+    console.error('加载角色选项失败:', e)
   }
 }
 

@@ -31,8 +31,8 @@ onMounted(async () => {
     if (res.data) {
       stats.value = res.data
     }
-  } catch {
-    // 骨架阶段，接口可能未就绪
+  } catch (e) {
+    console.error('获取统计数据失败:', e)
   } finally {
     loading.value = false
   }

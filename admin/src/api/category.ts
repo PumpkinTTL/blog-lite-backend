@@ -23,7 +23,7 @@ export function createCategory(data: Partial<Category>) {
 }
 
 export function updateCategory(id: number, data: Partial<Category>) {
-  return request.patch(`/category/${id}`, data)
+  return request.put(`/category/${id}`, data)
 }
 
 export function deleteCategory(id: number) {

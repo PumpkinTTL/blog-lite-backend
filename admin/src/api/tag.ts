@@ -21,7 +21,7 @@ export function createTag(data: Partial<Tag>) {
 }
 
 export function updateTag(id: number, data: Partial<Tag>) {
-  return request.patch(`/tag/${id}`, data)
+  return request.put(`/tag/${id}`, data)
 }
 
 export function deleteTag(id: number) {

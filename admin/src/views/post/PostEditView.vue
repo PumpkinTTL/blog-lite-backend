@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NCard, NForm, NFormItem, NInput, NButton, NSelect, NSpace, NIcon, useMessage } from 'naive-ui'
 import type { FormInst, FormRules } from 'naive-ui'
-import { MdEditor, MdPreview } from 'md-editor-v3'
+import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import { ArrowBackOutline, SaveOutline, CloudUploadOutline } from '@vicons/ionicons5'
 import { getPost, createPost, updatePost } from '../../api/post'
@@ -49,8 +49,8 @@ async function loadOptions() {
     const tagPayload = tagRes.data
     const tags = Array.isArray(tagPayload) ? tagPayload : (tagPayload?.list || [])
     tagOptions.value = tags.map((t: any) => ({ label: t.name, value: t.id }))
-  } catch {
-    // 选项加载失败不阻塞
+  } catch (e) {
+    console.error('加载选项失败:', e)
   }
 }
 
