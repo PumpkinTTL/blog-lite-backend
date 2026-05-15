@@ -12,10 +12,6 @@ export function getTags(params?: { id?: number; keyword?: string }) {
   return request.get('/tag', { params })
 }
 
-export function getTag(id: number) {
-  return request.get(`/tag/${id}`)
-}
-
 export function createTag(data: Partial<Tag>) {
   return request.post('/tag', data)
 }

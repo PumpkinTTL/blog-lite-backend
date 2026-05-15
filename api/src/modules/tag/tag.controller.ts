@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { TagService } from './tag.service';
-import { TagEntity } from './tag.entity';
+import { CreateTagDto, UpdateTagDto } from './tag.dto';
 
 @Controller('tag')
 export class TagController {
@@ -25,14 +25,14 @@ export class TagController {
   }
 
   @Post()
-  async create(@Body() body: Partial<TagEntity>) {
-    const data = await this.tagService.create(body);
+  async create(@Body() dto: CreateTagDto) {
+    const data = await this.tagService.create(dto);
     return { success: true, data, message: '创建成功' };
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() body: Partial<TagEntity>) {
-    const data = await this.tagService.update(id, body);
+  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateTagDto) {
+    const data = await this.tagService.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }
 

@@ -1,26 +1,22 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, useMessage, useDialog } from 'naive-ui'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getUsers, createUser, updateUser, deleteUser } from '../../api/user'
 import type { User } from '../../api/user'
 import { getRoles } from '../../api/role'
 import type { Role } from '../../api/role'
+import { useCrudList } from '../../composables/useCrudList'
 
-const message = useMessage()
-const dialog = useDialog()
-const loading = ref(false)
-const users = ref<User[]>([])
+const formRef = ref<FormInst | null>(null)
+
+// Pagination
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
-const showModal = ref(false)
-const editingId = ref<number | null>(null)
-const formRef = ref<FormInst | null>(null)
-const saving = ref(false)
-const searchId = ref('')
-const searchKeyword = ref('')
+
+// Extra search field
 const searchStatus = ref<number | null>(null)
 
 const userStatusOptions = [
@@ -29,8 +25,95 @@ const userStatusOptions = [
   { label: '禁用', value: 0 },
 ]
 
-const formValue = ref({ username: '', password: '', nickname: '', email: '', status: 1, roleIds: [] as number[] })
+// Role options for form select
 const roleOptions = ref<{ label: string; value: number }[]>([])
+
+const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit: _openEdit,
+  handleSave: _handleSave, handleDelete, message } =
+  useCrudList<User>({
+    loadApi: (params) => getUsers({
+      ...params,
+      page: page.value,
+      pageSize: pageSize.value,
+      ...(searchStatus.value !== null ? { status: searchStatus.value } : {}),
+    }),
+    createApi: createUser,
+    updateApi: (id, data) => {
+      const payload = { ...data }
+      if (!payload.password) delete payload.password
+      delete payload.username
+      return updateUser(id, payload)
+    },
+    deleteApi: deleteUser,
+    deleteContent: (row) => `确定删除用户「${row.nickname}」？`,
+    defaultForm: () => ({ username: '', password: '', nickname: '', email: '', status: 1, roleIds: [] }),
+    extractList: (res) => {
+      const payload = res.data
+      if (payload?.list) {
+        total.value = payload.total
+        return payload.list
+      }
+      return []
+    },
+  })
+
+function openEdit(row: User) {
+  _openEdit(row, (r) => ({
+    username: r.username,
+    password: '',
+    nickname: r.nickname,
+    email: r.email || '',
+    status: r.status,
+    roleIds: (r.roles || []).map((r) => r.id),
+  }))
+}
+
+function handleSearch() {
+  page.value = 1
+  _handleSearch()
+}
+
+function handleReset() {
+  searchId.value = ''
+  searchKeyword.value = ''
+  searchStatus.value = null
+  page.value = 1
+  _handleReset()
+}
+
+async function handleSave() {
+  try {
+    await formRef.value?.validate()
+  } catch {
+    return false
+  }
+  if (!editingId.value && !formValue.value.password) {
+    message.warning('新建用户必须设置密码')
+    return false
+  }
+  return _handleSave()
+}
+
+function handlePageChange(p: number) {
+  page.value = p
+  _handleSearch()
+}
+
+async function loadRoleOptions() {
+  try {
+    const res = await getRoles()
+    const payload = res.data
+    const list = Array.isArray(payload) ? payload : (payload?.list || [])
+    roleOptions.value = list.map((r: Role) => ({ label: r.displayName, value: r.id }))
+  } catch (e) {
+    console.error('加载角色选项失败:', e)
+  }
+}
+
+onMounted(() => {
+  loadRoleOptions()
+})
 
 const rules: FormRules = {
   username: [{ required: true, message: '请输入账号', trigger: ['input', 'blur'] }],
@@ -81,129 +164,6 @@ const columns: DataTableColumns<User> = [
       }),
   },
 ]
-
-async function loadUsers() {
-  loading.value = true
-  try {
-    const params: any = { page: page.value, pageSize: pageSize.value }
-    if (searchId.value) params.id = searchId.value
-    if (searchKeyword.value) params.keyword = searchKeyword.value
-    if (searchStatus.value !== null) params.status = searchStatus.value
-    const res = await getUsers(params)
-    const payload = res.data
-    if (payload?.list) {
-      users.value = payload.list
-      total.value = payload.total
-    }
-  } catch {
-    message.error('加载用户列表失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-function handleSearch() {
-  page.value = 1
-  loadUsers()
-}
-
-function handleReset() {
-  searchId.value = ''
-  searchKeyword.value = ''
-  searchStatus.value = null
-  page.value = 1
-  loadUsers()
-}
-
-async function loadRoleOptions() {
-  try {
-    const res = await getRoles()
-    const payload = res.data
-    const list = Array.isArray(payload) ? payload : (payload?.list || [])
-    roleOptions.value = list.map((r: Role) => ({ label: r.displayName, value: r.id }))
-  } catch (e) {
-    console.error('加载角色选项失败:', e)
-  }
-}
-
-function openCreate() {
-  editingId.value = null
-  formValue.value = { username: '', password: '', nickname: '', email: '', status: 1, roleIds: [] }
-  showModal.value = true
-}
-
-function openEdit(row: User) {
-  editingId.value = row.id
-  formValue.value = {
-    username: row.username,
-    password: '',
-    nickname: row.nickname,
-    email: row.email || '',
-    status: row.status,
-    roleIds: (row.roles || []).map((r) => r.id),
-  }
-  showModal.value = true
-}
-
-async function handleSave() {
-  try {
-    await formRef.value?.validate()
-  } catch {
-    return false
-  }
-  if (!editingId.value && !formValue.value.password) {
-    message.warning('新建用户必须设置密码')
-    return false
-  }
-  saving.value = true
-  try {
-    if (editingId.value) {
-      const data: any = { ...formValue.value }
-      if (!data.password) delete data.password
-      delete data.username
-      await updateUser(editingId.value, data)
-      message.success('更新成功')
-    } else {
-      await createUser(formValue.value)
-      message.success('创建成功')
-    }
-    showModal.value = false
-    loadUsers()
-  } catch (e: any) {
-    message.error(e.message || '操作失败')
-    return false
-  } finally {
-    saving.value = false
-  }
-}
-
-function handleDelete(row: User) {
-  dialog.warning({
-    title: '确认删除',
-    content: `确定删除用户「${row.nickname}」？`,
-    positiveText: '删除',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        await deleteUser(row.id)
-        message.success('删除成功')
-        loadUsers()
-      } catch (e: any) {
-        message.error(e.message || '删除失败')
-      }
-    },
-  })
-}
-
-function handlePageChange(p: number) {
-  page.value = p
-  loadUsers()
-}
-
-onMounted(() => {
-  loadUsers()
-  loadRoleOptions()
-})
 </script>
 
 <template>
@@ -230,7 +190,7 @@ onMounted(() => {
     </n-space>
 
     <n-card :bordered="false" class="table-card">
-      <n-data-table :columns="columns" :data="users" :loading="loading" :bordered="false" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" />
       <div class="pagination-wrap" v-if="total > pageSize">
         <n-pagination :page="page" :page-size="pageSize" :item-count="total" @update:page="handlePageChange" />
       </div>
@@ -267,10 +227,5 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.page-wrapper { display: flex; flex-direction: column; gap: 16px; }
-.page-header { display: flex; align-items: center; justify-content: space-between; }
-.page-title { font-size: 20px; font-weight: 700; margin: 0; }
-.table-card { border-radius: 12px; }
-.search-bar { margin-bottom: 12px; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

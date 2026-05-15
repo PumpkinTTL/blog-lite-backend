@@ -2,16 +2,19 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'nestjs-pino';
 import { Logger as NestLogger, ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 const bootstrapLogger = new NestLogger('Bootstrap');
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 5100);
 
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
   app.useLogger(app.get(Logger));
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalPipes(

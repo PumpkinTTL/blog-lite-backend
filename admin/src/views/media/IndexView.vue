@@ -124,25 +124,6 @@ onMounted(loadMedia)
 </template>
 
 <style scoped>
-.page-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.page-title {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0;
-}
-
-.search-bar { margin-bottom: 12px; }
 .media-card {
   border-radius: 12px;
 }

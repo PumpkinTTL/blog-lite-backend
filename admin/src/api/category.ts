@@ -14,10 +14,6 @@ export function getCategories(params?: { id?: number; keyword?: string }) {
   return request.get('/category', { params })
 }
 
-export function getCategory(id: number) {
-  return request.get(`/category/${id}`)
-}
-
 export function createCategory(data: Partial<Category>) {
   return request.post('/category', data)
 }

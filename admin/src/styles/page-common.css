@@ -1,0 +1,30 @@
+/* ==============================
+   Page Common Layout Styles
+   Shared across multiple admin pages
+   ============================== */
+
+.page-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.table-card {
+  border-radius: 12px;
+}
+
+.search-bar {
+  margin-bottom: 12px;
+}

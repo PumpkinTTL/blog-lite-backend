@@ -7,6 +7,7 @@ import { UserEntity } from './user.entity';
 import { RoleEntity } from './role.entity';
 import { LoginDto } from './login.dto';
 import { AuthService } from '../auth/auth.service';
+import { applyFilters } from '../../common/utils/apply-filters';
 
 export interface TokenPayload {
   accessToken: string;
@@ -91,17 +92,10 @@ export class UserService {
   async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: number }) {
     const qb = this.userRepo.createQueryBuilder('u')
       .leftJoinAndSelect('u.roles', 'roles');
-
-    if (filters?.id !== undefined) {
-      qb.andWhere('u.id = :id', { id: filters.id });
-    }
-    if (filters?.keyword) {
-      qb.andWhere('(u.username LIKE :kw OR u.nickname LIKE :kw)', { kw: `%${filters.keyword}%` });
-    }
-    if (filters?.status !== undefined) {
-      qb.andWhere('u.status = :status', { status: filters.status });
-    }
-
+    applyFilters(qb, {
+      exact: { 'u.id': filters?.id, 'u.status': filters?.status },
+      like: { keyword: filters?.keyword, fields: ['u.username', 'u.nickname'] },
+    });
     qb.orderBy('u.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);

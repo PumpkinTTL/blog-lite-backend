@@ -1,22 +1,28 @@
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, useMessage, useDialog } from 'naive-ui'
+import { ref, h } from 'vue'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getCategories, createCategory, updateCategory, deleteCategory } from '../../api/category'
 import type { Category } from '../../api/category'
+import { useCrudList } from '../../composables/useCrudList'
 
-const message = useMessage()
-const dialog = useDialog()
-const loading = ref(false)
-const categories = ref<Category[]>([])
-const searchId = ref('')
-const searchKeyword = ref('')
-const showModal = ref(false)
-const editingId = ref<number | null>(null)
 const formRef = ref<FormInst | null>(null)
-const saving = ref(false)
-const formValue = ref({ name: '', slug: '', description: '' })
+
+const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
+  handleSearch, handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete } =
+  useCrudList<Category>({
+    loadApi: getCategories,
+    createApi: createCategory,
+    updateApi: updateCategory,
+    deleteApi: deleteCategory,
+    deleteContent: (row) => `确定删除分类「${row.name}」？`,
+    defaultForm: () => ({ name: '', slug: '', description: '' }),
+  })
+
+async function handleSave() {
+  return _handleSave(() => formRef!.validate())
+}
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入分类名称', trigger: ['input', 'blur'] }],
@@ -48,89 +54,6 @@ const columns: DataTableColumns<Category> = [
       }),
   },
 ]
-
-async function loadCategories() {
-  loading.value = true
-  try {
-    const params: any = {}
-    if (searchId.value) params.id = searchId.value
-    if (searchKeyword.value) params.keyword = searchKeyword.value
-    const res = await getCategories(params)
-    const payload = res.data
-    categories.value = Array.isArray(payload) ? payload : (payload?.list || [])
-  } catch {
-    message.error('加载分类失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-function handleSearch() {
-  loadCategories()
-}
-
-function handleReset() {
-  searchId.value = ''
-  searchKeyword.value = ''
-  loadCategories()
-}
-
-function openCreate() {
-  editingId.value = null
-  formValue.value = { name: '', slug: '', description: '' }
-  showModal.value = true
-}
-
-function openEdit(row: Category) {
-  editingId.value = row.id
-  formValue.value = { name: row.name, slug: row.slug, description: row.description || '' }
-  showModal.value = true
-}
-
-async function handleSave() {
-  try {
-    await formRef.value?.validate()
-  } catch {
-    return false
-  }
-  saving.value = true
-  try {
-    if (editingId.value) {
-      await updateCategory(editingId.value, formValue.value)
-      message.success('更新成功')
-    } else {
-      await createCategory(formValue.value)
-      message.success('创建成功')
-    }
-    showModal.value = false
-    loadCategories()
-  } catch (e: any) {
-    message.error(e.message || '操作失败')
-    return false
-  } finally {
-    saving.value = false
-  }
-}
-
-function handleDelete(row: Category) {
-  dialog.warning({
-    title: '确认删除',
-    content: `确定删除分类「${row.name}」？`,
-    positiveText: '删除',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        await deleteCategory(row.id)
-        message.success('删除成功')
-        loadCategories()
-      } catch (e: any) {
-        message.error(e.message || '删除失败')
-      }
-    },
-  })
-}
-
-onMounted(loadCategories)
 </script>
 
 <template>
@@ -158,7 +81,7 @@ onMounted(loadCategories)
     <n-card :bordered="false" class="table-card">
       <n-data-table
         :columns="columns"
-        :data="categories"
+        :data="list"
         :loading="loading"
         :bordered="false"
       />
@@ -188,30 +111,4 @@ onMounted(loadCategories)
   </div>
 </template>
 
-<style scoped>
-.page-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.page-title {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0;
-}
-
-.table-card {
-  border-radius: 12px;
-}
-
-.search-bar {
-  margin-bottom: 12px;
-}
-</style>
+<style scoped></style>

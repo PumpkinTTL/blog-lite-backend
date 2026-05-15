@@ -220,9 +220,6 @@ onMounted(loadSettings)
 </template>
 
 <style scoped>
-.page-wrapper { display: flex; flex-direction: column; gap: 16px; }
-.page-header { display: flex; align-items: center; justify-content: space-between; }
-.page-title { font-size: 20px; font-weight: 700; margin: 0; }
 .setting-card { border-radius: 12px; }
 .setting-table { width: 100%; border-collapse: collapse; table-layout: auto; }
 .setting-table th,

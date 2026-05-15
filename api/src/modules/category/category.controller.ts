@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { CategoryService } from './category.service';
-import { CategoryEntity } from './category.entity';
+import { CreateCategoryDto, UpdateCategoryDto } from './category.dto';
 
 @Controller('category')
 export class CategoryController {
@@ -25,14 +25,14 @@ export class CategoryController {
   }
 
   @Post()
-  async create(@Body() body: Partial<CategoryEntity>) {
-    const data = await this.categoryService.create(body);
+  async create(@Body() dto: CreateCategoryDto) {
+    const data = await this.categoryService.create(dto);
     return { success: true, data, message: '创建成功' };
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() body: Partial<CategoryEntity>) {
-    const data = await this.categoryService.update(id, body);
+  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
+    const data = await this.categoryService.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }
 

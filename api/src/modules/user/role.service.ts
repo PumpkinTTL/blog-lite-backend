@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoleEntity } from './role.entity';
+import { applyFilters } from '../../common/utils/apply-filters';
 
 @Injectable()
 export class RoleService {
@@ -12,12 +13,10 @@ export class RoleService {
 
   async findAll(filters?: { id?: number; keyword?: string }) {
     const qb = this.roleRepo.createQueryBuilder('e');
-    if (filters?.id !== undefined) {
-      qb.andWhere('e.id = :id', { id: filters.id });
-    }
-    if (filters?.keyword) {
-      qb.andWhere('(e.name LIKE :kw OR e.displayName LIKE :kw)', { kw: `%${filters.keyword}%` });
-    }
+    applyFilters(qb, {
+      exact: { 'e.id': filters?.id },
+      like: { keyword: filters?.keyword, fields: ['e.name', 'e.displayName'] },
+    });
     qb.orderBy('e.createdAt', 'DESC');
     return qb.getMany();
   }

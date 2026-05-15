@@ -28,6 +28,7 @@ export class CreatePostDto {
   categoryId?: number | null;
 
   @IsArray()
+  @IsInt({ each: true })
   @IsOptional()
   tagIds?: number[];
 }
@@ -62,6 +63,7 @@ export class UpdatePostDto {
   categoryId?: number | null;
 
   @IsArray()
+  @IsInt({ each: true })
   @IsOptional()
   tagIds?: number[];
 }

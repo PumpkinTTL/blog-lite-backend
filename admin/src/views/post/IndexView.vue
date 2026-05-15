@@ -189,35 +189,9 @@ onMounted(() => { loadPosts(); loadCategoryOptions() })
 </template>
 
 <style scoped>
-.page-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.page-title {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0;
-}
-
-.table-card {
-  border-radius: 12px;
-}
-
 .pagination-wrap {
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
-}
-
-.search-bar {
-  margin-bottom: 12px;
 }
 </style>

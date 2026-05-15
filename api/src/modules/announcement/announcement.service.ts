@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AnnouncementEntity } from './announcement.entity';
+import { applyFilters } from '../../common/utils/apply-filters';
 
 @Injectable()
 export class AnnouncementService {
@@ -12,15 +13,10 @@ export class AnnouncementService {
 
   async findAll(filters?: { id?: number; keyword?: string; status?: number }) {
     const qb = this.repo.createQueryBuilder('e');
-    if (filters?.id !== undefined) {
-      qb.andWhere('e.id = :id', { id: filters.id });
-    }
-    if (filters?.keyword) {
-      qb.andWhere('e.title LIKE :kw', { kw: `%${filters.keyword}%` });
-    }
-    if (filters?.status !== undefined) {
-      qb.andWhere('e.status = :status', { status: filters.status });
-    }
+    applyFilters(qb, {
+      exact: { 'e.id': filters?.id, 'e.status': filters?.status },
+      like: { keyword: filters?.keyword, fields: ['e.title'] },
+    });
     qb.orderBy('e.sortOrder', 'ASC').addOrderBy('e.createdAt', 'DESC');
     return qb.getMany();
   }

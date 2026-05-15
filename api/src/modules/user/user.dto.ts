@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsInt, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsInt, MinLength, IsEmail } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -11,7 +11,7 @@ export class CreateUserDto {
   @IsString()
   nickname: string;
 
-  @IsString()
+  @IsEmail()
   @IsOptional()
   email?: string;
 
@@ -24,6 +24,7 @@ export class CreateUserDto {
   status?: number;
 
   @IsArray()
+  @IsInt({ each: true })
   @IsOptional()
   roleIds?: number[];
 }
@@ -38,7 +39,7 @@ export class UpdateUserDto {
   @MinLength(6)
   password?: string;
 
-  @IsString()
+  @IsEmail()
   @IsOptional()
   email?: string;
 
@@ -51,6 +52,7 @@ export class UpdateUserDto {
   status?: number;
 
   @IsArray()
+  @IsInt({ each: true })
   @IsOptional()
   roleIds?: number[];
 }

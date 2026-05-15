@@ -208,24 +208,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.page-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.page-title {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0;
-}
-
 .editor-layout {
   display: grid;
   grid-template-columns: 1fr 320px;

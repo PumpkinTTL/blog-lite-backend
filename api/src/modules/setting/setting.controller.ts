@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
 import { SettingService } from './setting.service';
-import { CreateSettingDto, UpdateSettingDto } from './setting.dto';
+import { CreateSettingDto, UpdateSettingDto, BatchUpdateSettingDto } from './setting.dto';
 
 @Controller('setting')
 export class SettingController {
@@ -25,8 +25,8 @@ export class SettingController {
   }
 
   @Put('batch')
-  async batchUpdate(@Body() items: Record<string, string>) {
-    const data = await this.service.batchUpdate(items);
+  async batchUpdate(@Body() dto: BatchUpdateSettingDto) {
+    const data = await this.service.batchUpdate(dto.items);
     return { success: true, data, message: '更新成功' };
   }
 

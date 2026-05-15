@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsNotEmptyObject } from 'class-validator';
 
 export class UpdateSettingDto {
   @IsString()
@@ -28,4 +28,10 @@ export class CreateSettingDto {
   @IsString()
   @IsOptional()
   group?: string;
+}
+
+export class BatchUpdateSettingDto {
+  @IsNotEmptyObject()
+  @IsObject()
+  items: Record<string, string>;
 }

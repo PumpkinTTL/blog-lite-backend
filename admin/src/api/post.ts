@@ -1,16 +1,6 @@
 import request from './request'
-
-export interface Tag {
-  id: number
-  name: string
-  slug: string
-}
-
-export interface Category {
-  id: number
-  name: string
-  slug: string
-}
+import type { Tag } from './tag'
+import type { Category } from './category'
 
 export interface Post {
   id: number

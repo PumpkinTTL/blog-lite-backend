@@ -41,10 +41,6 @@ export function getUsers(params?: { page?: number; pageSize?: number; id?: numbe
   return request.get('/user', { params })
 }
 
-export function getUser(id: number) {
-  return request.get(`/user/${id}`)
-}
-
 export function createUser(data: any) {
   return request.post('/user', data)
 }

@@ -1,6 +1,21 @@
-import { Controller, Get, Post, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  Query,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
 import { MediaService } from './media.service';
-import { MediaEntity } from './media.entity';
+import { CreateMediaDto } from './media.dto';
 
 @Controller('media')
 export class MediaController {
@@ -30,10 +45,39 @@ export class MediaController {
     return { success: true, data, message: 'ok' };
   }
 
-  @Post()
-  async create(@Body() body: Partial<MediaEntity>) {
-    const data = await this.mediaService.create(body);
+  @Post('upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: join(process.cwd(), 'uploads'),
+        filename: (_req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, uniqueSuffix + extname(file.originalname));
+        },
+      }),
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+      fileFilter: (_req, file, cb) => {
+        const allowed = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
+        if (!allowed.test(extname(file.originalname).toLowerCase())) {
+          cb(new BadRequestException('不支持的文件类型'), false);
+          return;
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async upload(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('请选择文件');
+    }
+    const data = await this.mediaService.upload(file);
     return { success: true, data, message: '上传成功' };
+  }
+
+  @Post()
+  async create(@Body() dto: CreateMediaDto) {
+    const data = await this.mediaService.create(dto);
+    return { success: true, data, message: '创建成功' };
   }
 
   @Delete(':id')

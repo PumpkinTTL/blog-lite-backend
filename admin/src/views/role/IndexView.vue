@@ -1,22 +1,28 @@
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, useMessage, useDialog } from 'naive-ui'
+import { ref, h } from 'vue'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getRoles, createRole, updateRole, deleteRole } from '../../api/role'
 import type { Role } from '../../api/role'
+import { useCrudList } from '../../composables/useCrudList'
 
-const message = useMessage()
-const dialog = useDialog()
-const loading = ref(false)
-const roles = ref<Role[]>([])
-const searchId = ref('')
-const searchKeyword = ref('')
-const showModal = ref(false)
-const editingId = ref<number | null>(null)
 const formRef = ref<FormInst | null>(null)
-const saving = ref(false)
-const formValue = ref({ name: '', displayName: '', description: '' })
+
+const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
+  handleSearch, handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete } =
+  useCrudList<Role>({
+    loadApi: getRoles,
+    createApi: createRole,
+    updateApi: updateRole,
+    deleteApi: deleteRole,
+    deleteContent: (row) => `确定删除角色「${row.displayName}」？`,
+    defaultForm: () => ({ name: '', displayName: '', description: '' }),
+  })
+
+async function handleSave() {
+  return _handleSave(() => formRef!.validate())
+}
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入角色标识', trigger: ['input', 'blur'] }],
@@ -48,89 +54,6 @@ const columns: DataTableColumns<Role> = [
       }),
   },
 ]
-
-async function loadRoles() {
-  loading.value = true
-  try {
-    const params: any = {}
-    if (searchId.value) params.id = searchId.value
-    if (searchKeyword.value) params.keyword = searchKeyword.value
-    const res = await getRoles(params)
-    const payload = res.data
-    roles.value = Array.isArray(payload) ? payload : (payload?.list || [])
-  } catch {
-    message.error('加载角色失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-function handleSearch() {
-  loadRoles()
-}
-
-function handleReset() {
-  searchId.value = ''
-  searchKeyword.value = ''
-  loadRoles()
-}
-
-function openCreate() {
-  editingId.value = null
-  formValue.value = { name: '', displayName: '', description: '' }
-  showModal.value = true
-}
-
-function openEdit(row: Role) {
-  editingId.value = row.id
-  formValue.value = { name: row.name, displayName: row.displayName, description: row.description || '' }
-  showModal.value = true
-}
-
-async function handleSave() {
-  try {
-    await formRef.value?.validate()
-  } catch {
-    return false
-  }
-  saving.value = true
-  try {
-    if (editingId.value) {
-      await updateRole(editingId.value, formValue.value)
-      message.success('更新成功')
-    } else {
-      await createRole(formValue.value)
-      message.success('创建成功')
-    }
-    showModal.value = false
-    loadRoles()
-  } catch (e: any) {
-    message.error(e.message || '操作失败')
-    return false
-  } finally {
-    saving.value = false
-  }
-}
-
-function handleDelete(row: Role) {
-  dialog.warning({
-    title: '确认删除',
-    content: `确定删除角色「${row.displayName}」？`,
-    positiveText: '删除',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        await deleteRole(row.id)
-        message.success('删除成功')
-        loadRoles()
-      } catch (e: any) {
-        message.error(e.message || '删除失败')
-      }
-    },
-  })
-}
-
-onMounted(loadRoles)
 </script>
 
 <template>
@@ -158,7 +81,7 @@ onMounted(loadRoles)
     <n-card :bordered="false" class="table-card">
       <n-data-table
         :columns="columns"
-        :data="roles"
+        :data="list"
         :loading="loading"
         :bordered="false"
       />
@@ -188,10 +111,4 @@ onMounted(loadRoles)
   </div>
 </template>
 
-<style scoped>
-.page-wrapper { display: flex; flex-direction: column; gap: 16px; }
-.page-header { display: flex; align-items: center; justify-content: space-between; }
-.page-title { font-size: 20px; font-weight: 700; margin: 0; }
-.table-card { border-radius: 12px; }
-.search-bar { margin-bottom: 12px; }
-</style>
+<style scoped></style>

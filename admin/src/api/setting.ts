@@ -12,10 +12,6 @@ export function getSettings() {
   return request.get('/setting')
 }
 
-export function batchUpdateSettings(items: Record<string, string>) {
-  return request.put('/setting/batch', items)
-}
-
 export function createSetting(data: any) {
   return request.post('/setting', data)
 }

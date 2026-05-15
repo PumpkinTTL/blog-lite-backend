@@ -12,10 +12,6 @@ export function getRoles(params?: { id?: number; keyword?: string }) {
   return request.get('/role', { params })
 }
 
-export function getRole(id: number) {
-  return request.get(`/role/${id}`)
-}
-
 export function createRole(data: Partial<Role>) {
   return request.post('/role', data)
 }

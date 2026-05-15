@@ -1,17 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, useMessage, useDialog } from 'naive-ui'
+import { ref, h } from 'vue'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getFriendLinks, createFriendLink, updateFriendLink, deleteFriendLink } from '../../api/friend-link'
 import type { FriendLink } from '../../api/friend-link'
+import { useCrudList } from '../../composables/useCrudList'
 
-const message = useMessage()
-const dialog = useDialog()
-const loading = ref(false)
-const list = ref<FriendLink[]>([])
-const searchId = ref('')
-const searchKeyword = ref('')
+const formRef = ref<FormInst | null>(null)
+
 const searchStatus = ref<number | null>(null)
 
 const friendLinkStatusOptions = [
@@ -19,11 +16,42 @@ const friendLinkStatusOptions = [
   { label: '显示', value: 1 },
   { label: '隐藏', value: 0 },
 ]
-const showModal = ref(false)
-const editingId = ref<number | null>(null)
-const formRef = ref<FormInst | null>(null)
-const saving = ref(false)
-const formValue = ref({ name: '', url: '', logo: '', description: '', status: 1, sortOrder: 0, postId: null as number | null })
+
+const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit,
+  handleSave: _handleSave, handleDelete, message } =
+  useCrudList<FriendLink>({
+    loadApi: (params) => getFriendLinks({
+      ...params,
+      ...(searchStatus.value !== null ? { status: searchStatus.value } : {}),
+    }),
+    createApi: (data) => createFriendLink(data),
+    updateApi: (id, data) => updateFriendLink(id, data),
+    deleteApi: deleteFriendLink,
+    deleteContent: (row) => `确定删除友链「${row.name}」？`,
+    defaultForm: () => ({ name: '', url: '', logo: '', description: '', status: 1, sortOrder: 0, postId: null }),
+  })
+
+function handleSearch() {
+  _handleSearch()
+}
+
+function handleReset() {
+  _handleReset()
+  searchStatus.value = null
+}
+
+async function handleSave() {
+  try {
+    await formRef.value?.validate()
+  } catch {
+    return false
+  }
+  // Transform data before saving
+  formValue.value.sortOrder = Number(formValue.value.sortOrder) || 0
+  formValue.value.postId = formValue.value.postId ? Number(formValue.value.postId) : null
+  return _handleSave()
+}
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入站点名称', trigger: ['input', 'blur'] }],
@@ -57,71 +85,6 @@ const columns: DataTableColumns<FriendLink> = [
     }),
   },
 ]
-
-async function loadList() {
-  loading.value = true
-  try {
-    const params: any = {}
-    if (searchId.value) params.id = searchId.value
-    if (searchKeyword.value) params.keyword = searchKeyword.value
-    if (searchStatus.value !== null) params.status = searchStatus.value
-    const res = await getFriendLinks(params)
-    const payload = res.data
-    list.value = Array.isArray(payload) ? payload : []
-  } catch { message.error('加载失败') }
-  finally { loading.value = false }
-}
-
-function handleSearch() {
-  loadList()
-}
-
-function handleReset() {
-  searchId.value = ''
-  searchKeyword.value = ''
-  searchStatus.value = null
-  loadList()
-}
-
-function openCreate() {
-  editingId.value = null
-  formValue.value = { name: '', url: '', logo: '', description: '', status: 1, sortOrder: 0, postId: null }
-  showModal.value = true
-}
-
-function openEdit(row: FriendLink) {
-  editingId.value = row.id
-  formValue.value = { name: row.name, url: row.url, logo: row.logo || '', description: row.description || '', status: row.status, sortOrder: row.sortOrder, postId: row.postId }
-  showModal.value = true
-}
-
-async function handleSave() {
-  try { await formRef.value?.validate() } catch { return false }
-  saving.value = true
-  try {
-    const data = {
-      ...formValue.value,
-      sortOrder: Number(formValue.value.sortOrder) || 0,
-      postId: formValue.value.postId ? Number(formValue.value.postId) : null,
-    }
-    if (editingId.value) { await updateFriendLink(editingId.value, data); message.success('更新成功') }
-    else { await createFriendLink(data); message.success('创建成功') }
-    showModal.value = false; loadList()
-  } catch (e: any) { message.error(e.message || '操作失败'); return false }
-  finally { saving.value = false }
-}
-
-function handleDelete(row: FriendLink) {
-  dialog.warning({
-    title: '确认删除', content: `确定删除友链「${row.name}」？`, positiveText: '删除', negativeText: '取消',
-    onPositiveClick: async () => {
-      try { await deleteFriendLink(row.id); message.success('删除成功'); loadList() }
-      catch (e: any) { message.error(e.message || '删除失败') }
-    },
-  })
-}
-
-onMounted(loadList)
 </script>
 
 <template>
@@ -163,10 +126,4 @@ onMounted(loadList)
   </div>
 </template>
 
-<style scoped>
-.page-wrapper { display: flex; flex-direction: column; gap: 16px; }
-.page-header { display: flex; align-items: center; justify-content: space-between; }
-.page-title { font-size: 20px; font-weight: 700; margin: 0; }
-.table-card { border-radius: 12px; }
-.search-bar { margin-bottom: 12px; }
-</style>
+<style scoped></style>
