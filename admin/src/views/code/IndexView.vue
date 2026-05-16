@@ -102,31 +102,40 @@ function handleReset() {
   _handleReset()
 }
 
-function buildDiscountPayload(): CodeDiscount | undefined {
-  if (formValue.value.type !== 'discount') return undefined
+/** 校验 discount 字段，不通过返回 false */
+function validateDiscount(): boolean {
+  if (formValue.value.type !== 'discount') return true
   const dtype = formValue.value.discountType as 'percentage' | 'threshold' | 'fixed'
   const val = Number(formValue.value.discountValue)
   const thr = Number(formValue.value.discountThreshold)
 
   if (!val || val <= 0) {
     message.warning('优惠金额/比例必须为正数')
-    return undefined as any
+    return false
   }
   if (dtype === 'percentage' && val > 1) {
     message.warning('折扣比例不能超过 1（如 0.8 = 八折）')
-    return undefined as any
+    return false
   }
   if (dtype === 'threshold') {
     if (!thr || thr <= 0) {
       message.warning('满减门槛必须为正数')
-      return undefined as any
+      return false
     }
     if (val >= thr) {
       message.warning('减免金额不能大于等于满减门槛')
-      return undefined as any
+      return false
     }
   }
+  return true
+}
 
+/** 构造 discount 对象（调用前确保 validateDiscount 通过） */
+function buildDiscountPayload(): CodeDiscount | undefined {
+  if (formValue.value.type !== 'discount') return undefined
+  const dtype = formValue.value.discountType as 'percentage' | 'threshold' | 'fixed'
+  const val = Number(formValue.value.discountValue)
+  const thr = Number(formValue.value.discountThreshold)
   const payload: CodeDiscount = { type: dtype, value: val }
   if (dtype === 'threshold') payload.threshold = thr
   return payload
@@ -138,6 +147,9 @@ async function handleSave() {
   } catch {
     return false
   }
+  // 前端校验 discount，不通过直接拦截不发请求
+  if (!validateDiscount()) return false
+
   saving.value = true
   try {
     const discount = buildDiscountPayload()
