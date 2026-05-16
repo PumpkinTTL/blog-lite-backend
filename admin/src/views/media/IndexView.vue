@@ -184,8 +184,8 @@ const columns: DataTableColumns<Media> = [
     render: (row) => formatSize(row.size),
   },
   {
-    title: '哈希', key: 'hash', width: 110, ellipsis: { tooltip: true },
-    render: (row) => row.hash ? h('span', { style: 'font-family:monospace;font-size:12px;color:#94A3B8' }, row.hash.slice(0, 16) + '...') : '-',
+    title: '哈希', key: 'hash', width: 130, ellipsis: { tooltip: true },
+    render: (row) => row.hash ? h('span', { style: 'font-family:monospace;font-size:12px;color:#94A3B8' }, row.hash) : '-',
   },
   {
     title: '存储', key: 'storageType', width: 75,
