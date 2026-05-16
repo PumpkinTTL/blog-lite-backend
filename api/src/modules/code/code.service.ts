@@ -42,6 +42,7 @@ export class CodeService {
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       creatorId,
       metadata: dto.metadata as any,
+      discount: dto.type === 'discount' ? (dto.discount as any) : null,
     });
 
     await this.codeRepo.save(codeEntity);
@@ -174,6 +175,7 @@ export class CodeService {
 
     if (dto.status) code.status = dto.status;
     if (dto.metadata) code.metadata = dto.metadata;
+    if (dto.discount !== undefined) code.discount = dto.discount as any;
 
     return this.codeRepo.save(code);
   }
@@ -196,6 +198,7 @@ export class CodeService {
           maxUses: dto.maxUses,
           expiresAt: dto.expiresAt,
           metadata: dto.metadata,
+          discount: dto.discount,
         },
         creatorId,
       ),
@@ -215,6 +218,24 @@ export class CodeService {
    */
   async batchRemove(ids: number[]): Promise<void> {
     await this.codeRepo.delete(ids);
+  }
+
+  /**
+   * 获取所有使用日志（分页，支持关联码信息）
+   */
+  async findAllUsageLogs(page = 1, pageSize = 20, keyword?: string) {
+    const qb = this.usageLogRepo.createQueryBuilder('log')
+      .leftJoinAndSelect('log.code', 'c')
+      .orderBy('log.usedAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    if (keyword) {
+      qb.andWhere('c.code LIKE :keyword', { keyword: `%${keyword}%` });
+    }
+
+    const [list, total] = await qb.getManyAndCount();
+    return { list, total, page, pageSize };
   }
 
   /**

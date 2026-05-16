@@ -47,6 +47,16 @@ export class CodeEntity {
   @Column({ type: 'json', nullable: true, comment: '扩展字段' })
   metadata: Record<string, unknown> | null;
 
+  /**
+   * 优惠信息（仅 discount 类型使用）
+   * { type: 'percentage'|'threshold'|'fixed', value: number, threshold?: number }
+   * percentage: 打折，value = 折扣比例（如 0.8 = 八折）
+   * threshold: 满减，value = 减免金额，threshold = 最低消费金额
+   * fixed: 立减，value = 减免金额
+   */
+  @Column({ type: 'json', nullable: true, comment: '优惠信息（仅 discount 类型）' })
+  discount: { type: 'percentage' | 'threshold' | 'fixed'; value: number; threshold?: number } | null;
+
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })
   createdAt: Date;
 

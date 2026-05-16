@@ -46,6 +46,23 @@ export class CodeController {
   }
 
   /**
+   * 获取所有使用日志（分页）
+   */
+  @Get('usage-logs')
+  async allUsageLogs(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('keyword') keyword?: string,
+  ) {
+    const data = await this.codeService.findAllUsageLogs(
+      Math.max(parseInt(page || '1'), 1),
+      Math.min(parseInt(pageSize || '20'), 100),
+      keyword,
+    );
+    return { success: true, data, message: 'ok' };
+  }
+
+  /**
    * 获取码详情
    */
   @Get(':id')

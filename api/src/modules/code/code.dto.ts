@@ -1,4 +1,24 @@
-import { IsString, IsEnum, IsInt, IsOptional, IsDateString, IsObject, IsArray, Min } from 'class-validator';
+import { IsString, IsEnum, IsInt, IsOptional, IsDateString, IsObject, IsArray, IsNumber, Min, ValidateIf } from 'class-validator';
+
+/**
+ * 优惠信息
+ * percentage: 打折，value = 折扣比例（如 0.8 = 八折）
+ * threshold: 满减，value = 减免金额，threshold = 最低消费金额
+ * fixed: 立减，value = 减免金额
+ */
+export class DiscountDto {
+  @IsEnum(['percentage', 'threshold', 'fixed'])
+  type: 'percentage' | 'threshold' | 'fixed';
+
+  @IsNumber()
+  @Min(0)
+  value: number;
+
+  @ValidateIf((o) => o.type === 'threshold')
+  @IsNumber()
+  @Min(0)
+  threshold?: number;
+}
 
 export class CreateCodeDto {
   @IsString()
@@ -21,6 +41,10 @@ export class CreateCodeDto {
   @IsObject()
   @IsOptional()
   metadata?: Record<string, unknown>;
+
+  @ValidateIf((o) => o.type === 'discount')
+  @IsObject()
+  discount?: { type: 'percentage' | 'threshold' | 'fixed'; value: number; threshold?: number };
 }
 
 export class UpdateCodeDto {
@@ -31,6 +55,10 @@ export class UpdateCodeDto {
   @IsObject()
   @IsOptional()
   metadata?: Record<string, unknown>;
+
+  @IsObject()
+  @IsOptional()
+  discount?: { type: 'percentage' | 'threshold' | 'fixed'; value: number; threshold?: number };
 }
 
 export class VerifyCodeDto {
@@ -63,6 +91,10 @@ export class BatchCreateCodeDto {
   @IsObject()
   @IsOptional()
   metadata?: Record<string, unknown>;
+
+  @ValidateIf((o) => o.type === 'discount')
+  @IsObject()
+  discount?: { type: 'percentage' | 'threshold' | 'fixed'; value: number; threshold?: number };
 }
 
 export class BatchIdsDto {
