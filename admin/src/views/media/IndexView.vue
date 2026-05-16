@@ -153,7 +153,7 @@ async function handleBatchDelete() {
 }
 
 const columns: DataTableColumns<Media> = [
-  { type: 'selection' },
+  { type: 'selection', width: 40 },
   { title: 'ID', key: 'id', width: 60 },
   {
     title: '预览', key: 'preview', width: 80,
@@ -164,7 +164,7 @@ const columns: DataTableColumns<Media> = [
           width: 48,
           height: 48,
           objectFit: 'cover',
-          style: 'border-radius: 4px; cursor: pointer',
+          style: 'border-radius: 4px; cursor: pointer; display: block',
           previewSrc: resolveFileUrl(row.url),
           alt: row.originalName,
         })
@@ -174,17 +174,21 @@ const columns: DataTableColumns<Media> = [
       }, [h(NIcon, { size: 24, color: '#94A3B8' }, { default: () => h(DocumentOutline) })])
     },
   },
-  { title: '文件名', key: 'originalName', ellipsis: { tooltip: true }, minWidth: 160 },
+  { title: '文件名', key: 'originalName', ellipsis: { tooltip: true }, minWidth: 140, width: 180 },
   {
-    title: '类型', key: 'mimeType', width: 120, ellipsis: { tooltip: true },
+    title: '类型', key: 'mimeType', width: 110, ellipsis: { tooltip: true },
     render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.mimeType }),
   },
   {
-    title: '大小', key: 'size', width: 100,
+    title: '大小', key: 'size', width: 90,
     render: (row) => formatSize(row.size),
   },
   {
-    title: '存储', key: 'storageType', width: 80,
+    title: '哈希', key: 'hash', width: 110, ellipsis: { tooltip: true },
+    render: (row) => row.hash ? h('span', { style: 'font-family:monospace;font-size:12px;color:#94A3B8' }, row.hash.slice(0, 16) + '...') : '-',
+  },
+  {
+    title: '存储', key: 'storageType', width: 75,
     render: (row) => h(NTag, {
       size: 'small',
       type: row.storageType === 'oss' ? 'info' : 'default',
@@ -197,18 +201,20 @@ const columns: DataTableColumns<Media> = [
     render: (row) => row.ossPlatform ? h(NTag, { size: 'small', type: 'success', round: true, bordered: false }, { default: () => ossPlatformLabel[row.ossPlatform] || row.ossPlatform }) : '-',
   },
   {
-    title: '上传者', key: 'uploader', width: 100,
+    title: '上传者', key: 'uploader', width: 90,
     render: (row) => row.uploader?.nickname || row.uploader?.username || '-',
   },
   {
-    title: '创建时间', key: 'createdAt', width: 170,
+    title: '创建时间', key: 'createdAt', width: 165,
     render: (row) => new Date(row.createdAt).toLocaleString('zh-CN'),
   },
   {
     title: '操作', key: 'actions', width: 80,
-    render: (row) => h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
-      default: () => '删除', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
-    }),
+    render: (row) => h('div', { style: 'display:flex;align-items:center;justify-content:center;height:100%' }, [
+      h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
+        default: () => '删除', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+      }),
+    ]),
   },
 ]
 

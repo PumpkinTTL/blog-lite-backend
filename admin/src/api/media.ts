@@ -6,6 +6,7 @@ export interface Media {
   originalName: string
   mimeType: string
   size: number
+  hash: string
   url: string
   storageType: 'local' | 'oss'
   ossPlatform: 'aliyun' | 'tencent' | 'cloudflare' | 'backblaze' | null
