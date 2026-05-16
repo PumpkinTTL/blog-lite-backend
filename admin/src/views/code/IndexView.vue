@@ -64,7 +64,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     updateApi: updateCode,
     deleteApi: deleteCode,
     deleteContent: (row) => `确定删除激活码「${row.code}」？`,
-    defaultForm: () => ({ type: 'activation', count: 1, maxUses: 1, expiresAt: '', discountType: 'fixed', discountValue: '', discountThreshold: '' }),
+    defaultForm: () => ({ type: 'activation', count: 1, maxUses: 1, expiresAt: '', discountType: 'fixed', discountValue: null, discountThreshold: null }),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) {
@@ -83,8 +83,8 @@ function openEdit(row: Code) {
     expiresAt: r.expiresAt || '',
     status: r.status,
     discountType: d?.type || 'fixed',
-    discountValue: d?.value != null ? String(d.value) : '',
-    discountThreshold: d?.threshold != null ? String(d.threshold) : '',
+    discountValue: d?.value ?? null,
+    discountThreshold: d?.threshold ?? null,
   }))
 }
 
@@ -105,8 +105,30 @@ function handleReset() {
 function buildDiscountPayload(): CodeDiscount | undefined {
   if (formValue.value.type !== 'discount') return undefined
   const dtype = formValue.value.discountType as 'percentage' | 'threshold' | 'fixed'
-  const payload: CodeDiscount = { type: dtype, value: Number(formValue.value.discountValue) || 0 }
-  if (dtype === 'threshold') payload.threshold = Number(formValue.value.discountThreshold) || 0
+  const val = Number(formValue.value.discountValue)
+  const thr = Number(formValue.value.discountThreshold)
+
+  if (!val || val <= 0) {
+    message.warning('优惠金额/比例必须为正数')
+    return undefined as any
+  }
+  if (dtype === 'percentage' && val > 1) {
+    message.warning('折扣比例不能超过 1（如 0.8 = 八折）')
+    return undefined as any
+  }
+  if (dtype === 'threshold') {
+    if (!thr || thr <= 0) {
+      message.warning('满减门槛必须为正数')
+      return undefined as any
+    }
+    if (val >= thr) {
+      message.warning('减免金额不能大于等于满减门槛')
+      return undefined as any
+    }
+  }
+
+  const payload: CodeDiscount = { type: dtype, value: val }
+  if (dtype === 'threshold') payload.threshold = thr
   return payload
 }
 
@@ -405,17 +427,17 @@ function handleTabChange(tab: string) {
             <n-select v-model:value="formValue.discountType" :options="discountTypeOptions" placeholder="选择优惠类型" />
           </n-form-item>
           <n-form-item v-if="formValue.discountType === 'percentage'" label="折扣比例" path="discountValue">
-            <n-input v-model:value="formValue.discountValue" placeholder="如 0.8 = 八折，范围 0.01~1" />
+            <n-input-number v-model:value="formValue.discountValue" placeholder="如 0.8 = 八折" :min="0.01" :max="1" :step="0.01" :precision="2" style="width: 100%" />
           </n-form-item>
           <n-form-item v-if="formValue.discountType === 'fixed'" label="立减金额" path="discountValue">
-            <n-input v-model:value="formValue.discountValue" placeholder="减免金额" />
+            <n-input-number v-model:value="formValue.discountValue" placeholder="减免金额" :min="0.01" :step="1" :precision="2" style="width: 100%" />
           </n-form-item>
           <template v-if="formValue.discountType === 'threshold'">
             <n-form-item label="满减门槛" path="discountThreshold">
-              <n-input v-model:value="formValue.discountThreshold" placeholder="最低消费金额" />
+              <n-input-number v-model:value="formValue.discountThreshold" placeholder="最低消费金额" :min="0.01" :step="1" :precision="2" style="width: 100%" />
             </n-form-item>
             <n-form-item label="减免金额" path="discountValue">
-              <n-input v-model:value="formValue.discountValue" placeholder="减免金额" />
+              <n-input-number v-model:value="formValue.discountValue" placeholder="减免金额（必须小于门槛）" :min="0.01" :step="1" :precision="2" style="width: 100%" />
             </n-form-item>
           </template>
         </template>

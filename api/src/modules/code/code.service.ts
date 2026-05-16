@@ -21,6 +21,9 @@ export class CodeService {
    * 生成邀请码/激活码
    */
   async createCode(dto: CreateCodeDto, creatorId?: number): Promise<CodeEntity> {
+    // 校验 discount
+    this.validateDiscount(dto.type, dto.discount as any);
+
     // 生成 AAAA-BBBB-CCCC-DDDD 格式码（4 组各 4 个大写字母）
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
     const generateSegment = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
@@ -175,9 +178,39 @@ export class CodeService {
 
     if (dto.status) code.status = dto.status;
     if (dto.metadata) code.metadata = dto.metadata;
-    if (dto.discount !== undefined) code.discount = dto.discount as any;
+    if (dto.discount !== undefined) {
+      this.validateDiscount(code.type, dto.discount as any);
+      code.discount = dto.discount as any;
+    }
 
     return this.codeRepo.save(code);
+  }
+
+  /**
+   * 校验 discount 逻辑
+   */
+  private validateDiscount(
+    type: string,
+    discount?: { type?: string; value?: number; threshold?: number } | null,
+  ) {
+    if (type !== 'discount' || !discount) return;
+
+    if (typeof discount.value !== 'number' || isNaN(discount.value) || discount.value <= 0) {
+      throw new BadRequestException('优惠金额/比例必须为正数');
+    }
+
+    if (discount.type === 'percentage' && discount.value > 1) {
+      throw new BadRequestException('折扣比例不能超过 1（如 0.8 = 八折）');
+    }
+
+    if (discount.type === 'threshold') {
+      if (typeof discount.threshold !== 'number' || isNaN(discount.threshold) || discount.threshold <= 0) {
+        throw new BadRequestException('满减门槛必须为正数');
+      }
+      if (discount.value >= discount.threshold) {
+        throw new BadRequestException('减免金额不能大于等于满减门槛');
+      }
+    }
   }
 
   /**
