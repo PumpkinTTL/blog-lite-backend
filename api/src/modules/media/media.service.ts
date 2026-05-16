@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { extname } from 'node:path';
 import { In, Repository } from 'typeorm';
 import { applyFilters } from '../../common/utils/apply-filters';
@@ -47,16 +47,32 @@ export class MediaService {
   ) {
     const storageType = options?.storageType ?? 'local';
     const ossPlatform: OssPlatform = storageType === 'oss' ? (options?.ossPlatform ?? null) : null;
+
+    // 1. 计算文件哈希
+    const hash = this.computeHash(file.buffer);
+
+    // 2. 秒传：相同哈希直接返回已有记录
+    if (storageType === 'local') {
+      const existing = await this.mediaRepo.findOne({ where: { hash, storageType: 'local' } });
+      if (existing) {
+        this.logger.log(`秒传命中: ${file.originalname} -> ${existing.id} (hash: ${hash})`);
+        return existing;
+      }
+    }
+
+    // 3. 存储文件
     const originalName = this.decodeFilename(file.originalname);
     const filename = this.generateFilename(originalName);
     const provider = this.createStorageProvider(storageType, ossPlatform);
     const url = await provider.upload(file.buffer, filename, file.mimetype);
 
+    // 4. 入库
     const media = this.mediaRepo.create({
       filename,
       originalName,
       mimeType: file.mimetype,
       size: file.size,
+      hash,
       url,
       storageType,
       ossPlatform,
@@ -72,7 +88,8 @@ export class MediaService {
   ) {
     const result: MediaEntity[] = [];
     for (const file of files) {
-      result.push(await this.upload(file, uploaderId, options));
+      const media = await this.upload(file, uploaderId, options);
+      result.push(media);
     }
     return result;
   }
@@ -117,6 +134,10 @@ export class MediaService {
   private generateFilename(originalName: string): string {
     const ext = extname(originalName) || '';
     return `${Date.now()}-${randomUUID()}${ext}`;
+  }
+
+  private computeHash(buffer: Buffer): string {
+    return createHash('sha256').update(buffer).digest('hex');
   }
 
   private createStorageProvider(storageType: StorageType, ossPlatform: OssPlatform): StorageProvider {

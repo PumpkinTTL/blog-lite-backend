@@ -14,6 +14,10 @@ export class CreateMediaDto {
   @IsPositive()
   size: number;
 
+  @IsString()
+  @IsOptional()
+  hash?: string;
+
   @IsUrl()
   url: string;
 

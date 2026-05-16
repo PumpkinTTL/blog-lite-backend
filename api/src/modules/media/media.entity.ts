@@ -5,12 +5,14 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { UserEntity } from '../user/user.entity';
 
 export type StorageType = 'local' | 'oss';
 export type OssPlatform = 'aliyun' | 'tencent' | 'cloudflare' | 'backblaze' | null;
 
+@Index('idx_media_hash', ['hash'])
 @Entity('media')
 export class MediaEntity {
   @PrimaryGeneratedColumn({ comment: '素材 ID' })
@@ -27,6 +29,9 @@ export class MediaEntity {
 
   @Column({ type: 'bigint', comment: '文件大小（字节）' })
   size: number;
+
+  @Column({ type: 'char', length: 64, comment: '文件 SHA256 哈希' })
+  hash: string;
 
   @Column({ type: 'varchar', length: 500, comment: '访问 URL' })
   url: string;
