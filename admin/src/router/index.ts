@@ -57,7 +57,7 @@ const router = createRouter({
           path: 'media',
           name: 'media',
           component: () => import('../views/media/IndexView.vue'),
-          meta: { title: '素材管理' },
+          meta: { title: '文件管理' },
         },
         {
           path: 'users',

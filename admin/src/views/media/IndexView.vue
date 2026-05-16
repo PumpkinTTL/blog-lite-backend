@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { NCard, NButton, NGrid, NGi, NIcon, NUpload, NEmpty, NSpin, NSpace, NInput, NPagination, useMessage, useDialog } from 'naive-ui'
-import type { UploadFileInfo } from 'naive-ui'
-import { CloudUploadOutline, TrashOutline, ImageOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getMediaList, uploadMedia, deleteMedia } from '../../api/media'
+import { ref, h, onMounted } from 'vue'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NPagination, NUpload, NImage, NSelect, useMessage, useDialog } from 'naive-ui'
+import type { DataTableColumns, UploadFileInfo } from 'naive-ui'
+import { CloudUploadOutline, TrashOutline, SearchOutline, RefreshOutline, DocumentOutline } from '@vicons/ionicons5'
+import { getMediaList, uploadMedia, deleteMedia, batchDeleteMedia } from '../../api/media'
 import type { Media } from '../../api/media'
 
 const message = useMessage()
@@ -14,7 +14,44 @@ const searchId = ref('')
 const searchKeyword = ref('')
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(5)
+const pageSize = ref(10)
+const checkedRowKeys = ref<number[]>([])
+const uploadFileList = ref<UploadFileInfo[]>([])
+const uploadStorageType = ref<'local' | 'oss'>('local')
+const uploadOssPlatform = ref<Media['ossPlatform']>('aliyun')
+
+const uploadStorageOptions = [
+  { label: '本地', value: 'local' },
+  { label: 'OSS', value: 'oss' },
+]
+
+const uploadOssPlatformOptions = [
+  { label: '阿里云', value: 'aliyun' },
+  { label: '腾讯云', value: 'tencent' },
+  { label: 'Cloudflare', value: 'cloudflare' },
+  { label: 'Backblaze', value: 'backblaze' },
+]
+
+function formatSize(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+function isImage(mimeType: string): boolean {
+  return mimeType?.startsWith('image/')
+}
+
+function resolveFileUrl(url: string): string {
+  if (/^https?:\/\//.test(url)) return url
+  const base = import.meta.env.VITE_API_BASE_URL || window.location.origin
+  return new URL(url, base).toString()
+}
+
+const storageTypeLabel: Record<string, string> = { local: '本地', oss: 'OSS' }
+const ossPlatformLabel: Record<string, string> = { aliyun: '阿里云', tencent: '腾讯云', cloudflare: 'Cloudflare', backblaze: 'Backblaze' }
 
 async function loadMedia() {
   loading.value = true
@@ -33,7 +70,7 @@ async function loadMedia() {
       mediaList.value = Array.isArray(payload) ? payload : []
     }
   } catch {
-    message.error('加载素材失败')
+    message.error('加载文件列表失败')
   } finally {
     loading.value = false
   }
@@ -65,18 +102,23 @@ function handlePageSizeChange(s: number) {
 async function handleUpload({ file }: { file: UploadFileInfo }) {
   if (!file.file) return
   try {
-    await uploadMedia(file.file)
+    await uploadMedia(file.file, {
+      storageType: uploadStorageType.value,
+      ossPlatform: uploadStorageType.value === 'oss' ? uploadOssPlatform.value : null,
+    })
     message.success('上传成功')
+    uploadFileList.value = []
     loadMedia()
   } catch (e: any) {
     message.error(e.message || '上传失败')
+    uploadFileList.value = []
   }
 }
 
 function handleDelete(item: Media) {
   dialog.warning({
     title: '确认删除',
-    content: `确定删除素材�?{item.name}」？`,
+    content: `确定删除文件「${item.originalName}」？`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -91,23 +133,93 @@ function handleDelete(item: Media) {
   })
 }
 
+async function handleBatchDelete() {
+  if (checkedRowKeys.value.length === 0) { message.warning('请先选择要删除的文件'); return }
+  dialog.warning({
+    title: '批量删除',
+    content: `确定要删除选中的 ${checkedRowKeys.value.length} 个文件吗？`,
+    positiveText: '删除', negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await batchDeleteMedia(checkedRowKeys.value)
+        message.success('批量删除成功')
+        checkedRowKeys.value = []
+        loadMedia()
+      } catch (e: any) {
+        message.error(e.message || '批量删除失败')
+      }
+    },
+  })
+}
+
+const columns: DataTableColumns<Media> = [
+  { type: 'selection' },
+  { title: 'ID', key: 'id', width: 60 },
+  {
+    title: '预览', key: 'preview', width: 80,
+    render: (row) => {
+      if (isImage(row.mimeType)) {
+        return h(NImage, {
+          src: resolveFileUrl(row.url),
+          width: 48,
+          height: 48,
+          objectFit: 'cover',
+          style: 'border-radius: 4px; cursor: pointer',
+          previewSrc: resolveFileUrl(row.url),
+          alt: row.originalName,
+        })
+      }
+      return h('div', {
+        style: 'width:48px;height:48px;border-radius:4px;background:rgba(148,163,184,0.08);display:flex;align-items:center;justify-content:center',
+      }, [h(NIcon, { size: 24, color: '#94A3B8' }, { default: () => h(DocumentOutline) })])
+    },
+  },
+  { title: '文件名', key: 'originalName', ellipsis: { tooltip: true }, minWidth: 160 },
+  {
+    title: '类型', key: 'mimeType', width: 120, ellipsis: { tooltip: true },
+    render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.mimeType }),
+  },
+  {
+    title: '大小', key: 'size', width: 100,
+    render: (row) => formatSize(row.size),
+  },
+  {
+    title: '存储', key: 'storageType', width: 80,
+    render: (row) => h(NTag, {
+      size: 'small',
+      type: row.storageType === 'oss' ? 'info' : 'default',
+      round: true,
+      bordered: false,
+    }, { default: () => storageTypeLabel[row.storageType] || row.storageType }),
+  },
+  {
+    title: '平台', key: 'ossPlatform', width: 100,
+    render: (row) => row.ossPlatform ? h(NTag, { size: 'small', type: 'success', round: true, bordered: false }, { default: () => ossPlatformLabel[row.ossPlatform] || row.ossPlatform }) : '-',
+  },
+  {
+    title: '上传者', key: 'uploader', width: 100,
+    render: (row) => row.uploader?.nickname || row.uploader?.username || '-',
+  },
+  {
+    title: '创建时间', key: 'createdAt', width: 170,
+    render: (row) => new Date(row.createdAt).toLocaleString('zh-CN'),
+  },
+  {
+    title: '操作', key: 'actions', width: 80,
+    render: (row) => h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
+      default: () => '删除', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+    }),
+  },
+]
+
 onMounted(loadMedia)
 </script>
 
 <template>
   <div class="page-wrapper">
-    <div class="page-header">
-      <h2 class="page-title">素材管理</h2>
-      <n-upload :show-file-list="false" :custom-request="({ file }) => handleUpload({ file })" accept="image/*">
-        <n-button type="primary">
-          <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
-          上传素材
-        </n-button>
-      </n-upload>
-    </div>
     <n-space class="search-bar" :size="12" align="center">
       <n-input v-model:value="searchId" placeholder="ID" clearable style="width: 100px" @keyup.enter="handleSearch" />
-      <n-input v-model:value="searchKeyword" placeholder="搜索..." clearable @keyup.enter="handleSearch" />
+      <n-input v-model:value="searchKeyword" placeholder="搜索文件名..." clearable @keyup.enter="handleSearch" />
       <n-button type="primary" @click="handleSearch">
         <template #icon><n-icon><SearchOutline /></n-icon></template>
         搜索
@@ -116,87 +228,30 @@ onMounted(loadMedia)
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         重置
       </n-button>
+      <n-select v-model:value="uploadStorageType" :options="uploadStorageOptions" style="width: 100px" />
+      <n-select v-if="uploadStorageType === 'oss'" v-model:value="uploadOssPlatform" :options="uploadOssPlatformOptions" style="width: 130px" />
+      <n-upload v-model:file-list="uploadFileList" :show-file-list="false" :custom-request="({ file }) => handleUpload({ file })">
+        <n-button type="primary">
+          <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
+          上传文件
+        </n-button>
+      </n-upload>
+      <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">
+        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        批量删除
+      </n-button>
     </n-space>
 
-    <n-card :bordered="false" class="media-card">
-      <n-spin :show="loading">
-        <n-empty v-if="mediaList.length === 0 && !loading" description="暂无素材">
-          <template #icon>
-            <n-icon :size="48" :depth="3"><ImageOutline /></n-icon>
-          </template>
-        </n-empty>
-
-        <n-grid :x-gap="12" :y-gap="12" :cols="6" responsive="screen" item-responsive v-else>
-          <n-gi v-for="item in mediaList" :key="item.id" span="6 m:3 l:2 s:1">
-            <div class="media-item">
-              <div class="media-thumb">
-                <img :src="item.url" :alt="item.name" />
-              </div>
-              <div class="media-footer">
-                <span class="media-name">{{ item.name }}</span>
-                <n-button quaternary circle size="tiny" type="error" @click="handleDelete(item)">
-                  <template #icon><n-icon size="14"><TrashOutline /></n-icon></template>
-                </n-button>
-              </div>
-            </div>
-          </n-gi>
-        </n-grid>
-      </n-spin>
+    <n-card :bordered="false" class="table-card">
+      <n-data-table :columns="columns" :data="mediaList" :loading="loading" :bordered="false"
+        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
     </n-card>
   </div>
 </template>
 
 <style scoped>
-.media-card {
-  border-radius: 12px;
-}
-
-.media-item {
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  transition: box-shadow 0.2s;
-}
-
-.media-item:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.media-thumb {
-  aspect-ratio: 1;
-  background: rgba(148, 163, 184, 0.06);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.media-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.media-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 10px;
-}
-
-.media-name {
-  font-size: 12px;
-  color: #94A3B8;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 120px;
-}
-
-.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
-
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>
