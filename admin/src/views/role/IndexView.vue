@@ -10,7 +10,7 @@ import { useCrudList } from '../../composables/useCrudList'
 const formRef = ref<FormInst | null>(null)
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch, handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete } =
+  handleSearch, handleReset, openCreate, openEdit, handleSave, handleDelete } =
   useCrudList<Role>({
     loadApi: getRoles,
     createApi: createRole,
@@ -19,10 +19,6 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     deleteContent: (row) => `确定删除角色「${row.displayName}」？`,
     defaultForm: () => ({ name: '', displayName: '', description: '' }),
   })
-
-async function handleSave() {
-  return _handleSave(() => formRef!.validate())
-}
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入角色标识', trigger: ['input', 'blur'] }],
@@ -42,7 +38,7 @@ const columns: DataTableColumns<Role> = [
     render: (row) =>
       h(NSpace, { size: 'small' }, {
         default: () => [
-          h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, {
+          h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, displayName: r.displayName, description: r.description })) }, {
             default: () => '编辑',
             icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
           }),
@@ -94,7 +90,7 @@ const columns: DataTableColumns<Role> = [
       :positive-text="saving ? '提交中...' : '确认'"
       :negative-text="saving ? undefined : '取消'"
       :loading="saving"
-      @positive-click="handleSave"
+      @positive-click="() => handleSave(() => formRef?.validate())"
     >
       <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="top">
         <n-form-item label="角色标识" path="name">

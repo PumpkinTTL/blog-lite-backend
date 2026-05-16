@@ -66,7 +66,7 @@ const columns: DataTableColumns<Announcement> = [
     title: '操作', key: 'actions', width: 140,
     render: (row) => h(NSpace, { size: 'small' }, {
       default: () => [
-        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, {
+        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ title: r.title, content: r.content, status: r.status, sortOrder: r.sortOrder })) }, {
           default: () => '编辑', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
         }),
         h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
@@ -108,7 +108,13 @@ const columns: DataTableColumns<Announcement> = [
       <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="top">
         <n-form-item label="标题" path="title"><n-input v-model:value="formValue.title" placeholder="公告标题" /></n-form-item>
         <n-form-item label="内容" path="content"><n-input v-model:value="formValue.content" type="textarea" placeholder="公告内容" :rows="4" /></n-form-item>
-        <n-form-item label="排序权重"><n-input v-model:value="formValue.sortOrder" placeholder="数字越小越靠前" /></n-form-item>
+        <n-form-item label="排序权重" path="sortOrder"><n-input-number v-model:value="formValue.sortOrder" placeholder="数字越小越靠前" :min="0" style="width: 100%" /></n-form-item>
+        <n-form-item label="状态" path="status">
+          <n-select v-model:value="formValue.status" :options="[
+            { label: '显示', value: 1 },
+            { label: '隐藏', value: 0 },
+          ]" />
+        </n-form-item>
       </n-form>
     </n-modal>
   </div>

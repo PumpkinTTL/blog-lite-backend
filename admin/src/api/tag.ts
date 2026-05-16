@@ -5,7 +5,6 @@ export interface Tag {
   name: string
   slug: string
   createdAt: string
-  updatedAt: string
 }
 
 export function getTags(params?: { id?: number; keyword?: string }) {

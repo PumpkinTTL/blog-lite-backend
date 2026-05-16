@@ -21,7 +21,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
   })
 
 async function handleSave() {
-  return _handleSave(() => formRef!.validate())
+  return _handleSave(() => formRef?.validate())
 }
 
 const rules: FormRules = {
@@ -42,7 +42,7 @@ const columns: DataTableColumns<Category> = [
     render: (row) =>
       h(NSpace, { size: 'small' }, {
         default: () => [
-          h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, {
+          h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, slug: r.slug, description: r.description ?? '' })) }, {
             default: () => '编辑',
             icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
           }),

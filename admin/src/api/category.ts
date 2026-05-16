@@ -7,7 +7,6 @@ export interface Category {
   description: string | null
   parentId: number | null
   createdAt: string
-  updatedAt: string
 }
 
 export function getCategories(params?: { id?: number; keyword?: string }) {

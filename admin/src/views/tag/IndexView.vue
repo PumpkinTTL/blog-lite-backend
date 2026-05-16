@@ -42,7 +42,7 @@ const columns: DataTableColumns<Tag> = [
     render: (row) =>
       h(NSpace, { size: 'small' }, {
         default: () => [
-          h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, {
+          h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, slug: r.slug })) }, {
             default: () => '编辑',
             icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
           }),

@@ -55,7 +55,10 @@ async function handleSave() {
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入站点名称', trigger: ['input', 'blur'] }],
-  url: [{ required: true, message: '请输入站点 URL', trigger: ['input', 'blur'] }],
+  url: [
+    { required: true, message: '请输入站点 URL', trigger: ['input', 'blur'] },
+    { pattern: /^https?:\/\/.+/, message: '请输入有效的 URL（以 http:// 或 https:// 开头）', trigger: ['blur'] },
+  ],
 }
 
 const columns: DataTableColumns<FriendLink> = [
@@ -75,7 +78,15 @@ const columns: DataTableColumns<FriendLink> = [
     title: '操作', key: 'actions', width: 140,
     render: (row) => h(NSpace, { size: 'small' }, {
       default: () => [
-        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, {
+        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({
+          name: r.name,
+          url: r.url,
+          logo: r.logo,
+          description: r.description,
+          status: r.status,
+          sortOrder: r.sortOrder,
+          postId: r.postId,
+        })) }, {
           default: () => '编辑', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
         }),
         h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
@@ -119,6 +130,12 @@ const columns: DataTableColumns<FriendLink> = [
         <n-form-item label="站点 URL" path="url"><n-input v-model:value="formValue.url" placeholder="https://example.com" /></n-form-item>
         <n-form-item label="Logo URL"><n-input v-model:value="formValue.logo" placeholder="可选" /></n-form-item>
         <n-form-item label="描述"><n-input v-model:value="formValue.description" type="textarea" placeholder="可选" :rows="2" /></n-form-item>
+        <n-form-item label="状态" path="status">
+          <n-select v-model:value="formValue.status" :options="[
+            { label: '显示', value: 1 },
+            { label: '隐藏', value: 0 },
+          ]" />
+        </n-form-item>
         <n-form-item label="绑定文章 ID"><n-input v-model:value="formValue.postId" placeholder="留空为全局友链，填文章 ID 绑定到指定文章" clearable /></n-form-item>
         <n-form-item label="排序权重"><n-input v-model:value="formValue.sortOrder" placeholder="数字越小越靠前" /></n-form-item>
       </n-form>

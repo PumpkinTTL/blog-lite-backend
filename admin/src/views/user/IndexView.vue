@@ -92,6 +92,9 @@ async function handleSave() {
     message.warning('新建用户必须设置密码')
     return false
   }
+  if (!formValue.value.email) {
+    delete formValue.value.email
+  }
   return _handleSave()
 }
 
@@ -118,6 +121,8 @@ onMounted(() => {
 const rules: FormRules = {
   username: [{ required: true, message: '请输入账号', trigger: ['input', 'blur'] }],
   nickname: [{ required: true, message: '请输入昵称', trigger: ['input', 'blur'] }],
+  email: [{ type: 'email', message: '请输入正确的邮箱格式', trigger: ['input', 'blur'] }],
+  password: [{ min: 6, message: '密码至少 6 位', trigger: ['input', 'blur'] }],
 }
 
 const columns: DataTableColumns<User> = [
