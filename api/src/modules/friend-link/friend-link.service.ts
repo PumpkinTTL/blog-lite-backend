@@ -32,7 +32,9 @@ export class FriendLinkService {
   }
 
   async update(id: number, data: Partial<FriendLinkEntity>) {
-    await this.repo.update(id, data);
+    // 排除关联字段，只更新纯字段
+    const { post, ...updateData } = data as any;
+    await this.repo.update(id, updateData);
     return this.findById(id);
   }
 

@@ -6,8 +6,12 @@ import {
   UpdateDateColumn,
   ManyToMany,
   JoinTable,
+  ManyToOne,
+  JoinColumn,
+  Index,
 } from 'typeorm';
 import { RoleEntity } from './role.entity';
+import { CodeEntity } from '../code/code.entity';
 
 @Entity('users')
 export class UserEntity {
@@ -32,6 +36,18 @@ export class UserEntity {
   @Column({ type: 'tinyint', default: 1, comment: '状态 1=正常 0=禁用' })
   status: number;
 
+  @Column({ type: 'int', nullable: true, name: 'register_code_id', comment: '注册时使用的邀请码ID' })
+  registerCodeId: number | null;
+
+  @Column({ type: 'varchar', length: 45, nullable: true, name: 'register_ip', comment: '注册IP' })
+  registerIp: string | null;
+
+  @Column({ type: 'varchar', length: 50, nullable: true, name: 'register_source', comment: '注册来源' })
+  registerSource: string | null;
+
+  @Column({ type: 'datetime', nullable: true, name: 'last_login_at', comment: '最后登录时间' })
+  lastLoginAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })
   createdAt: Date;
 
@@ -45,4 +61,9 @@ export class UserEntity {
     inverseJoinColumn: { name: 'role_id', referencedColumnName: 'id' },
   })
   roles: RoleEntity[];
+
+  // 外键关联到 codes 表
+  @ManyToOne(() => CodeEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'register_code_id' })
+  registerCode: CodeEntity;
 }

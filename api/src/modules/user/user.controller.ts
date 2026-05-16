@@ -3,11 +3,14 @@ import type { Request } from 'express';
 import { UserService } from './user.service';
 import { LoginDto } from './login.dto';
 import { CreateUserDto, UpdateUserDto } from './user.dto';
+import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('user')
 export class UserController {
   constructor(private readonly userService: UserService) {}
+
+  // ===== 管理端登录 =====
 
   @Public()
   @Post('login')
@@ -24,6 +27,53 @@ export class UserController {
       },
       message: '登录成功',
     };
+  }
+
+  // ===== 用户端注册 =====
+
+  @Public()
+  @Post('register')
+  async register(@Body() dto: RegisterDto, @Req() req: Request) {
+    const fingerprint = req.body.fingerprint || '';
+    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const tokenPayload = await this.userService.register(dto, fingerprint, ip);
+
+    return {
+      success: true,
+      data: {
+        ...tokenPayload,
+        tokenType: 'Bearer',
+      },
+      message: '注册成功',
+    };
+  }
+
+  // ===== 用户端登录 =====
+
+  @Public()
+  @Post('client-login')
+  async clientLogin(@Body() dto: ClientLoginDto, @Req() req: Request) {
+    const fingerprint = dto.fingerprint || req.body.fingerprint || '';
+    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const tokenPayload = await this.userService.clientLogin(dto, fingerprint, ip);
+
+    return {
+      success: true,
+      data: {
+        ...tokenPayload,
+        tokenType: 'Bearer',
+      },
+      message: '登录成功',
+    };
+  }
+
+  // ===== 用户端登出 =====
+
+  @Post('logout')
+  async logout(@Req() req: Request) {
+    const userId = parseInt((req as any).user?.sub, 10);
+    await this.userService.logout(userId);
+    return { success: true, message: '登出成功' };
   }
 
   // ===== 管理接口 =====

@@ -6,6 +6,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuthGuard } from './modules/auth/auth.guard';
 import { UserModule } from './modules/user/user.module';
+import { CodeModule } from './modules/code/code.module';
 import { PostModule } from './modules/post/post.module';
 import { CategoryModule } from './modules/category/category.module';
 import { TagModule } from './modules/tag/tag.module';
@@ -69,6 +70,7 @@ import { SettingModule } from './modules/setting/setting.module';
       }),
     }),
     UserModule,
+    CodeModule,
     AuthModule,
     PostModule,
     CategoryModule,

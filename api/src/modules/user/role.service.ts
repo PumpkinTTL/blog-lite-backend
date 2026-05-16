@@ -31,7 +31,9 @@ export class RoleService {
   }
 
   async update(id: number, data: Partial<RoleEntity>) {
-    await this.roleRepo.update(id, data);
+    // 排除关联字段，只更新纯字段
+    const { users, ...updateData } = data as any;
+    await this.roleRepo.update(id, updateData);
     return this.findById(id);
   }
 

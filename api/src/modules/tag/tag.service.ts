@@ -31,7 +31,9 @@ export class TagService {
   }
 
   async update(id: number, data: Partial<TagEntity>) {
-    await this.tagRepo.update(id, data);
+    // 排除关联字段，只更新纯字段
+    const { posts, ...updateData } = data as any;
+    await this.tagRepo.update(id, updateData);
     return this.findById(id);
   }
 
