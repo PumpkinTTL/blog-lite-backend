@@ -15,10 +15,10 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { memoryStorage } from 'multer';
+import { extname } from 'path';
 import { MediaService } from './media.service';
-import { CreateMediaDto, UpdateMediaDto, BatchIdsDto } from './media.dto';
+import { CreateMediaDto, UpdateMediaDto, BatchIdsDto, UploadStorageDto } from './media.dto';
 import type { Request } from 'express';
 
 @Controller('media')
@@ -48,13 +48,7 @@ export class MediaController {
   @Post('upload-many')
   @UseInterceptors(
     FilesInterceptor('files', 20, {
-      storage: diskStorage({
-        destination: join(process.cwd(), 'uploads'),
-        filename: (_req, file, cb) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-          cb(null, uniqueSuffix + extname(file.originalname));
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
       fileFilter: (_req, file, cb) => {
         const allowed = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
@@ -66,13 +60,13 @@ export class MediaController {
       },
     }),
   )
-  async uploadMany(@UploadedFiles() files: Express.Multer.File[], @Req() req: Request) {
+  async uploadMany(@UploadedFiles() files: Express.Multer.File[], @Req() req: Request, @Body() dto: UploadStorageDto) {
     if (!files?.length) {
       throw new BadRequestException('请选择文件');
     }
     const payload = req as { user?: { sub?: string } };
     const uploaderId = parseInt(payload.user?.sub ?? '1', 10);
-    const data = await this.mediaService.uploadMany(files, uploaderId);
+    const data = await this.mediaService.uploadMany(files, uploaderId, dto);
     return { success: true, data, message: '上传成功' };
   }
 
@@ -85,13 +79,7 @@ export class MediaController {
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: join(process.cwd(), 'uploads'),
-        filename: (_req, file, cb) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-          cb(null, uniqueSuffix + extname(file.originalname));
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
       fileFilter: (_req, file, cb) => {
         const allowed = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
@@ -103,13 +91,13 @@ export class MediaController {
       },
     }),
   )
-  async upload(@UploadedFile() file: Express.Multer.File, @Req() req: Request) {
+  async upload(@UploadedFile() file: Express.Multer.File, @Req() req: Request, @Body() dto: UploadStorageDto) {
     if (!file) {
       throw new BadRequestException('请选择文件');
     }
     const payload = req as { user?: { sub?: string } };
     const uploaderId = parseInt(payload.user?.sub ?? '1', 10);
-    const data = await this.mediaService.upload(file, uploaderId);
+    const data = await this.mediaService.upload(file, uploaderId, dto);
     return { success: true, data, message: '上传成功' };
   }
 
