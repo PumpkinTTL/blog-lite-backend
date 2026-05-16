@@ -2,7 +2,7 @@
 import { ref, h, onMounted } from 'vue'
 import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber, NTabs, NTabPane } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
-import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, BanOutline } from '@vicons/ionicons5'
+import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, BanOutline, PricetagOutline, PricetagsOutline } from '@vicons/ionicons5'
 import { getCodes, updateCode, deleteCode, batchCreateCodes, batchDisableCodes, batchDeleteCodes, getAllUsageLogs } from '../../api/code'
 import type { Code, CodeUsageLog, CodeDiscount } from '../../api/code'
 import { useCrudList } from '../../composables/useCrudList'
@@ -42,11 +42,25 @@ const statusLabelMap: Record<string, string> = { active: '有效', used: '已用
 
 const discountTypeLabel: Record<string, string> = { percentage: '打折', threshold: '满减', fixed: '立减' }
 
-function renderDiscount(discount: CodeDiscount | null): string {
+function renderDiscount(discount: CodeDiscount | null) {
   if (!discount) return '-'
-  if (discount.type === 'percentage') return `${discountTypeLabel.percentage} ${(discount.value * 10).toFixed(1)}折`
-  if (discount.type === 'threshold') return `满${discount.threshold}减${discount.value}`
-  return `立减${discount.value}`
+  if (discount.type === 'percentage') {
+    const fold = (discount.value * 10).toFixed(1)
+    return h(NTag, { size: 'small', type: 'warning', round: true, bordered: false }, {
+      icon: () => h(NIcon, { size: 14 }, { default: () => h(PricetagOutline) }),
+      default: () => `${fold}折`,
+    })
+  }
+  if (discount.type === 'threshold') {
+    return h(NTag, { size: 'small', type: 'info', round: true, bordered: false }, {
+      icon: () => h(NIcon, { size: 14 }, { default: () => h(PricetagsOutline) }),
+      default: () => `满${discount.threshold}/减${discount.value}`,
+    })
+  }
+  return h(NTag, { size: 'small', type: 'success', round: true, bordered: false }, {
+    icon: () => h(NIcon, { size: 14 }, { default: () => h(PricetagOutline) }),
+    default: () => `减${discount.value}`,
+  })
 }
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
@@ -77,13 +91,15 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
 
 function openEdit(row: Code) {
   const d = row.discount
+  // percentage 存的是小数，回显转为百分比
+  const displayValue = d?.type === 'percentage' && d.value != null ? Math.round(d.value * 100) : d?.value ?? null
   _openEdit(row, (r) => ({
     type: r.type,
     maxUses: r.maxUses,
     expiresAt: r.expiresAt || '',
     status: r.status,
     discountType: d?.type || 'fixed',
-    discountValue: d?.value ?? null,
+    discountValue: displayValue,
     discountThreshold: d?.threshold ?? null,
   }))
 }
@@ -113,8 +129,9 @@ function validateDiscount(): boolean {
     message.warning('优惠金额/比例必须为正数')
     return false
   }
-  if (dtype === 'percentage' && val > 1) {
-    message.warning('折扣比例不能超过 1（如 0.8 = 八折）')
+  // percentage 输入的是百分比（0~100），100=原价
+  if (dtype === 'percentage' && val >= 100) {
+    message.warning('折扣不能等于或超过原价（输入 80 = 八折）')
     return false
   }
   if (dtype === 'threshold') {
@@ -134,9 +151,11 @@ function validateDiscount(): boolean {
 function buildDiscountPayload(): CodeDiscount | undefined {
   if (formValue.value.type !== 'discount') return undefined
   const dtype = formValue.value.discountType as 'percentage' | 'threshold' | 'fixed'
-  const val = Number(formValue.value.discountValue)
+  const rawVal = Number(formValue.value.discountValue)
   const thr = Number(formValue.value.discountThreshold)
-  const payload: CodeDiscount = { type: dtype, value: val }
+  // percentage: 用户输入百分比（80 = 八折），转为小数 0.8 存库
+  const value = dtype === 'percentage' ? rawVal / 100 : rawVal
+  const payload: CodeDiscount = { type: dtype, value }
   if (dtype === 'threshold') payload.threshold = thr
   return payload
 }
@@ -360,12 +379,6 @@ function handleTabChange(tab: string) {
     <n-tabs v-model:value="activeTab" type="line" @update:value="handleTabChange">
       <!-- ===== Tab 1: 激活码列表 ===== -->
       <n-tab-pane name="codes" tab="激活码管理">
-        <div style="margin-bottom: 16px">
-          <n-button type="primary" @click="openCreate">
-            <template #icon><n-icon><AddOutline /></n-icon></template>
-            新建激活码
-          </n-button>
-        </div>
         <n-space class="search-bar" :size="12" align="center">
           <n-input v-model:value="searchId" placeholder="ID" clearable style="width: 100px" @keyup.enter="handleSearch" />
           <n-input v-model:value="searchKeyword" placeholder="搜索..." clearable @keyup.enter="handleSearch" />
@@ -379,9 +392,10 @@ function handleTabChange(tab: string) {
             <template #icon><n-icon><RefreshOutline /></n-icon></template>
             重置
           </n-button>
-        </n-space>
-
-        <n-space :size="8" style="margin: 12px 0">
+          <n-button type="primary" @click="openCreate">
+            <template #icon><n-icon><AddOutline /></n-icon></template>
+            新建
+          </n-button>
           <n-button :disabled="checkedRowKeys.length === 0" @click="handleBatchDisable">
             <template #icon><n-icon><BanOutline /></n-icon></template>
             批量禁用
@@ -438,8 +452,10 @@ function handleTabChange(tab: string) {
           <n-form-item label="优惠类型" path="discountType">
             <n-select v-model:value="formValue.discountType" :options="discountTypeOptions" placeholder="选择优惠类型" />
           </n-form-item>
-          <n-form-item v-if="formValue.discountType === 'percentage'" label="折扣比例" path="discountValue">
-            <n-input-number v-model:value="formValue.discountValue" placeholder="如 0.8 = 八折" :min="0.01" :max="1" :step="0.01" :precision="2" style="width: 100%" />
+          <n-form-item v-if="formValue.discountType === 'percentage'" label="折扣（输入 80 = 八折）" path="discountValue">
+            <n-input-number v-model:value="formValue.discountValue" placeholder="输入 80 = 八折" :min="1" :max="99" :step="1" style="width: 100%">
+              <template #suffix>%</template>
+            </n-input-number>
           </n-form-item>
           <n-form-item v-if="formValue.discountType === 'fixed'" label="立减金额" path="discountValue">
             <n-input-number v-model:value="formValue.discountValue" placeholder="减免金额" :min="0.01" :step="1" :precision="2" style="width: 100%" />
