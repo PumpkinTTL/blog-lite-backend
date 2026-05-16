@@ -1,10 +1,9 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { CodeEntity, CodeType, CodeStatus } from './code.entity';
 import { CodeUsageLogEntity } from './code-usage-log.entity';
-import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto } from './code.dto';
-import * as crypto from 'crypto';
+import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto, BatchCreateCodeDto, BatchIdsDto } from './code.dto';
 
 @Injectable()
 export class CodeService {
@@ -22,9 +21,11 @@ export class CodeService {
    * 生成邀请码/激活码
    */
   async createCode(dto: CreateCodeDto, creatorId?: number): Promise<CodeEntity> {
-    // 生成 16 位随机码
-    const code = crypto.randomBytes(8).toString('hex').toUpperCase();
-    const codeWithPrefix = dto.type === 'invitation' ? `INVITE-${code}` : code;
+    // 生成 AAAA-BBBB-CCCC-DDDD 格式码（4 组各 4 个大写字母）
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    const generateSegment = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+    const code = `${generateSegment()}-${generateSegment()}-${generateSegment()}-${generateSegment()}`
+    const codeWithPrefix = dto.type === 'invitation' ? `INV-${code}` : code
 
     // 检查是否已存在
     const existing = await this.codeRepo.findOne({ where: { code: codeWithPrefix } });
@@ -182,6 +183,38 @@ export class CodeService {
    */
   async remove(id: number): Promise<void> {
     await this.codeRepo.delete(id);
+  }
+
+  /**
+   * 批量生成码
+   */
+  async batchCreate(dto: BatchCreateCodeDto, creatorId?: number): Promise<CodeEntity[]> {
+    const promises = Array.from({ length: dto.count }, () =>
+      this.createCode(
+        {
+          type: dto.type,
+          maxUses: dto.maxUses,
+          expiresAt: dto.expiresAt,
+          metadata: dto.metadata,
+        },
+        creatorId,
+      ),
+    );
+    return Promise.all(promises);
+  }
+
+  /**
+   * 批量禁用码
+   */
+  async batchDisable(ids: number[]): Promise<void> {
+    await this.codeRepo.update({ id: In(ids) }, { status: 'disabled' });
+  }
+
+  /**
+   * 批量删除码
+   */
+  async batchRemove(ids: number[]): Promise<void> {
+    await this.codeRepo.delete(ids);
   }
 
   /**

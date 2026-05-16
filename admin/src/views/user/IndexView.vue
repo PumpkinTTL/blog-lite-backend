@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination } from 'naive-ui'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getUsers, createUser, updateUser, deleteUser } from '../../api/user'
+import { getUsers, createUser, updateUser, deleteUser, toggleUserStatus } from '../../api/user'
 import type { User } from '../../api/user'
 import { getRoles } from '../../api/role'
 import type { Role } from '../../api/role'
@@ -14,7 +14,7 @@ const formRef = ref<FormInst | null>(null)
 // Pagination
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(5)
 
 // Extra search field
 const searchStatus = ref<number | null>(null)
@@ -103,6 +103,22 @@ function handlePageChange(p: number) {
   _handleSearch()
 }
 
+function handlePageSizeChange(s: number) {
+  pageSize.value = s
+  page.value = 1
+  _handleSearch()
+}
+
+async function handleToggleStatus(row: User) {
+  try {
+    await toggleUserStatus(row.id)
+    message.success(row.status === 1 ? '已禁用用户' : '已启用用户')
+    _handleSearch()
+  } catch (e: any) {
+    message.error(e.message || '操作失败')
+  }
+}
+
 async function loadRoleOptions() {
   try {
     const res = await getRoles()
@@ -143,10 +159,12 @@ const columns: DataTableColumns<User> = [
   {
     title: '状态',
     key: 'status',
-    width: 90,
+    width: 100,
     render: (row) =>
-      h(NTag, { size: 'small', type: row.status === 1 ? 'success' : 'error' }, {
-        default: () => (row.status === 1 ? '正常' : '禁用'),
+      h(NSwitch, {
+        value: row.status === 1,
+        loading: false,
+        onUpdateValue: () => handleToggleStatus(row),
       }),
   },
   { title: '创建时间', key: 'createdAt', width: 170, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') },
@@ -196,8 +214,8 @@ const columns: DataTableColumns<User> = [
 
     <n-card :bordered="false" class="table-card">
       <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" />
-      <div class="pagination-wrap" v-if="total > pageSize">
-        <n-pagination :page="page" :page-size="pageSize" :item-count="total" @update:page="handlePageChange" />
+      <div class="pagination-wrap" v-if="total > 0">
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
     </n-card>
 

@@ -44,6 +44,22 @@ export class SettingService {
     await this.repo.delete(id);
   }
 
+  async findByGroup(group: string) {
+    return this.repo.find({ where: { group }, order: { key: 'ASC' } });
+  }
+
+  async batchUpdateByGroup(group: string, items: Record<string, string>) {
+    const results: SettingEntity[] = [];
+    for (const [key, value] of Object.entries(items)) {
+      const existing = await this.repo.findOne({ where: { key, group } });
+      if (existing) {
+        existing.value = value;
+        results.push(await this.repo.save(existing));
+      }
+    }
+    return results;
+  }
+
   /** 批量更新：接收 { key: value } 对象 */
   async batchUpdate(items: Record<string, string>) {
     const results: SettingEntity[] = [];

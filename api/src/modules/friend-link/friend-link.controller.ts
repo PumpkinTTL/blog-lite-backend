@@ -8,16 +8,28 @@ export class FriendLinkController {
 
   @Get()
   async list(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
     @Query('id') id?: string,
     @Query('keyword') keyword?: string,
     @Query('status') status?: string,
   ) {
-    const data = await this.service.findAll({
-      id: id !== undefined ? parseInt(id) : undefined,
-      keyword,
-      status: status !== undefined ? parseInt(status) : undefined,
-    });
+    const data = await this.service.findAll(
+      page ? parseInt(page) : 1,
+      pageSize ? parseInt(pageSize) : 20,
+      {
+        id: id !== undefined ? parseInt(id) : undefined,
+        keyword,
+        status: status !== undefined ? parseInt(status) : undefined,
+      },
+    );
     return { success: true, data, message: 'ok' };
+  }
+
+  @Put(':id/toggle-status')
+  async toggleStatus(@Param('id', ParseIntPipe) id: number) {
+    const data = await this.service.toggleStatus(id);
+    return { success: true, data, message: '更新成功' };
   }
 
   @Get(':id')

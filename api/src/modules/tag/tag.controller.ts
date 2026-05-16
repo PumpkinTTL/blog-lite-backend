@@ -18,6 +18,12 @@ export class TagController {
     return { success: true, data, message: 'ok' };
   }
 
+  @Get('popular')
+  async popular(@Query('limit') limit?: string) {
+    const data = await this.tagService.findPopular(limit ? parseInt(limit) : undefined);
+    return { success: true, data, message: 'ok' };
+  }
+
   @Get(':id')
   async detail(@Param('id', ParseIntPipe) id: number) {
     const data = await this.tagService.findById(id);

@@ -52,3 +52,7 @@ export function updateUser(id: number, data: any) {
 export function deleteUser(id: number) {
   return request.delete(`/user/${id}`)
 }
+
+export function toggleUserStatus(id: number) {
+  return request.put(`/user/${id}/toggle-status`)
+}

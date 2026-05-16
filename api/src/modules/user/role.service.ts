@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoleEntity } from './role.entity';
@@ -17,6 +17,7 @@ export class RoleService {
       exact: { 'e.id': filters?.id },
       like: { keyword: filters?.keyword, fields: ['e.name', 'e.displayName'] },
     });
+    qb.loadRelationCountAndMap('e.userCount', 'e.users');
     qb.orderBy('e.createdAt', 'DESC');
     return qb.getMany();
   }
@@ -38,6 +39,25 @@ export class RoleService {
   }
 
   async remove(id: number) {
+    const role = await this.roleRepo.findOne({
+      where: { id },
+      relations: ['users'],
+    });
+
+    if (!role) {
+      throw new NotFoundException('角色不存在');
+    }
+
+    if (role.name === 'admin' || role.name === 'user') {
+      throw new BadRequestException('默认角色不可删除');
+    }
+
+    if (role.users && role.users.length > 0) {
+      throw new BadRequestException(
+        `该角色下有 ${role.users.length} 个用户，无法删除`,
+      );
+    }
+
     await this.roleRepo.delete(id);
   }
 }

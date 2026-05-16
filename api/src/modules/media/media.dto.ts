@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsPositive, IsUrl, IsInt } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsPositive, IsUrl, IsInt, IsArray } from 'class-validator';
 
 export class CreateMediaDto {
   @IsString()
@@ -20,4 +20,16 @@ export class CreateMediaDto {
   @IsInt()
   @IsOptional()
   uploaderId?: number;
+}
+
+export class UpdateMediaDto {
+  @IsString()
+  @IsOptional()
+  originalName?: string;
+}
+
+export class BatchIdsDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
 }

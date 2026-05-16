@@ -39,7 +39,9 @@ export class PostService {
         .andWhere('pt.tag_id = :tagId', { tagId: filters.tagId });
     }
 
-    qb.orderBy('p.createdAt', 'DESC')
+    qb.andWhere('p.deletedAt IS NULL')
+      .orderBy('p.isPinned', 'DESC')
+      .addOrderBy('p.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);
 
@@ -90,7 +92,53 @@ export class PostService {
   }
 
   async remove(id: number) {
-    await this.postRepo.delete(id);
+    await this.postRepo.update(id, { deletedAt: new Date() });
+  }
+
+  async softDelete(id: number) {
+    return this.remove(id);
+  }
+
+  async restore(id: number) {
+    await this.postRepo.update(id, { deletedAt: null });
+  }
+
+  async findTrashed(page = 1, pageSize = 20) {
+    const qb = this.postRepo.createQueryBuilder('p')
+      .leftJoinAndSelect('p.author', 'author')
+      .leftJoinAndSelect('p.category', 'category')
+      .leftJoinAndSelect('p.tags', 'tags')
+      .andWhere('p.deletedAt IS NOT NULL')
+      .orderBy('p.deletedAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    const [list, total] = await qb.getManyAndCount();
+    return { list, total, page, pageSize };
+  }
+
+  async batchUpdateStatus(ids: number[], status: number) {
+    const posts = await this.postRepo.findBy({ id: In(ids) });
+    for (const post of posts) {
+      const update: Record<string, unknown> = { status };
+      if (status === 1 && !post.publishedAt) {
+        update.publishedAt = new Date();
+      } else if (status === 2) {
+        update.publishedAt = null;
+      }
+      await this.postRepo.update(post.id, update as any);
+    }
+  }
+
+  async batchDelete(ids: number[]) {
+    await this.postRepo.update({ id: In(ids) }, { deletedAt: new Date() });
+  }
+
+  async togglePin(id: number) {
+    const post = await this.postRepo.findOne({ where: { id } });
+    if (!post) return null;
+    post.isPinned = !post.isPinned;
+    return this.postRepo.save(post);
   }
 
   /**

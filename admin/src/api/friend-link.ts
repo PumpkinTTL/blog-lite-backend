@@ -14,7 +14,7 @@ export interface FriendLink {
   updatedAt: string
 }
 
-export function getFriendLinks(params?: { id?: number; keyword?: string; status?: number }) {
+export function getFriendLinks(params?: { id?: number; keyword?: string; status?: number; page?: number; pageSize?: number }) {
   return request.get('/friend-link', { params })
 }
 

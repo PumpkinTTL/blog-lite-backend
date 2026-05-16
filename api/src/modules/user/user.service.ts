@@ -8,6 +8,7 @@ import { UserEntity } from './user.entity';
 import { RoleEntity } from './role.entity';
 import { LoginDto } from './login.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
+import { UpdateProfileDto } from './user.dto';
 import { AuthService } from '../auth/auth.service';
 import { CodeService } from '../code/code.service';
 import { CodeEntity } from '../code/code.entity';
@@ -161,6 +162,18 @@ export class UserService {
   }
 
   /**
+   * 切换用户状态（启用/禁用）
+   */
+  async toggleStatus(id: number): Promise<UserEntity> {
+    const user = await this.userRepo.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('用户不存在');
+    }
+    user.status = user.status === 1 ? 0 : 1;
+    return this.userRepo.save(user);
+  }
+
+  /**
    * 用户端注册：
    * 1. 检查用户名是否已存在
    * 2. 检查邀请码是否有效
@@ -286,5 +299,25 @@ export class UserService {
     // 更新最后登录时间
     await this.userRepo.update(userId, { lastLoginAt: new Date() });
     this.logger.log(`用户 ${userId} 登出`);
+  }
+
+  async getProfile(userId: number) {
+    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['roles'] });
+    if (!user) throw new NotFoundException('用户不存在');
+    return user;
+  }
+
+  async updateProfile(userId: number, data: UpdateProfileDto) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('用户不存在');
+    Object.assign(user, data);
+    return this.userRepo.save(user);
+  }
+
+  async resetPassword(id: number, newPassword: string) {
+    const user = await this.userRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('用户不存在');
+    user.password = await bcrypt.hash(newPassword, 10);
+    return this.userRepo.save(user);
   }
 }

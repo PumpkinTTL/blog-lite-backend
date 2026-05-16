@@ -56,3 +56,23 @@ export class UpdateUserDto {
   @IsOptional()
   roleIds?: number[];
 }
+
+export class UpdateProfileDto {
+  @IsString()
+  @IsOptional()
+  nickname?: string;
+
+  @IsEmail()
+  @IsOptional()
+  email?: string;
+
+  @IsString()
+  @IsOptional()
+  avatar?: string;
+}
+
+export class ResetPasswordDto {
+  @IsString()
+  @MinLength(6)
+  newPassword: string;
+}

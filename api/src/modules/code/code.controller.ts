@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { CodeService } from './code.service';
-import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto } from './code.dto';
+import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto, BatchCreateCodeDto, BatchIdsDto } from './code.dto';
 import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('code')
@@ -62,6 +62,34 @@ export class CodeController {
     const creatorId = (req as any).user?.id;
     const data = await this.codeService.createCode(dto, creatorId);
     return { success: true, data, message: '创建成功' };
+  }
+
+  /**
+   * 批量生成码
+   */
+  @Post('batch')
+  async batchCreate(@Body() dto: BatchCreateCodeDto, @Req() req: Request) {
+    const creatorId = (req as any).user?.id;
+    const data = await this.codeService.batchCreate(dto, creatorId);
+    return { success: true, data, message: '批量生成成功' };
+  }
+
+  /**
+   * 批量禁用码
+   */
+  @Put('batch/disable')
+  async batchDisable(@Body() dto: BatchIdsDto) {
+    await this.codeService.batchDisable(dto.ids);
+    return { success: true, message: '批量禁用成功' };
+  }
+
+  /**
+   * 批量删除码
+   */
+  @Delete('batch')
+  async batchRemove(@Body() dto: BatchIdsDto) {
+    await this.codeService.batchRemove(dto.ids);
+    return { success: true, message: '批量删除成功' };
   }
 
   /**

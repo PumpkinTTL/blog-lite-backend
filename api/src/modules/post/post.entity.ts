@@ -69,4 +69,10 @@ export class PostEntity {
 
   @Column({ type: 'int', default: 0, name: 'view_count', comment: '阅读量' })
   viewCount: number;
+
+  @Column({ type: 'datetime', nullable: true, name: 'deleted_at', comment: '软删除时间' })
+  deletedAt: Date | null;
+
+  @Column({ type: 'boolean', default: false, name: 'is_pinned', comment: '是否置顶' })
+  isPinned: boolean;
 }

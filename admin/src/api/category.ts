@@ -9,7 +9,7 @@ export interface Category {
   createdAt: string
 }
 
-export function getCategories(params?: { id?: number; keyword?: string }) {
+export function getCategories(params?: { id?: number; keyword?: string; page?: number; pageSize?: number }) {
   return request.get('/category', { params })
 }
 

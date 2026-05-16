@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem } from 'naive-ui'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NPagination } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getRoles, createRole, updateRole, deleteRole } from '../../api/role'
@@ -9,16 +9,58 @@ import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
 
+// Pagination
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(5)
+
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch, handleReset, openCreate, openEdit, handleSave, handleDelete } =
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave, handleDelete } =
   useCrudList<Role>({
-    loadApi: getRoles,
+    loadApi: (params) => getRoles({
+      ...params,
+      page: page.value,
+      pageSize: pageSize.value,
+    }),
     createApi: createRole,
     updateApi: updateRole,
     deleteApi: deleteRole,
     deleteContent: (row) => `确定删除角色「${row.displayName}」？`,
     defaultForm: () => ({ name: '', displayName: '', description: '' }),
+    extractList: (res) => {
+      const payload = res.data
+      if (payload?.list) {
+        total.value = payload.total
+        return payload.list
+      }
+      if (Array.isArray(payload)) {
+        total.value = payload.length
+        return payload
+      }
+      return []
+    },
   })
+
+function handleSearch() {
+  page.value = 1
+  _handleSearch()
+}
+
+function handleReset() {
+  page.value = 1
+  _handleReset()
+}
+
+function handlePageChange(p: number) {
+  page.value = p
+  _handleSearch()
+}
+
+function handlePageSizeChange(s: number) {
+  pageSize.value = s
+  page.value = 1
+  _handleSearch()
+}
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入角色标识', trigger: ['input', 'blur'] }],
@@ -81,6 +123,9 @@ const columns: DataTableColumns<Role> = [
         :loading="loading"
         :bordered="false"
       />
+      <div class="pagination-wrap" v-if="total > 0">
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+      </div>
     </n-card>
 
     <n-modal
@@ -107,4 +152,6 @@ const columns: DataTableColumns<Role> = [
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+</style>

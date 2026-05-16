@@ -31,6 +31,18 @@ export class PostController {
     return { success: true, data, message: 'ok' };
   }
 
+  @Get('trashed')
+  async trashed(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const data = await this.postService.findTrashed(
+      Math.max(parseInt(page || '1'), 1),
+      Math.min(parseInt(pageSize || '20'), 100),
+    );
+    return { success: true, data, message: 'ok' };
+  }
+
   @Get(':id')
   async detail(@Param('id', ParseIntPipe) id: number) {
     const data = await this.postService.findById(id);
@@ -45,11 +57,42 @@ export class PostController {
     return { success: true, message: 'ok' };
   }
 
+  @Post('batch/publish')
+  async batchPublish(@Body() body: { ids: number[] }) {
+    await this.postService.batchUpdateStatus(body.ids, 1);
+    return { success: true, message: '批量发布成功' };
+  }
+
+  @Post('batch/unpublish')
+  async batchUnpublish(@Body() body: { ids: number[] }) {
+    await this.postService.batchUpdateStatus(body.ids, 2);
+    return { success: true, message: '批量下架成功' };
+  }
+
+  @Post('batch/delete')
+  async batchDelete(@Body() body: { ids: number[] }) {
+    await this.postService.batchDelete(body.ids);
+    return { success: true, message: '批量删除成功' };
+  }
+
   @Post()
-  async create(@Body() dto: CreatePostDto) {
-    // TODO: 从 AuthGuard 注入的用户取 authorId，暂时默认 admin(id=1)
-    const data = await this.postService.create({ ...dto, authorId: 1 });
+  async create(@Body() dto: CreatePostDto, @Req() req: Request) {
+    const payload = req as unknown as { user?: { sub?: string } };
+    const authorId = parseInt(payload.user?.sub ?? '1', 10);
+    const data = await this.postService.create({ ...dto, authorId });
     return { success: true, data, message: '创建成功' };
+  }
+
+  @Put(':id/restore')
+  async restore(@Param('id', ParseIntPipe) id: number) {
+    await this.postService.restore(id);
+    return { success: true, message: '恢复成功' };
+  }
+
+  @Put(':id/toggle-pin')
+  async togglePin(@Param('id', ParseIntPipe) id: number) {
+    const data = await this.postService.togglePin(id);
+    return { success: true, data, message: data ? '操作成功' : '文章不存在' };
   }
 
   @Put(':id')

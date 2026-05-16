@@ -12,6 +12,18 @@ export class SettingController {
     return { success: true, data, message: 'ok' };
   }
 
+  @Get('group/:group')
+  async getByGroup(@Param('group') group: string) {
+    const data = await this.service.findByGroup(group);
+    return { success: true, data, message: 'ok' };
+  }
+
+  @Put('group/:group')
+  async batchUpdateByGroup(@Param('group') group: string, @Body() dto: BatchUpdateSettingDto) {
+    const data = await this.service.batchUpdateByGroup(group, dto.items);
+    return { success: true, data, message: '更新成功' };
+  }
+
   @Get(':key')
   async getByKey(@Param('key') key: string) {
     const data = await this.service.findByKey(key);

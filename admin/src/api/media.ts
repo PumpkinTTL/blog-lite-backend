@@ -10,7 +10,7 @@ export interface Media {
   updatedAt: string
 }
 
-export function getMediaList(params?: { page?: number; pageSize?: number; id?: number; keyword?: string }) {
+export function getMediaList(params?: { page?: number; pageSize?: number; id?: number; keyword?: string; mimeType?: string }) {
   return request.get('/media', { params })
 }
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect } from 'naive-ui'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../../api/announcement'
@@ -8,6 +8,11 @@ import type { Announcement } from '../../api/announcement'
 import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
+
+// Pagination
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(5)
 
 const searchStatus = ref<number | null>(null)
 
@@ -18,10 +23,12 @@ const announcementStatusOptions = [
 ]
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete } =
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, message } =
   useCrudList<Announcement>({
     loadApi: (params) => getAnnouncements({
       ...params,
+      page: page.value,
+      pageSize: pageSize.value,
       ...(searchStatus.value !== null ? { status: searchStatus.value } : {}),
     }),
     createApi: createAnnouncement,
@@ -29,19 +36,42 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     deleteApi: deleteAnnouncement,
     deleteContent: (row) => `确定删除公告「${row.title}」？`,
     defaultForm: () => ({ title: '', content: '', status: 1, sortOrder: 0 }),
+    extractList: (res) => {
+      const payload = res.data
+      if (payload?.list) {
+        total.value = payload.total
+        return payload.list
+      }
+      return Array.isArray(payload) ? payload : []
+    },
   })
 
 function handleSearch() {
+  page.value = 1
   _handleSearch()
 }
 
 function handleReset() {
-  _handleReset()
+  searchId.value = ''
+  searchKeyword.value = ''
   searchStatus.value = null
+  page.value = 1
+  _handleReset()
 }
 
 async function handleSave() {
   return _handleSave(() => formRef!.validate())
+}
+
+function handlePageChange(p: number) {
+  page.value = p
+  _handleSearch()
+}
+
+function handlePageSizeChange(s: number) {
+  pageSize.value = s
+  page.value = 1
+  _handleSearch()
 }
 
 const rules: FormRules = {
@@ -102,6 +132,9 @@ const columns: DataTableColumns<Announcement> = [
     </n-space>
     <n-card :bordered="false" class="table-card">
       <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" />
+      <div class="pagination-wrap" v-if="total > 0">
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+      </div>
     </n-card>
     <n-modal v-model:show="showModal" preset="dialog" :title="editingId ? '编辑公告' : '新建公告'"
       :positive-text="saving ? '提交中...' : '确认'" :negative-text="saving ? undefined : '取消'" :loading="saving" @positive-click="handleSave">
@@ -120,4 +153,6 @@ const columns: DataTableColumns<Announcement> = [
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+</style>

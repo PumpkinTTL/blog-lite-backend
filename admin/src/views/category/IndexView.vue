@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem } from 'naive-ui'
+import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NPagination } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getCategories, createCategory, updateCategory, deleteCategory } from '../../api/category'
@@ -9,19 +9,59 @@ import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
 
+// Pagination
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(5)
+
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch, handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete } =
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, message } =
   useCrudList<Category>({
-    loadApi: getCategories,
+    loadApi: (params) => getCategories({
+      ...params,
+      page: page.value,
+      pageSize: pageSize.value,
+    }),
     createApi: createCategory,
     updateApi: updateCategory,
     deleteApi: deleteCategory,
     deleteContent: (row) => `确定删除分类「${row.name}」？`,
     defaultForm: () => ({ name: '', slug: '', description: '' }),
+    extractList: (res) => {
+      const payload = res.data
+      if (payload?.list) {
+        total.value = payload.total
+        return payload.list
+      }
+      return Array.isArray(payload) ? payload : []
+    },
   })
+
+function handleSearch() {
+  page.value = 1
+  _handleSearch()
+}
+
+function handleReset() {
+  searchId.value = ''
+  searchKeyword.value = ''
+  page.value = 1
+  _handleReset()
+}
 
 async function handleSave() {
   return _handleSave(() => formRef?.validate())
+}
+
+function handlePageChange(p: number) {
+  page.value = p
+  _handleSearch()
+}
+
+function handlePageSizeChange(s: number) {
+  pageSize.value = s
+  page.value = 1
+  _handleSearch()
 }
 
 const rules: FormRules = {
@@ -85,6 +125,9 @@ const columns: DataTableColumns<Category> = [
         :loading="loading"
         :bordered="false"
       />
+      <div class="pagination-wrap" v-if="total > 0">
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+      </div>
     </n-card>
 
     <n-modal
@@ -111,4 +154,6 @@ const columns: DataTableColumns<Category> = [
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+</style>

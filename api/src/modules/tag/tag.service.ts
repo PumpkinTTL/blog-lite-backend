@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { TagEntity } from './tag.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
 
@@ -9,15 +9,17 @@ export class TagService {
   constructor(
     @InjectRepository(TagEntity)
     private readonly tagRepo: Repository<TagEntity>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async findAll(filters?: { id?: number; keyword?: string }) {
-    const qb = this.tagRepo.createQueryBuilder('e');
+    const qb = this.tagRepo.createQueryBuilder('t')
+      .loadRelationCountAndMap('t.postCount', 't.posts');
     applyFilters(qb, {
-      exact: { 'e.id': filters?.id },
-      like: { keyword: filters?.keyword, fields: ['e.name', 'e.slug'] },
+      exact: { 't.id': filters?.id },
+      like: { keyword: filters?.keyword, fields: ['t.name', 't.slug'] },
     });
-    qb.orderBy('e.createdAt', 'DESC');
+    qb.orderBy('t.createdAt', 'DESC');
     return qb.getMany();
   }
 
@@ -38,6 +40,19 @@ export class TagService {
   }
 
   async remove(id: number) {
+    const result = await this.dataSource.query('SELECT COUNT(*) as cnt FROM post_tags WHERE tag_id = ?', [id]);
+    const count = Number(result[0]?.cnt ?? 0);
+    if (count > 0) {
+      throw new BadRequestException(`该标签下有 ${count} 篇文章，无法删除`);
+    }
     await this.tagRepo.delete(id);
+  }
+
+  async findPopular(limit = 10) {
+    const rows = await this.dataSource.query(
+      'SELECT t.*, COUNT(pt.post_id) as postCount FROM tags t LEFT JOIN post_tags pt ON pt.tag_id = t.id GROUP BY t.id ORDER BY postCount DESC LIMIT ?',
+      [limit],
+    );
+    return rows;
   }
 }

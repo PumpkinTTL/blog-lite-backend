@@ -7,7 +7,7 @@ export interface Tag {
   createdAt: string
 }
 
-export function getTags(params?: { id?: number; keyword?: string }) {
+export function getTags(params?: { id?: number; keyword?: string; page?: number; pageSize?: number }) {
   return request.get('/tag', { params })
 }
 

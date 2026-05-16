@@ -8,7 +8,7 @@ export interface Role {
   createdAt: string
 }
 
-export function getRoles(params?: { id?: number; keyword?: string }) {
+export function getRoles(params?: { id?: number; keyword?: string; page?: number; pageSize?: number }) {
   return request.get('/role', { params })
 }
 

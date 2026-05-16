@@ -15,7 +15,7 @@ const loading = ref(false)
 const posts = ref<Post[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(5)
 const searchId = ref('')
 const searchKeyword = ref('')
 const searchStatus = ref<number | null>(null)
@@ -134,6 +134,12 @@ function handlePageChange(p: number) {
   loadPosts()
 }
 
+function handlePageSizeChange(s: number) {
+  pageSize.value = s
+  page.value = 1
+  loadPosts()
+}
+
 function handleDelete(row: Post) {
   dialog.warning({
     title: '确认删除',
@@ -181,8 +187,8 @@ onMounted(() => { loadPosts(); loadCategoryOptions() })
 
     <n-card :bordered="false" class="table-card">
       <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" />
-      <div class="pagination-wrap" v-if="total > pageSize">
-        <n-pagination :page="page" :page-size="pageSize" :item-count="total" @update:page="handlePageChange" />
+<div class="pagination-wrap" v-if="total > 0">
+<n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
     </n-card>
   </div>

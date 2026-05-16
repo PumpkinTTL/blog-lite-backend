@@ -18,6 +18,12 @@ export class CategoryController {
     return { success: true, data, message: 'ok' };
   }
 
+  @Get('tree')
+  async tree() {
+    const data = await this.categoryService.findTree();
+    return { success: true, data, message: 'ok' };
+  }
+
   @Get(':id')
   async detail(@Param('id', ParseIntPipe) id: number) {
     const data = await this.categoryService.findById(id);

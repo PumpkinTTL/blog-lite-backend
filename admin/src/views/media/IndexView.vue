@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NCard, NButton, NGrid, NGi, NIcon, NUpload, NEmpty, NSpin, NSpace, NInput, useMessage, useDialog } from 'naive-ui'
+import { NCard, NButton, NGrid, NGi, NIcon, NUpload, NEmpty, NSpin, NSpace, NInput, NPagination, useMessage, useDialog } from 'naive-ui'
 import type { UploadFileInfo } from 'naive-ui'
 import { CloudUploadOutline, TrashOutline, ImageOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getMediaList, uploadMedia, deleteMedia } from '../../api/media'
@@ -12,6 +12,9 @@ const loading = ref(false)
 const mediaList = ref<Media[]>([])
 const searchId = ref('')
 const searchKeyword = ref('')
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(5)
 
 async function loadMedia() {
   loading.value = true
@@ -19,9 +22,16 @@ async function loadMedia() {
     const params: any = {}
     if (searchId.value) params.id = searchId.value
     if (searchKeyword.value) params.keyword = searchKeyword.value
+    params.page = page.value
+    params.pageSize = pageSize.value
     const res = await getMediaList(params)
     const payload = res.data
-    mediaList.value = Array.isArray(payload) ? payload : (payload?.list || [])
+    if (payload?.list) {
+      total.value = payload.total
+      mediaList.value = payload.list
+    } else {
+      mediaList.value = Array.isArray(payload) ? payload : []
+    }
   } catch {
     message.error('加载素材失败')
   } finally {
@@ -30,12 +40,25 @@ async function loadMedia() {
 }
 
 function handleSearch() {
+  page.value = 1
   loadMedia()
 }
 
 function handleReset() {
   searchId.value = ''
   searchKeyword.value = ''
+  page.value = 1
+  loadMedia()
+}
+
+function handlePageChange(p: number) {
+  page.value = p
+  loadMedia()
+}
+
+function handlePageSizeChange(s: number) {
+  pageSize.value = s
+  page.value = 1
   loadMedia()
 }
 
@@ -53,7 +76,7 @@ async function handleUpload({ file }: { file: UploadFileInfo }) {
 function handleDelete(item: Media) {
   dialog.warning({
     title: '确认删除',
-    content: `确定删除素材「${item.name}」？`,
+    content: `确定删除素材�?{item.name}」？`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -119,6 +142,9 @@ onMounted(loadMedia)
           </n-gi>
         </n-grid>
       </n-spin>
+      <div class="pagination-wrap" v-if="total > 0">
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+      </div>
     </n-card>
   </div>
 </template>
@@ -169,4 +195,8 @@ onMounted(loadMedia)
   white-space: nowrap;
   max-width: 120px;
 }
+
+.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

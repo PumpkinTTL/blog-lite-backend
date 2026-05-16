@@ -2,7 +2,7 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, R
 import type { Request } from 'express';
 import { UserService } from './user.service';
 import { LoginDto } from './login.dto';
-import { CreateUserDto, UpdateUserDto } from './user.dto';
+import { CreateUserDto, UpdateUserDto, UpdateProfileDto, ResetPasswordDto } from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
 
@@ -76,6 +76,22 @@ export class UserController {
     return { success: true, message: '登出成功' };
   }
 
+  // ===== 个人资料 =====
+
+  @Get('profile')
+  async getProfile(@Req() req: Request) {
+    const userId = parseInt((req as any).user?.sub, 10);
+    const data = await this.userService.getProfile(userId);
+    return { success: true, data, message: 'ok' };
+  }
+
+  @Put('profile')
+  async updateProfile(@Req() req: Request, @Body() dto: UpdateProfileDto) {
+    const userId = parseInt((req as any).user?.sub, 10);
+    const data = await this.userService.updateProfile(userId, dto);
+    return { success: true, data, message: '更新成功' };
+  }
+
   // ===== 管理接口 =====
 
   @Get()
@@ -120,5 +136,21 @@ export class UserController {
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.userService.remove(id);
     return { success: true, message: '删除成功' };
+  }
+
+  @Put(':id/toggle-status')
+  async toggleStatus(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const currentUserId = parseInt((req as any).user?.sub, 10);
+    if (currentUserId === id) {
+      return { success: false, message: '不能禁用自己' };
+    }
+    const data = await this.userService.toggleStatus(id);
+    return { success: true, data, message: data.status === 1 ? '已启用' : '已禁用' };
+  }
+
+  @Put(':id/reset-password')
+  async resetPassword(@Param('id', ParseIntPipe) id: number, @Body() dto: ResetPasswordDto) {
+    const data = await this.userService.resetPassword(id, dto.newPassword);
+    return { success: true, message: '密码重置成功' };
   }
 }
