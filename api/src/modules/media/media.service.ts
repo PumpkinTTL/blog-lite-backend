@@ -149,6 +149,11 @@ export class MediaService {
       throw new BadRequestException('请选择 OSS 平台');
     }
 
+    // Cloudflare R2 使用独立配置通道
+    if (ossPlatform === 'cloudflare') {
+      return this.createR2Provider();
+    }
+
     const config: StorageConfig = {
       provider: ossPlatform,
       endpoint: this.configService.get<string>('OSS_ENDPOINT'),
@@ -163,5 +168,30 @@ export class MediaService {
     }
 
     return new StorageProvider(config);
+  }
+
+  /**
+   * 创建 Cloudflare R2 存储实例（独立配置通道）
+   */
+  private createR2Provider(): StorageProvider {
+    const accountId = this.configService.get<string>('R2_ACCOUNT_ID');
+    const accessKeyId = this.configService.get<string>('R2_ACCESS_KEY_ID');
+    const secretAccessKey = this.configService.get<string>('R2_SECRET_ACCESS_KEY');
+    const bucket = this.configService.get<string>('R2_BUCKET');
+    const publicDomain = this.configService.get<string>('R2_PUBLIC_DOMAIN');
+
+    if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
+      throw new BadRequestException('R2 未配置：请设置 R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET');
+    }
+
+    return new StorageProvider({
+      provider: 'cloudflare',
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      region: 'auto',
+      bucket,
+      accessKeyId,
+      secretAccessKey,
+      publicDomain: publicDomain || undefined,
+    });
   }
 }

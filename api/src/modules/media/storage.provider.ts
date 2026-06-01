@@ -81,6 +81,8 @@ export interface StorageConfig {
   secretAccessKey?: string;
   /** 本地存储根目录（仅 provider=local 时生效，默认 process.cwd()/uploads） */
   localDir?: string;
+  /** 公开访问域名（可选，覆盖默认 S3 endpoint 拼接的 URL） */
+  publicDomain?: string;
 }
 
 /** 各平台 endpoint 自动推断规则 */
@@ -139,6 +141,11 @@ export class StorageProvider {
   getUrl(key: string): string {
     if (this.config.provider === 'local') {
       return `/uploads/${key}`;
+    }
+    // 如果配置了公开域名（如 R2 的 oss.bitle.us.ci），优先使用
+    if (this.config.publicDomain) {
+      const base = this.config.publicDomain.replace(/\/+$/, '');
+      return `${base}/${key}`;
     }
     // S3: {endpoint}/{bucket}/{key}
     const base = this.resolvedEndpoint.replace(/\/+$/, '');

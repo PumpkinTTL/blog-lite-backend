@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue'
+import { ref, h, onMounted, computed } from 'vue'
 import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NPagination, NUpload, NImage, NSelect, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns, UploadFileInfo } from 'naive-ui'
-import { CloudUploadOutline, TrashOutline, SearchOutline, RefreshOutline, DocumentOutline } from '@vicons/ionicons5'
+import { CloudUploadOutline, TrashOutline, SearchOutline, RefreshOutline, DocumentOutline, CopyOutline } from '@vicons/ionicons5'
 import { getMediaList, uploadMedia, deleteMedia, batchDeleteMedia } from '../../api/media'
+import { uploadToR2, deleteR2Media, batchDeleteR2Media } from '../../api/r2-storage'
 import type { Media } from '../../api/media'
 
 const message = useMessage()
@@ -17,20 +18,24 @@ const page = ref(1)
 const pageSize = ref(10)
 const checkedRowKeys = ref<number[]>([])
 const uploadFileList = ref<UploadFileInfo[]>([])
-const uploadStorageType = ref<'local' | 'oss'>('local')
+
+/** 存储通道：local=本地, oss=通用OSS, r2=Cloudflare R2 */
+const storageChannel = ref<'local' | 'oss' | 'r2'>('local')
 const uploadOssPlatform = ref<Media['ossPlatform']>('aliyun')
 
-const uploadStorageOptions = [
-  { label: '本地', value: 'local' },
+const storageChannelOptions = [
+  { label: '本地存储', value: 'local' },
   { label: 'OSS', value: 'oss' },
+  { label: 'R2', value: 'r2' },
 ]
 
 const uploadOssPlatformOptions = [
   { label: '阿里云', value: 'aliyun' },
   { label: '腾讯云', value: 'tencent' },
-  { label: 'Cloudflare', value: 'cloudflare' },
   { label: 'Backblaze', value: 'backblaze' },
 ]
+
+const showOssPlatformSelect = computed(() => storageChannel.value === 'oss')
 
 function formatSize(bytes: number): string {
   if (!bytes || bytes === 0) return '0 B'
@@ -50,8 +55,15 @@ function resolveFileUrl(url: string): string {
   return new URL(url, base).toString()
 }
 
+function copyToClipboard(text: string) {
+  navigator.clipboard.writeText(text).then(
+    () => message.success('已复制链接'),
+    () => message.error('复制失败'),
+  )
+}
+
 const storageTypeLabel: Record<string, string> = { local: '本地', oss: 'OSS' }
-const ossPlatformLabel: Record<string, string> = { aliyun: '阿里云', tencent: '腾讯云', cloudflare: 'Cloudflare', backblaze: 'Backblaze' }
+const ossPlatformLabel: Record<string, string> = { aliyun: '阿里云', tencent: '腾讯云', cloudflare: 'R2', backblaze: 'Backblaze' }
 
 async function loadMedia() {
   loading.value = true
@@ -102,10 +114,14 @@ function handlePageSizeChange(s: number) {
 async function handleUpload({ file }: { file: UploadFileInfo }) {
   if (!file.file) return
   try {
-    await uploadMedia(file.file, {
-      storageType: uploadStorageType.value,
-      ossPlatform: uploadStorageType.value === 'oss' ? uploadOssPlatform.value : null,
-    })
+    if (storageChannel.value === 'r2') {
+      await uploadToR2(file.file)
+    } else {
+      await uploadMedia(file.file, {
+        storageType: storageChannel.value === 'oss' ? 'oss' : 'local',
+        ossPlatform: storageChannel.value === 'oss' ? uploadOssPlatform.value : null,
+      })
+    }
     message.success('上传成功')
     uploadFileList.value = []
     loadMedia()
@@ -116,6 +132,13 @@ async function handleUpload({ file }: { file: UploadFileInfo }) {
 }
 
 function handleDelete(item: Media) {
+  const doDelete = async () => {
+    if (item.ossPlatform === 'cloudflare' && item.storageType === 'oss') {
+      await deleteR2Media(item.id)
+    } else {
+      await deleteMedia(item.id)
+    }
+  }
   dialog.warning({
     title: '确认删除',
     content: `确定删除文件「${item.originalName}」？`,
@@ -123,7 +146,7 @@ function handleDelete(item: Media) {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await deleteMedia(item.id)
+        await doDelete()
         message.success('删除成功')
         loadMedia()
       } catch (e: any) {
@@ -141,7 +164,14 @@ async function handleBatchDelete() {
     positiveText: '删除', negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await batchDeleteMedia(checkedRowKeys.value)
+        // 判断是否全为 R2 文件
+        const selectedItems = mediaList.value.filter((m) => checkedRowKeys.value.includes(m.id))
+        const allR2 = selectedItems.length > 0 && selectedItems.every((m) => m.ossPlatform === 'cloudflare' && m.storageType === 'oss')
+        if (allR2) {
+          await batchDeleteR2Media(checkedRowKeys.value)
+        } else {
+          await batchDeleteMedia(checkedRowKeys.value)
+        }
         message.success('批量删除成功')
         checkedRowKeys.value = []
         loadMedia()
@@ -174,7 +204,36 @@ const columns: DataTableColumns<Media> = [
       }, [h(NIcon, { size: 24, color: '#94A3B8' }, { default: () => h(DocumentOutline) })])
     },
   },
-  { title: '文件名', key: 'originalName', ellipsis: { tooltip: true }, minWidth: 140, width: 180 },
+  {
+    title: '文件名', key: 'originalName', minWidth: 200, width: 240,
+    render: (row) => {
+      const url = resolveFileUrl(row.url)
+      const children: any[] = [
+        h('div', { style: 'font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', title: row.originalName }, row.originalName),
+      ]
+      children.push(
+        h('div', { style: 'display:flex;align-items:center;gap:4px;margin-top:2px' }, [
+          h('a', {
+            href: url,
+            target: '_blank',
+            rel: 'noopener',
+            style: 'font-size:11px;color:#6366f1;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px',
+            title: url,
+            onClick: (e: Event) => e.stopPropagation(),
+          }, url),
+          h(NButton, {
+            size: 'tiny',
+            quaternary: true,
+            style: 'padding:0 2px;line-height:1',
+            onClick: (e: Event) => { e.stopPropagation(); copyToClipboard(url) },
+          }, {
+            default: () => h(NIcon, { size: 13, color: '#6366f1' }, { default: () => h(CopyOutline) }),
+          }),
+        ]),
+      )
+      return h('div', null, children)
+    },
+  },
   {
     title: '类型', key: 'mimeType', width: 110, ellipsis: { tooltip: true },
     render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.mimeType }),
@@ -234,8 +293,8 @@ onMounted(loadMedia)
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         重置
       </n-button>
-      <n-select v-model:value="uploadStorageType" :options="uploadStorageOptions" style="width: 100px" />
-      <n-select v-if="uploadStorageType === 'oss'" v-model:value="uploadOssPlatform" :options="uploadOssPlatformOptions" style="width: 130px" />
+      <n-select v-model:value="storageChannel" :options="storageChannelOptions" style="width: 110px" />
+      <n-select v-if="showOssPlatformSelect" v-model:value="uploadOssPlatform" :options="uploadOssPlatformOptions" style="width: 130px" />
       <n-upload v-model:file-list="uploadFileList" :show-file-list="false" :custom-request="({ file }) => handleUpload({ file })">
         <n-button type="primary">
           <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
