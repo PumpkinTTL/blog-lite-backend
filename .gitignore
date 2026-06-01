@@ -8,3 +8,9 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Uploads (local storage)
+api/uploads/
+
+# Docs (reference only)
+admin/src/docs/
