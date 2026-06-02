@@ -90,6 +90,12 @@ const router = createRouter({
           meta: { title: '友情链接' },
         },
         {
+          path: 'donations',
+          name: 'donations',
+          component: () => import('../views/donation/IndexView.vue'),
+          meta: { title: '捐赠管理' },
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('../views/setting/IndexView.vue'),

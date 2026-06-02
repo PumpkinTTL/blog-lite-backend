@@ -14,6 +14,7 @@ import {
   KeyOutline,
   MegaphoneOutline,
   LinkOutline,
+  HeartOutline,
   SettingsOutline,
   LogOutOutline,
   PersonOutline,
@@ -46,6 +47,7 @@ const menuOptions: MenuOption[] = [
   { label: '激活码管理', key: '/codes', icon: renderIcon(KeyOutline) },
   { label: '公告管理', key: '/announcements', icon: renderIcon(MegaphoneOutline) },
   { label: '友情链接', key: '/friend-links', icon: renderIcon(LinkOutline) },
+  { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
   { type: 'divider', key: 'd3' },
   { label: '系统设置', key: '/settings', icon: renderIcon(SettingsOutline) },
 ]
@@ -86,6 +88,7 @@ const breadcrumbItems = computed(() => {
     '/codes': '激活码管理',
     '/announcements': '公告管理',
     '/friend-links': '友情链接',
+    '/donations': '捐赠管理',
     '/settings': '系统设置',
   }
   const path = route.path === '/' ? '/dashboard' : route.path
