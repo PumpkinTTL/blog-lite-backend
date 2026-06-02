@@ -37,7 +37,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     response.status(status).json({
       statusCode: status,
-      message: Array.isArray(message) ? message : message,
+      message: Array.isArray(message) ? message.join(', ') : message,
       ...(error ? { error } : {}),
       ...(process.env.NODE_ENV !== 'production' && exception instanceof Error
         ? { stack: (exception as Error).stack }

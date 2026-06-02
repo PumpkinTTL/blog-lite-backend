@@ -1,5 +1,11 @@
 import { IsString, IsOptional, IsArray, IsIn, IsInt } from 'class-validator';
 
+export class BatchIdsDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
+}
+
 export class CreatePostDto {
   @IsString()
   title: string;

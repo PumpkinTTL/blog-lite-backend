@@ -28,7 +28,9 @@ export class DonationService {
   }
 
   async findById(id: number) {
-    return this.repo.findOne({ where: { id } });
+    const entity = await this.repo.findOne({ where: { id } });
+    if (!entity) throw new NotFoundException('捐赠记录不存在');
+    return entity;
   }
 
   async create(data: Partial<DonationEntity>) {
@@ -37,8 +39,10 @@ export class DonationService {
   }
 
   async update(id: number, data: Partial<DonationEntity>) {
-    await this.repo.update(id, data);
-    return this.findById(id);
+    const entity = await this.repo.findOne({ where: { id } });
+    if (!entity) throw new NotFoundException('捐赠记录不存在');
+    Object.assign(entity, data);
+    return this.repo.save(entity);
   }
 
   async remove(id: number) {
@@ -61,61 +65,60 @@ export class DonationService {
 
   /** 统计概览 */
   async getStats() {
-    const total = await this.repo.count();
-    const confirmed = await this.repo.count({ where: { status: 1 } });
-    const pending = await this.repo.count({ where: { status: 0 } });
+    // 3 次查询并行：总数、已确认总额+按方式分组、按加密网络分组
+    const [totalResult, confirmedMethods, byCrypto] = await Promise.all([
+      this.repo
+        .createQueryBuilder('e')
+        .select('COUNT(*)', 'total')
+        .addSelect("SUM(CASE WHEN e.status = 1 THEN 1 ELSE 0 END)", 'confirmed')
+        .addSelect("SUM(CASE WHEN e.status = 0 THEN 1 ELSE 0 END)", 'pending')
+        .getRawOne(),
+      this.repo
+        .createQueryBuilder('e')
+        .select('e.payMethod', 'payMethod')
+        .addSelect('COUNT(*)', 'count')
+        .addSelect('COALESCE(SUM(e.amount), 0)', 'totalAmount')
+        .where('e.status = :status', { status: 1 })
+        .groupBy('e.payMethod')
+        .getRawMany(),
+      this.repo
+        .createQueryBuilder('e')
+        .select('e.cryptoNetwork', 'cryptoNetwork')
+        .addSelect('COUNT(*)', 'count')
+        .addSelect('COALESCE(SUM(e.amount), 0)', 'totalAmount')
+        .where('e.payMethod = :pm AND e.status = :status', { pm: 'crypto', status: 1 })
+        .andWhere('e.cryptoNetwork IS NOT NULL')
+        .groupBy('e.cryptoNetwork')
+        .getRawMany(),
+    ]);
 
-    // 总金额（仅已确认）
-    const amountResult = await this.repo
-      .createQueryBuilder('e')
-      .select('COALESCE(SUM(e.amount), 0)', 'totalAmount')
-      .where('e.status = :status', { status: 1 })
-      .getRawOne();
-
-    // 按支付方式分组统计
-    const byMethod = await this.repo
-      .createQueryBuilder('e')
-      .select('e.payMethod', 'payMethod')
-      .addSelect('COUNT(*)', 'count')
-      .addSelect('COALESCE(SUM(e.amount), 0)', 'totalAmount')
-      .where('e.status = :status', { status: 1 })
-      .groupBy('e.payMethod')
-      .getRawMany();
-
-    // 按加密货币网络分组
-    const byCrypto = await this.repo
-      .createQueryBuilder('e')
-      .select('e.cryptoNetwork', 'cryptoNetwork')
-      .addSelect('COUNT(*)', 'count')
-      .addSelect('COALESCE(SUM(e.amount), 0)', 'totalAmount')
-      .where('e.payMethod = :pm AND e.status = :status', { pm: 'crypto', status: 1 })
-      .andWhere('e.cryptoNetwork IS NOT NULL')
-      .groupBy('e.cryptoNetwork')
-      .getRawMany();
+    const parse = (v: string) => parseFloat(v || '0');
+    const totalAmount = confirmedMethods.reduce((s, r) => s + parse(r.totalAmount), 0);
 
     return {
-      total,
-      confirmed,
-      pending,
-      totalAmount: parseFloat(amountResult?.totalAmount || '0'),
-      byMethod: byMethod.map((r: any) => ({
+      total: parseInt(totalResult?.total || '0'),
+      confirmed: parseInt(totalResult?.confirmed || '0'),
+      pending: parseInt(totalResult?.pending || '0'),
+      totalAmount,
+      byMethod: confirmedMethods.map((r: any) => ({
         payMethod: r.payMethod,
         count: parseInt(r.count),
-        totalAmount: parseFloat(r.totalAmount),
+        totalAmount: parse(r.totalAmount),
       })),
       byCrypto: byCrypto.map((r: any) => ({
         cryptoNetwork: r.cryptoNetwork,
         count: parseInt(r.count),
-        totalAmount: parseFloat(r.totalAmount),
+        totalAmount: parse(r.totalAmount),
       })),
     };
   }
 
-  /** 导出 CSV（仅已确认） */
+  /** 导出 CSV（仅已确认，最多 10000 条防 OOM） */
   async exportCsv(): Promise<string> {
     const list = await this.repo.find({
       where: { status: 1 },
       order: { createdAt: 'DESC' },
+      take: 10000,
     });
 
     const header = 'ID,捐赠者,金额,币种,支付方式,加密网络,交易哈希,留言,状态,展示,排序,备注,创建时间\n';

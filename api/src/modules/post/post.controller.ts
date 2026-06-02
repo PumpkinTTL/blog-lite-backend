@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { PostService } from './post.service';
-import { CreatePostDto, UpdatePostDto } from './post.dto';
+import { CreatePostDto, UpdatePostDto, BatchIdsDto } from './post.dto';
 
 @Controller('post')
 export class PostController {
@@ -58,19 +58,19 @@ export class PostController {
   }
 
   @Post('batch/publish')
-  async batchPublish(@Body() body: { ids: number[] }) {
+  async batchPublish(@Body() body: BatchIdsDto) {
     await this.postService.batchUpdateStatus(body.ids, 1);
     return { success: true, message: '批量发布成功' };
   }
 
   @Post('batch/unpublish')
-  async batchUnpublish(@Body() body: { ids: number[] }) {
+  async batchUnpublish(@Body() body: BatchIdsDto) {
     await this.postService.batchUpdateStatus(body.ids, 2);
     return { success: true, message: '批量下架成功' };
   }
 
   @Post('batch/delete')
-  async batchDelete(@Body() body: { ids: number[] }) {
+  async batchDelete(@Body() body: BatchIdsDto) {
     await this.postService.batchDelete(body.ids);
     return { success: true, message: '批量删除成功' };
   }

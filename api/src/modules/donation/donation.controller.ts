@@ -9,6 +9,8 @@ import {
   ParseIntPipe,
   Query,
   Res,
+  DefaultValuePipe,
+  ParseBoolPipe,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { DonationService } from './donation.service';
@@ -30,7 +32,6 @@ export class DonationController {
     const filename = `donations_${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-    // BOM for Excel UTF-8 compatibility
     res.send('\uFEFF' + csv);
   }
 
@@ -44,17 +45,15 @@ export class DonationController {
     @Query('payMethod') payMethod?: string,
     @Query('cryptoNetwork') cryptoNetwork?: string,
   ) {
-    const data = await this.service.findAll(
-      page ? parseInt(page) : 1,
-      pageSize ? parseInt(pageSize) : 20,
-      {
-        id: id !== undefined ? parseInt(id) : undefined,
-        keyword,
-        status: status !== undefined ? parseInt(status) : undefined,
-        payMethod,
-        cryptoNetwork,
-      },
-    );
+    const p = Math.max(Number(page) || 1, 1);
+    const ps = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
+    const data = await this.service.findAll(p, ps, {
+      id: id ? (Number(id) || undefined) : undefined,
+      keyword: keyword || undefined,
+      status: status !== undefined ? (Number(status) || undefined) : undefined,
+      payMethod: payMethod || undefined,
+      cryptoNetwork: cryptoNetwork || undefined,
+    });
     return { success: true, data, message: 'ok' };
   }
 

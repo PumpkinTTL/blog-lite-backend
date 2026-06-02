@@ -95,10 +95,6 @@ export class PostService {
     await this.postRepo.update(id, { deletedAt: new Date() });
   }
 
-  async softDelete(id: number) {
-    return this.remove(id);
-  }
-
   async restore(id: number) {
     await this.postRepo.update(id, { deletedAt: null });
   }

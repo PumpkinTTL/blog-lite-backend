@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID, createHash } from 'node:crypto';
@@ -37,7 +37,9 @@ export class MediaService {
   }
 
   async findById(id: number) {
-    return this.mediaRepo.findOne({ where: { id } });
+    const media = await this.mediaRepo.findOne({ where: { id } });
+    if (!media) throw new NotFoundException('素材不存在');
+    return media;
   }
 
   async upload(
