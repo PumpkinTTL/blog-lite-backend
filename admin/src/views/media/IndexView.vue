@@ -18,6 +18,7 @@ const page = ref(1)
 const pageSize = ref(10)
 const checkedRowKeys = ref<number[]>([])
 const uploadFileList = ref<UploadFileInfo[]>([])
+const uploading = ref(false)
 
 /** 存储通道：local=本地, oss=通用OSS, r2=Cloudflare R2 */
 const storageChannel = ref<'local' | 'oss' | 'r2'>('local')
@@ -113,6 +114,7 @@ function handlePageSizeChange(s: number) {
 
 async function handleUpload({ file }: { file: UploadFileInfo }) {
   if (!file.file) return
+  uploading.value = true
   try {
     if (storageChannel.value === 'r2') {
       await uploadToR2(file.file)
@@ -128,6 +130,8 @@ async function handleUpload({ file }: { file: UploadFileInfo }) {
   } catch (e: any) {
     message.error(e.message || '上传失败')
     uploadFileList.value = []
+  } finally {
+    uploading.value = false
   }
 }
 
@@ -145,12 +149,14 @@ function handleDelete(item: Media) {
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      loading.value = true
       try {
         await doDelete()
         message.success('删除成功')
-        loadMedia()
+        await loadMedia()
       } catch (e: any) {
         message.error(e.message || '删除失败')
+        loading.value = false
       }
     },
   })
@@ -163,8 +169,8 @@ async function handleBatchDelete() {
     content: `确定要删除选中的 ${checkedRowKeys.value.length} 个文件吗？`,
     positiveText: '删除', negativeText: '取消',
     onPositiveClick: async () => {
+      loading.value = true
       try {
-        // 判断是否全为 R2 文件
         const selectedItems = mediaList.value.filter((m) => checkedRowKeys.value.includes(m.id))
         const allR2 = selectedItems.length > 0 && selectedItems.every((m) => m.ossPlatform === 'cloudflare' && m.storageType === 'oss')
         if (allR2) {
@@ -174,9 +180,10 @@ async function handleBatchDelete() {
         }
         message.success('批量删除成功')
         checkedRowKeys.value = []
-        loadMedia()
+        await loadMedia()
       } catch (e: any) {
         message.error(e.message || '批量删除失败')
+        loading.value = false
       }
     },
   })
@@ -295,8 +302,8 @@ onMounted(loadMedia)
       </n-button>
       <n-select v-model:value="storageChannel" :options="storageChannelOptions" style="width: 110px" />
       <n-select v-if="showOssPlatformSelect" v-model:value="uploadOssPlatform" :options="uploadOssPlatformOptions" style="width: 130px" />
-      <n-upload v-model:file-list="uploadFileList" :show-file-list="false" :custom-request="({ file }) => handleUpload({ file })">
-        <n-button type="primary">
+      <n-upload v-model:file-list="uploadFileList" :show-file-list="false" :disabled="uploading" :custom-request="({ file }) => handleUpload({ file })">
+        <n-button type="primary" :loading="uploading">
           <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
           上传文件
         </n-button>

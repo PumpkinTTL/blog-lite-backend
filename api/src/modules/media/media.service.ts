@@ -53,13 +53,17 @@ export class MediaService {
     // 1. 计算文件哈希
     const hash = this.computeHash(file.buffer);
 
-    // 2. 秒传：相同哈希直接返回已有记录
-    if (storageType === 'local') {
-      const existing = await this.mediaRepo.findOne({ where: { hash, storageType: 'local' } });
-      if (existing) {
-        this.logger.log(`秒传命中: ${file.originalname} -> ${existing.id} (hash: ${hash})`);
-        return existing;
-      }
+    // 2. 秒传：同存储通道下相同哈希直接返回已有记录（本地/OSS/R2 通用）
+    const qb = this.mediaRepo.createQueryBuilder('m')
+      .where('m.hash = :hash', { hash })
+      .andWhere('m.storage_type = :storageType', { storageType });
+    if (storageType === 'oss' && ossPlatform) {
+      qb.andWhere('m.oss_platform = :ossPlatform', { ossPlatform });
+    }
+    const existing = await qb.getOne();
+    if (existing) {
+      this.logger.log(`秒传命中: ${file.originalname} -> ${existing.id} (${storageType}${ossPlatform ? '/' + ossPlatform : ''}, hash: ${hash})`);
+      return existing;
     }
 
     // 3. 存储文件
