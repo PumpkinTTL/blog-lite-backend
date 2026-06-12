@@ -76,3 +76,20 @@ export class ResetPasswordDto {
   @MinLength(6)
   newPassword: string;
 }
+
+export class SendResetCodeDto {
+  @IsEmail()
+  email: string;
+}
+
+export class ResetPasswordByCodeDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  code: string;
+
+  @IsString()
+  @MinLength(6)
+  newPassword: string;
+}

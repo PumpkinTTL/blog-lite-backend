@@ -102,6 +102,16 @@ export class UserService {
       .getOne();
   }
 
+  /**
+   * 根据邮箱查找用户
+   */
+  async findByEmail(email: string): Promise<UserEntity | null> {
+    return this.userRepo
+      .createQueryBuilder('u')
+      .where('u.email = :email', { email })
+      .getOne();
+  }
+
   // ===== CRUD =====
 
   async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: number }) {

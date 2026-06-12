@@ -7,9 +7,10 @@ import { UserController } from './user.controller';
 import { RoleService } from './role.service';
 import { RoleController } from './role.controller';
 import { CodeModule } from '../code/code.module';
+import { EmailCodeModule } from '../email-code/email-code.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity, RoleEntity]), CodeModule],
+  imports: [TypeOrmModule.forFeature([UserEntity, RoleEntity]), CodeModule, EmailCodeModule],
   controllers: [UserController, RoleController],
   providers: [UserService, RoleService],
   exports: [UserService, RoleService],

@@ -2,13 +2,17 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, R
 import type { Request } from 'express';
 import { UserService } from './user.service';
 import { LoginDto } from './login.dto';
-import { CreateUserDto, UpdateUserDto, UpdateProfileDto, ResetPasswordDto } from './user.dto';
+import { CreateUserDto, UpdateUserDto, UpdateProfileDto, ResetPasswordDto, SendResetCodeDto, ResetPasswordByCodeDto } from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { EmailCodeService } from '../email-code/email-code.service';
 
 @Controller('user')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly emailCodeService: EmailCodeService,
+  ) {}
 
   // ===== 管理端登录 =====
 
@@ -151,6 +155,38 @@ export class UserController {
   @Put(':id/reset-password')
   async resetPassword(@Param('id', ParseIntPipe) id: number, @Body() dto: ResetPasswordDto) {
     const data = await this.userService.resetPassword(id, dto.newPassword);
+    return { success: true, message: '密码重置成功' };
+  }
+
+  // ===== 忘记密码：发送验证码 =====
+
+  @Public()
+  @Post('send-reset-code')
+  async sendResetCode(@Body() dto: SendResetCodeDto) {
+    // 检查邮箱是否已注册
+    const user = await this.userService.findByEmail(dto.email);
+    if (!user) {
+      return { success: false, message: '该邮箱未注册' };
+    }
+    await this.emailCodeService.sendCode(dto.email);
+    return { success: true, message: '验证码已发送' };
+  }
+
+  // ===== 忘记密码：验证码重置密码 =====
+
+  @Public()
+  @Post('reset-password-by-code')
+  async resetPasswordByCode(@Body() dto: ResetPasswordByCodeDto) {
+    // 验证验证码
+    this.emailCodeService.verifyCode(dto.email, dto.code);
+
+    // 查找用户并重置密码
+    const user = await this.userService.findByEmail(dto.email);
+    if (!user) {
+      return { success: false, message: '该邮箱未注册' };
+    }
+
+    await this.userService.resetPassword(user.id, dto.newPassword);
     return { success: true, message: '密码重置成功' };
   }
 }
