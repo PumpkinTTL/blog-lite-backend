@@ -2,6 +2,12 @@ import request from './request'
 import type { Tag } from './tag'
 import type { Category } from './category'
 
+export interface PostAllowedUser {
+  id: number
+  username: string
+  nickname: string
+}
+
 export interface Post {
   id: number
   title: string
@@ -15,6 +21,8 @@ export interface Post {
   category: Category | null
   tags: Tag[]
   tagIds?: number[]
+  allowedUsers?: PostAllowedUser[]
+  allowedUserIds?: number[]
   createdAt: string
   updatedAt: string
   publishedAt: string | null

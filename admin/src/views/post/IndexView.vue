@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NTag, NInput, NIcon, NSelect, NPagination, useMessage, useDialog } from 'naive-ui'
+import { NCard, NButton, NDataTable, NSpace, NTag, NInput, NIcon, NSelect, NPagination, NImage, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
-import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
+import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, ImageOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
 import { getPosts, deletePost } from '../../api/post'
 import type { Post } from '../../api/post'
@@ -30,8 +30,37 @@ const statusOptions = [
   { label: '指定用户', value: 'private' },
 ]
 
+function resolveCoverUrl(url: string | null): string {
+  if (!url) return ''
+  if (/^https?:\/\//.test(url)) return url
+  const base = import.meta.env.VITE_API_BASE_URL || window.location.origin
+  return new URL(url, base).toString()
+}
+
 const columns: DataTableColumns<Post> = [
   { title: 'ID', key: 'id', width: 70 },
+  {
+    title: '封面',
+    key: 'coverImage',
+    width: 80,
+    render: (row) => {
+      const url = resolveCoverUrl(row.coverImage)
+      if (!url) {
+        return h('div', {
+          style: 'width:48px;height:48px;border-radius:6px;background:rgba(148,163,184,0.08);display:flex;align-items:center;justify-content:center',
+        }, [h(NIcon, { size: 22, color: '#94A3B8' }, { default: () => h(ImageOutline) })])
+      }
+      return h(NImage, {
+        src: url,
+        width: 48,
+        height: 48,
+        objectFit: 'cover',
+        style: 'border-radius:6px;display:block',
+        previewSrc: url,
+        alt: row.title,
+      })
+    },
+  },
   { title: '标题', key: 'title', ellipsis: { tooltip: true }, width: 200 },
   { title: '内容预览', key: 'content', ellipsis: { tooltip: true }, width: 200, render: (row) => row.content?.replace(/[#*`\n]/g, '').slice(0, 80) || '-' },
   { title: '作者', key: 'author', width: 100, render: (row) => row.author?.nickname || '-' },
@@ -50,7 +79,7 @@ const columns: DataTableColumns<Post> = [
   {
     title: '状态',
     key: 'status',
-    width: 110,
+    width: 140,
     render: (row) => {
       const map: Record<string, { type: 'success' | 'warning' | 'info' | 'default'; label: string }> = {
         published: { type: 'success', label: '已发布' },
@@ -59,7 +88,14 @@ const columns: DataTableColumns<Post> = [
         private: { type: 'warning', label: '指定用户' },
       }
       const s = map[row.status] || { type: 'default' as const, label: row.status }
-      return h(NTag, { size: 'small', type: s.type }, { default: () => s.label })
+      const tag = h(NTag, { size: 'small', type: s.type }, { default: () => s.label })
+      // private 状态额外显示已选用户数
+      if (row.status === 'private') {
+        const cnt = (row.allowedUsers || []).length
+        const cntTag = h(NTag, { size: 'small', bordered: false, type: 'warning' }, { default: () => `${cnt} 人` })
+        return h(NSpace, { size: 4, align: 'center' }, { default: () => [tag, cntTag] })
+      }
+      return tag
     },
   },
   { title: '更新时间', key: 'updatedAt', width: 170, render: (row) => new Date(row.updatedAt).toLocaleString('zh-CN') },

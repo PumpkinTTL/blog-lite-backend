@@ -171,7 +171,11 @@ function toggleDark() {
       </n-layout-header>
 
       <!-- 内容区 -->
-      <n-layout-content content-style="padding: 24px;" class="admin-content">
+      <n-layout-content
+        content-style="padding: 24px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box;"
+        native-scrollbar="false"
+        class="admin-content"
+      >
         <router-view />
       </n-layout-content>
     </n-layout>
@@ -278,5 +282,22 @@ function toggleDark() {
 
 .admin-content {
   background: var(--n-body-color);
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-content :deep(.router-view) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 让 router-view 的直接子元素撑满 */
+.admin-content > div {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 </style>
