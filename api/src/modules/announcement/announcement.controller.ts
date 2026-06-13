@@ -3,9 +3,11 @@ import type { Request } from 'express';
 import { AnnouncementService } from './announcement.service';
 import { CreateAnnouncementDto, UpdateAnnouncementDto } from './announcement.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { ANNOUNCEMENT_STATUS } from '../../common/constants/status';
 
 @Controller('announcement')
+@Roles('admin')
 export class AnnouncementController {
   constructor(private readonly service: AnnouncementService) {}
 
@@ -19,9 +21,10 @@ export class AnnouncementController {
     @Query('status') status?: string,
     @Req() req?: Request,
   ) {
-    // 未登录只返回已发布的公告
-    const isLoggedIn = !!(req as any)?.user;
-    const finalStatus = !isLoggedIn ? ANNOUNCEMENT_STATUS.VISIBLE : status;
+    // 未登录或普通用户只返回已发布的公告；管理员看全部
+    const user = (req as any)?.user;
+    const isAdmin = user?.roles?.includes('admin') ?? false;
+    const finalStatus = !isAdmin ? ANNOUNCEMENT_STATUS.VISIBLE : status;
     const data = await this.service.findAll(
       page ? parseInt(page) : 1,
       pageSize ? parseInt(pageSize) : 20,

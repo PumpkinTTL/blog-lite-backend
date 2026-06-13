@@ -5,6 +5,7 @@ import { LoginDto } from './login.dto';
 import { CreateUserDto, UpdateUserDto, UpdateProfileDto, ResetPasswordDto, SendResetCodeDto, ResetPasswordByCodeDto } from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { EmailCodeService } from '../email-code/email-code.service';
 import { USER_STATUS } from '../../common/constants/status';
 
@@ -99,6 +100,7 @@ export class UserController {
 
   // ===== 管理接口 =====
 
+  @Roles('admin')
   @Get()
   async list(
     @Query('page') page?: string,
@@ -119,30 +121,35 @@ export class UserController {
     return { success: true, data, message: 'ok' };
   }
 
+  @Roles('admin')
   @Get(':id')
   async detail(@Param('id', ParseIntPipe) id: number) {
     const data = await this.userService.findById(id);
     return { success: true, data, message: 'ok' };
   }
 
+  @Roles('admin')
   @Post()
   async create(@Body() dto: CreateUserDto) {
     const data = await this.userService.create(dto);
     return { success: true, data, message: '创建成功' };
   }
 
+  @Roles('admin')
   @Put(':id')
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUserDto) {
     const data = await this.userService.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }
 
+  @Roles('admin')
   @Delete(':id')
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.userService.remove(id);
     return { success: true, message: '删除成功' };
   }
 
+  @Roles('admin')
   @Put(':id/toggle-status')
   async toggleStatus(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
     const currentUserId = parseInt((req as any).user?.sub, 10);
@@ -153,6 +160,7 @@ export class UserController {
     return { success: true, data, message: data.status === USER_STATUS.ACTIVE ? '已启用' : '已禁用' };
   }
 
+  @Roles('admin')
   @Put(':id/reset-password')
   async resetPassword(@Param('id', ParseIntPipe) id: number, @Body() dto: ResetPasswordDto) {
     const data = await this.userService.resetPassword(id, dto.newPassword);

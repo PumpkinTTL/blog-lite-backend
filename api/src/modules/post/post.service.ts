@@ -4,6 +4,7 @@ import { Repository, In } from 'typeorm';
 import { PostEntity } from './post.entity';
 import { PostViewEntity } from './post-view.entity';
 import { TagEntity } from '../tag/tag.entity';
+import { UserEntity } from '../user/user.entity';
 import { POST_STATUS } from '../../common/constants/status';
 
 @Injectable()
@@ -15,13 +16,16 @@ export class PostService {
     private readonly postViewRepo: Repository<PostViewEntity>,
     @InjectRepository(TagEntity)
     private readonly tagRepo: Repository<TagEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
   ) {}
 
   async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: string; categoryId?: number; tagId?: number }, publicOnly = false) {
     const qb = this.postRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.author', 'author')
       .leftJoinAndSelect('p.category', 'category')
-      .leftJoinAndSelect('p.tags', 'tags');
+      .leftJoinAndSelect('p.tags', 'tags')
+      .leftJoinAndSelect('p.allowedUsers', 'allowedUsers');
 
     // 公开接口只返回已发布文章
     if (publicOnly) {
@@ -58,15 +62,18 @@ export class PostService {
     if (publicOnly) {
       where.status = POST_STATUS.PUBLISHED;
     }
-    return this.postRepo.findOne({ where, relations: ['author', 'category', 'tags'] });
+    return this.postRepo.findOne({ where, relations: ['author', 'category', 'tags', 'allowedUsers'] });
   }
 
-  async create(data: Partial<PostEntity> & { tagIds?: number[] }) {
-    const { tagIds, ...postData } = data;
+  async create(data: Partial<PostEntity> & { tagIds?: number[]; allowedUserIds?: number[] }) {
+    const { tagIds, allowedUserIds, ...postData } = data;
     const post = this.postRepo.create(postData);
 
     if (tagIds?.length) {
       post.tags = await this.tagRepo.findBy({ id: In(tagIds) });
+    }
+    if (allowedUserIds?.length) {
+      post.allowedUsers = await this.userRepo.findBy({ id: In(allowedUserIds) });
     }
 
     if (post.status === POST_STATUS.PUBLISHED && !post.publishedAt) {
@@ -78,16 +85,19 @@ export class PostService {
     return this.postRepo.save(post);
   }
 
-  async update(id: number, data: Partial<PostEntity> & { tagIds?: number[] }) {
-    const { tagIds, ...postData } = data;
+  async update(id: number, data: Partial<PostEntity> & { tagIds?: number[]; allowedUserIds?: number[] }) {
+    const { tagIds, allowedUserIds, ...postData } = data;
 
-    const post = await this.postRepo.findOne({ where: { id }, relations: ['tags'] });
+    const post = await this.postRepo.findOne({ where: { id }, relations: ['tags', 'allowedUsers'] });
     if (!post) return null;
 
     Object.assign(post, postData);
 
     if (tagIds !== undefined) {
       post.tags = tagIds.length ? await this.tagRepo.findBy({ id: In(tagIds) }) : [];
+    }
+    if (allowedUserIds !== undefined) {
+      post.allowedUsers = allowedUserIds.length ? await this.userRepo.findBy({ id: In(allowedUserIds) }) : [];
     }
 
     if (postData.status === POST_STATUS.PUBLISHED && !post.publishedAt) {

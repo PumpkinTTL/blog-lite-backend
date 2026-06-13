@@ -19,9 +19,11 @@ import { memoryStorage } from 'multer';
 import { extname } from 'path';
 import { MediaService } from './media.service';
 import { CreateMediaDto, UpdateMediaDto, BatchIdsDto, UploadStorageDto } from './media.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
 import type { Request } from 'express';
 
 @Controller('media')
+@Roles('admin')
 export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 

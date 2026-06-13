@@ -3,9 +3,11 @@ import type { Request } from 'express';
 import { FriendLinkService } from './friend-link.service';
 import { CreateFriendLinkDto, UpdateFriendLinkDto } from './friend-link.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { FRIEND_LINK_STATUS } from '../../common/constants/status';
 
 @Controller('friend-link')
+@Roles('admin')
 export class FriendLinkController {
   constructor(private readonly service: FriendLinkService) {}
 
@@ -19,9 +21,10 @@ export class FriendLinkController {
     @Query('status') status?: string,
     @Req() req?: Request,
   ) {
-    // 未登录只返回已启用的友链
-    const isLoggedIn = !!(req as any)?.user;
-    const finalStatus = !isLoggedIn ? FRIEND_LINK_STATUS.VISIBLE : status;
+    // 未登录或普通用户只返回已启用的友链；管理员看全部
+    const user = (req as any)?.user;
+    const isAdmin = user?.roles?.includes('admin') ?? false;
+    const finalStatus = !isAdmin ? FRIEND_LINK_STATUS.VISIBLE : status;
     const data = await this.service.findAll(
       page ? parseInt(page) : 1,
       pageSize ? parseInt(pageSize) : 20,

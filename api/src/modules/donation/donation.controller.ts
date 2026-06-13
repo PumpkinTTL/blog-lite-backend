@@ -9,15 +9,15 @@ import {
   ParseIntPipe,
   Query,
   Res,
-  DefaultValuePipe,
-  ParseBoolPipe,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { DonationService } from './donation.service';
 import { CreateDonationDto, UpdateDonationDto } from './donation.dto';
 import { DonationStatus } from './donation.entity';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('donation')
+@Roles('admin')
 export class DonationController {
   constructor(private readonly service: DonationService) {}
 

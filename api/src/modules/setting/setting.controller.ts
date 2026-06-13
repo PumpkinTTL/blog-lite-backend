@@ -1,8 +1,10 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
 import { SettingService } from './setting.service';
 import { CreateSettingDto, UpdateSettingDto, BatchUpdateSettingDto } from './setting.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('setting')
+@Roles('admin')
 export class SettingController {
   constructor(private readonly service: SettingService) {}
 

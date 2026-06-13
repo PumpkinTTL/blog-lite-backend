@@ -2,8 +2,10 @@ import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } 
 import { TagService } from './tag.service';
 import { CreateTagDto, UpdateTagDto } from './tag.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('tag')
+@Roles('admin')
 export class TagController {
   constructor(private readonly tagService: TagService) {}
 

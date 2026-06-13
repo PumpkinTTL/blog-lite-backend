@@ -3,9 +3,11 @@ import type { Request } from 'express';
 import { PostService } from './post.service';
 import { CreatePostDto, UpdatePostDto, BatchIdsDto } from './post.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { POST_STATUS } from '../../common/constants/status';
 
 @Controller('post')
+@Roles('admin')
 export class PostController {
   constructor(private readonly postService: PostService) {}
 
@@ -21,8 +23,9 @@ export class PostController {
     @Query('tagId') tagId?: string,
     @Req() req?: Request,
   ) {
-    // 已登录用户（后台管理）可按 status 过滤；未登录（公开）只返回已发布
-    const isLoggedIn = !!(req as any)?.user;
+    // 已登录管理员看全部；未登录或普通用户只返回已发布
+    const user = (req as any)?.user;
+    const isAdmin = user?.roles?.includes('admin') ?? false;
     const data = await this.postService.findAll(
       Math.max(parseInt(page || '1'), 1),
       Math.min(parseInt(pageSize || '20'), 100),
@@ -33,7 +36,7 @@ export class PostController {
         categoryId: categoryId !== undefined ? parseInt(categoryId) : undefined,
         tagId: tagId !== undefined ? parseInt(tagId) : undefined,
       },
-      !isLoggedIn,
+      !isAdmin,
     );
     return { success: true, data, message: 'ok' };
   }
@@ -53,9 +56,26 @@ export class PostController {
   @Public()
   @Get(':id')
   async detail(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
-    const isLoggedIn = !!(req as any)?.user;
-    const data = await this.postService.findById(id, !isLoggedIn);
-    return { success: true, data, message: 'ok' };
+    const user = (req as any)?.user;
+    const isAdmin = user?.roles?.includes('admin') ?? false;
+    const userId = user?.sub ? Number(user.sub) : null;
+
+    // admin 看全部，未登录只看 published，已登录非 admin 看除 private 外的（private 另行校验）
+    const publicOnly = !isAdmin && userId === null;
+    const post = await this.postService.findById(id, publicOnly);
+    if (!post) {
+      return { success: false, message: '文章不存在', data: null };
+    }
+
+    // private 文章：非 admin 用户必须在 allowedUsers 列表里
+    if (post.status === POST_STATUS.PRIVATE && !isAdmin) {
+      const allowed = (post.allowedUsers || []).some((u: any) => u.id === userId);
+      if (!allowed) {
+        return { success: false, message: '无权访问', data: null };
+      }
+    }
+
+    return { success: true, data: post, message: 'ok' };
   }
 
   @Public()

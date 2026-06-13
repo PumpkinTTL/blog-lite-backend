@@ -58,6 +58,14 @@ export class PostEntity {
   })
   tags: TagEntity[];
 
+  @ManyToMany(() => UserEntity)
+  @JoinTable({
+    name: 'post_allowed_users',
+    joinColumn: { name: 'post_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' },
+  })
+  allowedUsers: UserEntity[];
+
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })
   createdAt: Date;
 

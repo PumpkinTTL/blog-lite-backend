@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuthGuard } from './modules/auth/auth.guard';
+import { RolesGuard } from './modules/auth/roles.guard';
 import { UserModule } from './modules/user/user.module';
 import { CodeModule } from './modules/code/code.module';
 import { PostModule } from './modules/post/post.module';
@@ -22,6 +23,10 @@ import { DonationModule } from './modules/donation/donation.module';
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
     },
   ],
   imports: [

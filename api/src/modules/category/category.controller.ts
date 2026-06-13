@@ -2,8 +2,10 @@ import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } 
 import { CategoryService } from './category.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './category.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('category')
+@Roles('admin')
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 
