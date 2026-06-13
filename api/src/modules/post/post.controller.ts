@@ -37,6 +37,7 @@ export class PostController {
         tagId: tagId !== undefined ? parseInt(tagId) : undefined,
       },
       !isAdmin,
+      isAdmin, // withVisibility：admin 列表带可见性配置
     );
     return { success: true, data, message: 'ok' };
   }
@@ -59,23 +60,34 @@ export class PostController {
     const user = (req as any)?.user;
     const isAdmin = user?.roles?.includes('admin') ?? false;
     const userId = user?.sub ? Number(user.sub) : null;
+    // AuthGuard 已挂载 user.roles（数组），用于角色授权校验
+    const userRoleIds: number[] = user?.roleIds ?? [];
 
-    // admin 看全部，未登录只看 published，已登录非 admin 看除 private 外的（private 另行校验）
+    // admin 看全部，未登录只看 published
     const publicOnly = !isAdmin && userId === null;
     const post = await this.postService.findById(id, publicOnly);
     if (!post) {
       return { success: false, message: '文章不存在', data: null };
     }
 
-    // private 文章：非 admin 用户必须在 allowedUsers 列表里
+    // private 文章：非 admin 用户必须被授权（直接授权 OR 角色命中）
     if (post.status === POST_STATUS.PRIVATE && !isAdmin) {
-      const allowed = (post.allowedUsers || []).some((u: any) => u.id === userId);
+      if (userId === null) {
+        return { success: false, message: '无权访问', data: null };
+      }
+      const allowed = await this.postService.canAccess(id, userId, userRoleIds);
       if (!allowed) {
         return { success: false, message: '无权访问', data: null };
       }
     }
 
-    return { success: true, data: post, message: 'ok' };
+    // admin 看详情时附带可见性配置
+    let visibility: { allowedUserIds: number[]; allowedRoleIds: number[] } | undefined;
+    if (isAdmin) {
+      visibility = await this.postService.getVisibility(id);
+    }
+
+    return { success: true, data: { ...post, ...(visibility ? { allowedUserIds: visibility.allowedUserIds, allowedRoleIds: visibility.allowedRoleIds } : {}) }, message: 'ok' };
   }
 
   @Public()

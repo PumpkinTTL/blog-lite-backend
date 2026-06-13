@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NTag, NInput, NIcon, NSelect, NPagination, NImage, useMessage, useDialog } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NTag, NInput, NIcon, NSelect, NPagination, NImage, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, ImageOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
@@ -81,21 +81,23 @@ const columns: DataTableColumns<Post> = [
     key: 'status',
     width: 140,
     render: (row) => {
+      if (row.status === 'private') {
+        const hasUsers = (row.allowedUserIds?.length ?? 0) > 0
+        const hasRoles = (row.allowedRoleIds?.length ?? 0) > 0
+        let suffix = ''
+        if (hasUsers && hasRoles) suffix = '用户+角色'
+        else if (hasUsers) suffix = `用户${row.allowedUserIds!.length}人`
+        else if (hasRoles) suffix = `角色${row.allowedRoleIds!.length}个`
+        const label = suffix ? `指定可见·${suffix}` : '指定可见'
+        return h(NTag, { size: 'small', type: 'warning' }, { default: () => label })
+      }
       const map: Record<string, { type: 'success' | 'warning' | 'info' | 'default'; label: string }> = {
         published: { type: 'success', label: '已发布' },
         draft: { type: 'default', label: '草稿' },
         login: { type: 'info', label: '登录可见' },
-        private: { type: 'warning', label: '指定用户' },
       }
       const s = map[row.status] || { type: 'default' as const, label: row.status }
-      const tag = h(NTag, { size: 'small', type: s.type }, { default: () => s.label })
-      // private 状态额外显示已选用户数
-      if (row.status === 'private') {
-        const cnt = (row.allowedUsers || []).length
-        const cntTag = h(NTag, { size: 'small', bordered: false, type: 'warning' }, { default: () => `${cnt} 人` })
-        return h(NSpace, { size: 4, align: 'center' }, { default: () => [tag, cntTag] })
-      }
-      return tag
+      return h(NTag, { size: 'small', type: s.type }, { default: () => s.label })
     },
   },
   { title: '更新时间', key: 'updatedAt', width: 170, render: (row) => new Date(row.updatedAt).toLocaleString('zh-CN') },
@@ -104,6 +106,7 @@ const columns: DataTableColumns<Post> = [
     title: '操作',
     key: 'actions',
     width: 140,
+    fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 'small' }, {
         default: () => [
@@ -225,19 +228,14 @@ onMounted(() => { loadPosts(); loadCategoryOptions() })
       </n-button>
     </n-space>
 
-    <n-card :bordered="false" class="table-card">
-      <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" />
-<div class="pagination-wrap" v-if="total > 0">
-<n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+    <div class="table-section">
+      <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" :scroll-x="1300" />
+      <div class="pagination-wrap" v-if="total > 0">
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
-    </n-card>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.pagination-wrap {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
 </style>

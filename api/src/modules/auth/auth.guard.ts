@@ -42,8 +42,8 @@ export class AuthGuard implements CanActivate {
 
     try {
       const payload = await this.authService.verifyToken(authHeader.slice(7));
-      const roles = await this.getUserRoles(Number(payload.sub));
-      request.user = { ...payload, roles };
+      const { roleNames, roleIds } = await this.getUserRoles(Number(payload.sub));
+      request.user = { ...payload, roles: roleNames, roleIds };
       return true;
     } catch (error) {
       // 公开接口 token 无效 → 当未登录放行
@@ -55,13 +55,19 @@ export class AuthGuard implements CanActivate {
     }
   }
 
-  private async getUserRoles(userId: number): Promise<string[]> {
+  /**
+   * 查询用户角色，同时返回 roleNames（用于 @Roles 装饰器）和 roleIds（用于可见性校验）
+   */
+  private async getUserRoles(userId: number): Promise<{ roleNames: string[]; roleIds: number[] }> {
     const rows = await this.dataSource.query(
-      `SELECT r.name FROM roles r
+      `SELECT r.id, r.name FROM roles r
        INNER JOIN user_roles ur ON r.id = ur.role_id
        WHERE ur.user_id = ?`,
       [userId],
     );
-    return rows.map((r: any) => r.name);
+    return {
+      roleNames: rows.map((r: any) => r.name),
+      roleIds: rows.map((r: any) => r.id),
+    };
   }
 }

@@ -45,10 +45,11 @@ export class MediaService {
   async upload(
     file: Express.Multer.File,
     uploaderId: number,
-    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null> },
+    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null>; note?: string },
   ) {
     const storageType = options?.storageType ?? 'local';
     const ossPlatform: OssPlatform = storageType === 'oss' ? (options?.ossPlatform ?? null) : null;
+    const note = options?.note?.trim() || null;
 
     // 1. 计算文件哈希
     const hash = this.computeHash(file.buffer);
@@ -62,6 +63,11 @@ export class MediaService {
     }
     const existing = await qb.getOne();
     if (existing) {
+      // 秒传命中：若本次携带了 note 且与已有 note 不同，则更新 note
+      if (note && existing.note !== note) {
+        existing.note = note;
+        return this.mediaRepo.save(existing);
+      }
       this.logger.log(`秒传命中: ${file.originalname} -> ${existing.id} (${storageType}${ossPlatform ? '/' + ossPlatform : ''}, hash: ${hash})`);
       return existing;
     }
@@ -83,6 +89,7 @@ export class MediaService {
       storageType,
       ossPlatform,
       uploaderId,
+      note,
     });
     return this.mediaRepo.save(media);
   }
@@ -90,7 +97,7 @@ export class MediaService {
   async uploadMany(
     files: Express.Multer.File[],
     uploaderId: number,
-    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null> },
+    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null>; note?: string },
   ) {
     const result: MediaEntity[] = [];
     for (const file of files) {
@@ -113,7 +120,7 @@ export class MediaService {
     await this.mediaRepo.delete(id);
   }
 
-  async update(id: number, data: { originalName?: string }) {
+  async update(id: number, data: { originalName?: string; note?: string }) {
     await this.mediaRepo.update(id, data);
     return this.findById(id);
   }

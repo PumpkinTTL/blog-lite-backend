@@ -61,6 +61,9 @@ export class MediaEntity {
   @Column({ name: 'uploader_id', comment: '上传者 ID' })
   uploaderId: number;
 
+  @Column({ type: 'varchar', length: 255, nullable: true, comment: '备注：描述文件用途' })
+  note: string | null;
+
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })
   createdAt: Date;
 }

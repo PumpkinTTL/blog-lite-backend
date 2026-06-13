@@ -173,7 +173,7 @@ function toggleDark() {
       <!-- 内容区 -->
       <n-layout-content
         content-style="padding: 24px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box;"
-        native-scrollbar="false"
+        :native-scrollbar="false"
         class="admin-content"
       >
         <router-view />

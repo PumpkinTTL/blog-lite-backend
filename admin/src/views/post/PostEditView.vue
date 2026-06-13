@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NCard, NForm, NFormItem, NInput, NButton, NSelect, NSpace, NIcon, NUpload, NTag, useMessage } from 'naive-ui'
 import type { FormInst, FormRules, UploadFileInfo } from 'naive-ui'
+import type { ExposeParam, UploadImgCallBack } from 'md-editor-v3'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import { ArrowBackOutline, SaveOutline, CloudUploadOutline, TrashOutline } from '@vicons/ionicons5'
@@ -10,6 +11,7 @@ import { getPost, createPost, updatePost } from '../../api/post'
 import { getCategories } from '../../api/category'
 import { getTags } from '../../api/tag'
 import { getUsers } from '../../api/user'
+import { getRoles } from '../../api/role'
 import { uploadMedia } from '../../api/media'
 import { uploadToR2 } from '../../api/r2-storage'
 import { isDark } from '../../theme'
@@ -19,9 +21,11 @@ const router = useRouter()
 const message = useMessage()
 
 const formRef = ref<FormInst | null>(null)
+const editorRef = ref<ExposeParam | null>(null)
 const saving = ref(false)
 const loading = ref(false)
 const coverUploadFileList = ref<UploadFileInfo[]>([])
+const coverDragOver = ref(false)
 const isEdit = computed(() => !!route.params.id)
 
 const formValue = ref({
@@ -34,6 +38,7 @@ const formValue = ref({
   categoryId: null as number | null,
   tagIds: [] as number[],
   allowedUserIds: [] as number[],
+  allowedRoleIds: [] as number[],
 })
 
 const rules: FormRules = {
@@ -44,6 +49,7 @@ const rules: FormRules = {
 const categoryOptions = ref<{ label: string; value: number }[]>([])
 const tagOptions = ref<{ label: string; value: number }[]>([])
 const userOptions = ref<{ label: string; value: number }[]>([])
+const roleOptions = ref<{ label: string; value: number }[]>([])
 
 const statusOptions = [
   { label: '草稿', value: 'draft' },
@@ -52,9 +58,9 @@ const statusOptions = [
   { label: '指定用户', value: 'private' },
 ]
 
-/** 封面存储方式 */
-const coverStorageChannel = ref<'local' | 'oss' | 'r2'>('local')
-const coverOssPlatform = ref<'aliyun' | 'tencent' | 'backblaze'>('aliyun')
+/** 图片存储方式（封面+正文共用） */
+const storageChannel = ref<'local' | 'oss' | 'r2'>('r2')
+const ossPlatform = ref<'aliyun' | 'tencent' | 'backblaze'>('aliyun')
 
 const coverStorageOptions = [
   { label: '本地', value: 'local' },
@@ -83,7 +89,9 @@ const coverUrl = computed(() => resolveCoverUrl(formValue.value.coverImage))
 
 async function loadOptions() {
   try {
-    const [catRes, tagRes, userRes] = await Promise.all([getCategories(), getTags(), getUsers({ pageSize: 1000 })])
+    const [catRes, tagRes, userRes, roleRes] = await Promise.all([
+      getCategories(), getTags(), getUsers({ pageSize: 1000 }), getRoles({ pageSize: 1000 }),
+    ])
     const catPayload = catRes.data
     const cats = Array.isArray(catPayload) ? catPayload : (catPayload?.list || [])
     categoryOptions.value = cats.map((c: any) => ({ label: c.name, value: c.id }))
@@ -95,6 +103,10 @@ async function loadOptions() {
     const userPayload = userRes.data
     const users = Array.isArray(userPayload) ? userPayload : (userPayload?.list || [])
     userOptions.value = users.map((u: any) => ({ label: `${u.nickname} (${u.username})`, value: u.id }))
+
+    const rolePayload = roleRes.data
+    const roles = Array.isArray(rolePayload) ? rolePayload : (rolePayload?.list || [])
+    roleOptions.value = roles.map((r: any) => ({ label: `${r.displayName} (${r.name})`, value: r.id }))
   } catch (e) {
     console.error('加载选项失败:', e)
   }
@@ -115,7 +127,8 @@ async function loadPost(id: number) {
         status: post.status ?? 'draft',
         categoryId: post.categoryId,
         tagIds: (post.tags || []).map((t: any) => t.id),
-        allowedUserIds: (post.allowedUsers || []).map((u: any) => u.id),
+          allowedUserIds: post.allowedUserIds || [],
+          allowedRoleIds: post.allowedRoleIds || [],
       }
     }
   } catch {
@@ -125,13 +138,10 @@ async function loadPost(id: number) {
   }
 }
 
-/** 选择图片：只转 base64 预览，不实际上传 */
-function handleCoverSelect({ file }: { file: UploadFileInfo }) {
-  const raw = file.file
-  if (!raw) return
+/** 从原生 File 加载封面（转 base64 预览） */
+function loadCoverFromFile(raw: File) {
   if (!raw.type.startsWith('image/')) {
     message.error('请选择图片文件')
-    coverUploadFileList.value = []
     return
   }
   const reader = new FileReader()
@@ -140,7 +150,22 @@ function handleCoverSelect({ file }: { file: UploadFileInfo }) {
   }
   reader.onerror = () => message.error('读取文件失败')
   reader.readAsDataURL(raw)
+}
+
+/** 选择图片：只转 base64 预览，不实际上传 */
+function handleCoverSelect({ file }: { file: UploadFileInfo }) {
+  const raw = file.file
+  if (!raw) return
+  loadCoverFromFile(raw)
   coverUploadFileList.value = []
+}
+
+/** 拖拽图片到封面区 */
+function handleCoverDrop(event: DragEvent) {
+  coverDragOver.value = false
+  const files = event.dataTransfer?.files
+  if (!files || files.length === 0) return
+  loadCoverFromFile(files[0])
 }
 
 function handleRemoveCover() {
@@ -158,21 +183,113 @@ function base64ToFile(dataUrl: string, filename: string): File {
   return new File([arr], `${filename}.${ext}`, { type: mime })
 }
 
+/** File 转 base64 */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+/** 按当前存储方式上传单个文件，返回 URL */
+async function uploadOne(file: File, note: string): Promise<string> {
+  if (storageChannel.value === 'r2') {
+    const r = await uploadToR2(file, { note })
+    return r.data.url
+  }
+  const r = await uploadMedia(file, {
+    storageType: storageChannel.value === 'oss' ? 'oss' : 'local',
+    ossPlatform: storageChannel.value === 'oss' ? ossPlatform.value : null,
+    note,
+  })
+  return r.data.url
+}
+
 /** 按当前选择的存储方式上传封面，返回 URL；若已是 URL 直接返回 */
 async function uploadCoverIfNeeded(): Promise<string> {
   const url = formValue.value.coverImage
   if (!url || !url.startsWith('data:')) return url
-
   const file = base64ToFile(url, `cover-${Date.now()}`)
-  if (coverStorageChannel.value === 'r2') {
-    const r = await uploadToR2(file)
-    return r.data.url
+  const note = formValue.value.title
+    ? `文章「${formValue.value.title}」封面`
+    : '文章封面'
+  return uploadOne(file, note)
+}
+
+/**
+ * 扫描正文中的 base64 图片，逐个上传后替换为真实 URL
+ * 匹配 markdown 图片语法 ![](data:image/...;base64,...)
+ */
+const DATA_IMG_RE = /!\[([^\]]*)\]\(data:image\/[^)]+\)/g
+
+async function uploadContentImages(content: string): Promise<string> {
+  const matches = [...content.matchAll(DATA_IMG_RE)]
+  if (matches.length === 0) return content
+
+  const note = formValue.value.title
+    ? `文章「${formValue.value.title}」正文图片`
+    : '文章正文图片'
+
+  let result = content
+  for (const m of matches) {
+    const full = m[0]
+    const alt = m[1]
+    const dataUrlMatch = full.match(/\(data:image\/[^)]+\)/)
+    if (!dataUrlMatch) continue
+    const dataUrl = dataUrlMatch[0].slice(1, -1) // 去掉首尾括号
+    try {
+      const file = base64ToFile(dataUrl, `content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+      const realUrl = await uploadOne(file, note)
+      result = result.replace(full, `![${alt}](${realUrl})`)
+    } catch (e) {
+      console.error('正文图片上传失败:', e)
+    }
   }
-  const r = await uploadMedia(file, {
-    storageType: coverStorageChannel.value === 'oss' ? 'oss' : 'local',
-    ossPlatform: coverStorageChannel.value === 'oss' ? coverOssPlatform.value : null,
-  })
-  return r.data.url
+  return result
+}
+
+/**
+ * MdEditor onUploadImg：粘贴图片 / 工具栏上传按钮
+ * 转 base64 直接回调，编辑器自动插入 markdown 图片语法
+ */
+async function onEditorUploadImg(
+  files: File[],
+  callback: UploadImgCallBack,
+) {
+  const urls: string[] = []
+  for (const f of files) {
+    if (!f.type.startsWith('image/')) continue
+    try {
+      urls.push(await fileToBase64(f))
+    } catch (e) {
+      console.error('图片读取失败:', e)
+    }
+  }
+  callback(urls)
+}
+
+/**
+ * MdEditor onDrop：拖拽图片到编辑器
+ * 阻止默认行为，转 base64 后在光标处插入
+ */
+async function onEditorDrop(event: DragEvent) {
+  const items = event.dataTransfer?.files
+  if (!items || items.length === 0) return
+  event.preventDefault()
+  for (const f of items) {
+    if (!f.type.startsWith('image/')) continue
+    try {
+      const dataUrl = await fileToBase64(f)
+      editorRef.value?.insert(() => ({
+        targetValue: `\n![](${dataUrl})\n`,
+        select: false,
+      }))
+    } catch (e) {
+      console.error('拖拽图片插入失败:', e)
+    }
+  }
 }
 
 async function handleSave() {
@@ -183,13 +300,18 @@ async function handleSave() {
   }
   saving.value = true
   try {
+    // 1. 上传封面
     const coverImageUrl = await uploadCoverIfNeeded()
-    const payload = { ...formValue.value, coverImage: coverImageUrl }
+    // 2. 扫描并上传正文 base64 图片
+    const realContent = await uploadContentImages(formValue.value.content)
+
+    const payload = { ...formValue.value, coverImage: coverImageUrl, content: realContent }
 
     if (isEdit.value) {
       await updatePost(Number(route.params.id), payload)
       // 同步本地状态，避免重复上传
       formValue.value.coverImage = coverImageUrl
+      formValue.value.content = realContent
       message.success('保存成功')
     } else {
       await createPost(payload)
@@ -208,6 +330,7 @@ function handleStatusChange(val: string) {
   formValue.value.status = val
   if (val !== 'private') {
     formValue.value.allowedUserIds = []
+    formValue.value.allowedRoleIds = []
   }
 }
 
@@ -248,10 +371,13 @@ onMounted(async () => {
             <div class="content-block">
               <div class="field-label">内容</div>
               <MdEditor
+                ref="editorRef"
                 v-model="formValue.content"
                 :theme="isDark ? 'dark' : 'light'"
                 style="height: 100%"
-                placeholder="开始编写 Markdown 内容..."
+                placeholder="开始编写 Markdown 内容...（支持拖拽 / 粘贴图片）"
+                :on-upload-img="onEditorUploadImg"
+                :on-drop="onEditorDrop"
               />
             </div>
           </n-card>
@@ -277,14 +403,14 @@ onMounted(async () => {
               <!-- 存储方式 -->
               <div class="cover-storage-row" v-if="!coverUrl || isCoverPending">
                 <n-select
-                  v-model:value="coverStorageChannel"
+                  v-model:value="storageChannel"
                   :options="coverStorageOptions"
                   size="small"
                   class="cover-storage-select"
                 />
                 <n-select
-                  v-if="coverStorageChannel === 'oss'"
-                  v-model:value="coverOssPlatform"
+                  v-if="storageChannel === 'oss'"
+                  v-model:value="ossPlatform"
                   :options="ossPlatformOptions"
                   size="small"
                   class="cover-storage-select"
@@ -323,10 +449,17 @@ onMounted(async () => {
                 accept="image/*"
                 :custom-request="handleCoverSelect"
               >
-                <div class="cover-empty">
+                <div
+                  class="cover-empty"
+                  :class="{ 'is-dragover': coverDragOver }"
+                  @dragenter.prevent="coverDragOver = true"
+                  @dragover.prevent="coverDragOver = true"
+                  @dragleave.prevent="coverDragOver = false"
+                  @drop.prevent="handleCoverDrop"
+                >
                   <n-icon size="32" color="#94A3B8"><CloudUploadOutline /></n-icon>
-                  <span class="cover-empty-title">点击上传封面图</span>
-                  <span class="cover-empty-hint">支持 JPG / PNG / WebP，可选中后预览</span>
+                  <span class="cover-empty-title">点击或拖拽上传封面图</span>
+                  <span class="cover-empty-hint">支持 JPG / PNG / WebP，选中后本地预览</span>
                 </div>
               </n-upload>
             </div>
@@ -363,7 +496,19 @@ onMounted(async () => {
             </div>
 
             <div v-if="isPrivate">
-              <div class="field-label">指定可见用户</div>
+              <div class="field-label">指定可见角色（拥有这些角色的用户可见）</div>
+              <n-select
+                v-model:value="formValue.allowedRoleIds"
+                :options="roleOptions"
+                placeholder="选择可见的角色"
+                multiple
+                clearable
+                filterable
+              />
+            </div>
+
+            <div v-if="isPrivate">
+              <div class="field-label">指定可见用户（直接授权单个用户）</div>
               <n-select
                 v-model:value="formValue.allowedUserIds"
                 :options="userOptions"
@@ -586,17 +731,20 @@ onMounted(async () => {
   color: #B0B7C3;
 }
 
-.cover-empty:hover {
+.cover-empty:hover,
+.cover-empty.is-dragover {
   border-color: #6366f1;
   color: #6366f1;
-  background: rgba(99, 102, 241, 0.04);
+  background: rgba(99, 102, 241, 0.08);
 }
 
-.cover-empty:hover :deep(svg) {
+.cover-empty:hover :deep(svg),
+.cover-empty.is-dragover :deep(svg) {
   color: #6366f1 !important;
 }
 
-.cover-empty:hover .cover-empty-hint {
+.cover-empty:hover .cover-empty-hint,
+.cover-empty.is-dragover .cover-empty-hint {
   color: #818CF8;
 }
 

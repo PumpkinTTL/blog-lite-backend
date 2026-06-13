@@ -30,6 +30,10 @@ export class UpdateMediaDto {
   @IsString()
   @IsOptional()
   originalName?: string;
+
+  @IsString()
+  @IsOptional()
+  note?: string;
 }
 
 export class BatchIdsDto {
@@ -46,4 +50,8 @@ export class UploadStorageDto {
   @IsEnum(['aliyun', 'tencent', 'cloudflare', 'backblaze'])
   @IsOptional()
   ossPlatform?: 'aliyun' | 'tencent' | 'cloudflare' | 'backblaze';
+
+  @IsString()
+  @IsOptional()
+  note?: string;
 }

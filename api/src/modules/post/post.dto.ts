@@ -42,6 +42,11 @@ export class CreatePostDto {
   @IsInt({ each: true })
   @IsOptional()
   allowedUserIds?: number[];
+
+  @IsArray()
+  @IsInt({ each: true })
+  @IsOptional()
+  allowedRoleIds?: number[];
 }
 
 export class UpdatePostDto {
@@ -82,4 +87,9 @@ export class UpdatePostDto {
   @IsInt({ each: true })
   @IsOptional()
   allowedUserIds?: number[];
+
+  @IsArray()
+  @IsInt({ each: true })
+  @IsOptional()
+  allowedRoleIds?: number[];
 }

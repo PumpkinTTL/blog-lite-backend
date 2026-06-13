@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../../api/announcement'
@@ -93,7 +93,7 @@ const columns: DataTableColumns<Announcement> = [
   { title: '排序', key: 'sortOrder', width: 80 },
   { title: '创建时间', key: 'createdAt', width: 170, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') },
   {
-    title: '操作', key: 'actions', width: 140,
+    title: '操作', key: 'actions', width: 140, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small' }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ title: r.title, content: r.content, status: r.status, sortOrder: r.sortOrder })) }, {
@@ -130,12 +130,12 @@ const columns: DataTableColumns<Announcement> = [
         重置
       </n-button>
     </n-space>
-    <n-card :bordered="false" class="table-card">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" />
+    <div class="table-section">
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="900" />
       <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
-    </n-card>
+    </div>
     <n-modal v-model:show="showModal" preset="dialog" :title="editingId ? '编辑公告' : '新建公告'"
       :positive-text="saving ? '提交中...' : '确认'" :negative-text="saving ? undefined : '取消'" :loading="saving" @positive-click="handleSave">
       <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="top">
@@ -154,5 +154,4 @@ const columns: DataTableColumns<Announcement> = [
 </template>
 
 <style scoped>
-.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

@@ -12,6 +12,7 @@ export interface Media {
   ossPlatform: 'aliyun' | 'tencent' | 'cloudflare' | 'backblaze' | null
   uploaderId: number
   uploader?: { id: number; username: string; nickname: string }
+  note: string | null
   createdAt: string
 }
 
@@ -19,21 +20,23 @@ export function getMediaList(params?: { page?: number; pageSize?: number; id?: n
   return request.get('/media', { params })
 }
 
-export function uploadMedia(file: File, options?: { storageType?: 'local' | 'oss'; ossPlatform?: Media['ossPlatform'] }) {
+export function uploadMedia(file: File, options?: { storageType?: 'local' | 'oss'; ossPlatform?: Media['ossPlatform']; note?: string }) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('storageType', options?.storageType || 'local')
   if (options?.ossPlatform) formData.append('ossPlatform', options.ossPlatform)
+  if (options?.note) formData.append('note', options.note)
   return request.post('/media/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
 
-export function uploadMediaMany(files: File[], options?: { storageType?: 'local' | 'oss'; ossPlatform?: Media['ossPlatform'] }) {
+export function uploadMediaMany(files: File[], options?: { storageType?: 'local' | 'oss'; ossPlatform?: Media['ossPlatform']; note?: string }) {
   const formData = new FormData()
   files.forEach((f) => formData.append('files', f))
   formData.append('storageType', options?.storageType || 'local')
   if (options?.ossPlatform) formData.append('ossPlatform', options.ossPlatform)
+  if (options?.note) formData.append('note', options.note)
   return request.post('/media/upload-many', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
@@ -47,6 +50,6 @@ export function batchDeleteMedia(ids: number[]) {
   return request.delete('/media/batch', { data: { ids } })
 }
 
-export function updateMedia(id: number, data: { originalName?: string }) {
+export function updateMedia(id: number, data: { originalName?: string; note?: string }) {
   return request.put(`/media/${id}`, data)
 }

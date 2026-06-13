@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, h, onMounted, computed } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NPagination, NUpload, NImage, NSelect, useMessage, useDialog } from 'naive-ui'
+import { ref, h, onMounted, computed, reactive } from 'vue'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NPagination, NUpload, NImage, NSelect, NEllipsis, NTooltip, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns, UploadFileInfo } from 'naive-ui'
-import { CloudUploadOutline, TrashOutline, SearchOutline, RefreshOutline, DocumentOutline, CopyOutline } from '@vicons/ionicons5'
-import { getMediaList, uploadMedia, deleteMedia, batchDeleteMedia } from '../../api/media'
+import { CloudUploadOutline, TrashOutline, SearchOutline, RefreshOutline, DocumentOutline, CopyOutline, CheckmarkOutline, CloseOutline, AddOutline } from '@vicons/ionicons5'
+import { getMediaList, uploadMedia, deleteMedia, batchDeleteMedia, updateMedia } from '../../api/media'
 import { uploadToR2, deleteR2Media, batchDeleteR2Media } from '../../api/r2-storage'
 import type { Media } from '../../api/media'
 
@@ -19,6 +19,14 @@ const pageSize = ref(10)
 const checkedRowKeys = ref<number[]>([])
 const uploadFileList = ref<UploadFileInfo[]>([])
 const uploading = ref(false)
+
+/**
+ * 备注列编辑状态：Map<mediaId, draftValue>
+ * - 不在 Map 中：显示态（纯文本）
+ * - 在 Map 中：编辑态（输入框 + ✓✗ 按钮）
+ * 进入编辑 = 把当前 note 放进 Map；取消 = 删除 key；保存 = 提交后删除 key
+ */
+const noteDrafts = reactive(new Map<number, string>())
 
 /** 存储通道：local=本地, oss=通用OSS, r2=Cloudflare R2 */
 const storageChannel = ref<'local' | 'oss' | 'r2'>('local')
@@ -92,6 +100,37 @@ async function loadMedia() {
 function handleSearch() {
   page.value = 1
   loadMedia()
+}
+
+/** 进入备注编辑态：把当前值放进 draft */
+function startEditNote(row: Media) {
+  if (!noteDrafts.has(row.id)) {
+    noteDrafts.set(row.id, row.note || '')
+  }
+}
+
+/** 取消编辑：丢弃草稿 */
+function cancelEditNote(row: Media) {
+  noteDrafts.delete(row.id)
+}
+
+/** 提交备注：对比原始值，有变化才发请求 */
+async function commitEditNote(row: Media) {
+  const draft = noteDrafts.get(row.id)
+  if (draft === undefined) return
+  const note = draft.trim()
+  if (note === (row.note || '').trim()) {
+    noteDrafts.delete(row.id)
+    return
+  }
+  try {
+    await updateMedia(row.id, { note })
+    row.note = note || null
+    noteDrafts.delete(row.id)
+    message.success(note ? '备注已更新' : '备注已清空')
+  } catch (e: any) {
+    message.error(e.message || '更新备注失败')
+  }
 }
 
 function handleReset() {
@@ -190,95 +229,156 @@ async function handleBatchDelete() {
 }
 
 const columns: DataTableColumns<Media> = [
-  { type: 'selection', width: 40 },
-  { title: 'ID', key: 'id', width: 60 },
+  { type: 'selection', width: 40, fixed: 'left' },
+  { title: 'ID', key: 'id', width: 50, fixed: 'left' },
   {
-    title: '预览', key: 'preview', width: 80,
+    title: '预览', key: 'preview', width: 52, fixed: 'left',
     render: (row) => {
       if (isImage(row.mimeType)) {
         return h(NImage, {
           src: resolveFileUrl(row.url),
-          width: 48,
-          height: 48,
+          width: 32,
+          height: 32,
           objectFit: 'cover',
-          style: 'border-radius: 4px; cursor: pointer; display: block',
+          style: 'border-radius: 3px; cursor: pointer; display: block',
           previewSrc: resolveFileUrl(row.url),
           alt: row.originalName,
         })
       }
       return h('div', {
-        style: 'width:48px;height:48px;border-radius:4px;background:rgba(148,163,184,0.08);display:flex;align-items:center;justify-content:center',
-      }, [h(NIcon, { size: 24, color: '#94A3B8' }, { default: () => h(DocumentOutline) })])
+        style: 'width:32px;height:32px;border-radius:3px;background:rgba(148,163,184,0.08);display:flex;align-items:center;justify-content:center',
+      }, [h(NIcon, { size: 16, color: '#94A3B8' }, { default: () => h(DocumentOutline) })])
     },
   },
   {
-    title: '文件名', key: 'originalName', minWidth: 200, width: 240,
+    title: '文件名', key: 'originalName', minWidth: 150,
     render: (row) => {
       const url = resolveFileUrl(row.url)
-      const children: any[] = [
-        h('div', { style: 'font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', title: row.originalName }, row.originalName),
-      ]
-      children.push(
-        h('div', { style: 'display:flex;align-items:center;gap:4px;margin-top:2px' }, [
-          h('a', {
-            href: url,
-            target: '_blank',
-            rel: 'noopener',
-            style: 'font-size:11px;color:#6366f1;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px',
-            title: url,
-            onClick: (e: Event) => e.stopPropagation(),
-          }, url),
-          h(NButton, {
-            size: 'tiny',
-            quaternary: true,
-            style: 'padding:0 2px;line-height:1',
-            onClick: (e: Event) => { e.stopPropagation(); copyToClipboard(url) },
-          }, {
-            default: () => h(NIcon, { size: 13, color: '#6366f1' }, { default: () => h(CopyOutline) }),
-          }),
-        ]),
-      )
-      return h('div', null, children)
+      const renderNameRow = (text: string, copyText: string, isUrl = false) => h('div', {
+        style: 'display:flex;align-items:center;gap:2px;' + (isUrl ? 'margin-top:2px' : ''),
+      }, [
+        h(NEllipsis, { lineClamp: 1, tooltip: true, style: 'flex:1;min-width:0;' + (isUrl ? 'font-size:11px;color:#6366f1' : 'font-weight:500') }, {
+          default: () => isUrl
+            ? h('a', { href: url, target: '_blank', rel: 'noopener', style: 'text-decoration:none;color:inherit', onClick: (e: Event) => e.stopPropagation() }, text)
+            : text,
+        }),
+        h(NTooltip, { trigger: 'hover' }, {
+          trigger: () => h(NButton, {
+            size: 'tiny', quaternary: true,
+            style: 'padding:0 2px;line-height:1;flex-shrink:0',
+            onClick: (e: Event) => { e.stopPropagation(); copyToClipboard(copyText) },
+          }, { default: () => h(NIcon, { size: 12, color: '#6366f1' }, { default: () => h(CopyOutline) }) }),
+          default: () => isUrl ? '复制链接' : '复制文件名',
+        }),
+      ])
+      return h('div', null, [
+        renderNameRow(row.originalName, row.originalName),
+        renderNameRow(url, url, true),
+      ])
     },
   },
   {
-    title: '类型', key: 'mimeType', width: 110, ellipsis: { tooltip: true },
+    title: '备注', key: 'note', minWidth: 100,
+    render: (row) => {
+      const isEditing = noteDrafts.has(row.id)
+      const noteText = row.note || ''
+      // 显示态：纯文本 + 省略号 + tooltip（用 NEllipsis 组件，非原生 title）
+      if (!isEditing) {
+        if (!noteText) {
+          return h('span', {
+            class: 'note-empty',
+            onClick: () => startEditNote(row),
+          }, [h(NIcon, { size: 14 }, { default: () => h(AddOutline) })])
+        }
+        return h('div', {
+          class: 'note-display',
+          onClick: () => startEditNote(row),
+        }, [
+          h(NEllipsis, { lineClamp: 1, tooltip: true }, { default: () => noteText }),
+        ])
+      }
+      // 编辑态：输入框 + ✓ + ✗
+      return h('div', { class: 'note-edit-row' }, [
+        h(NInput, {
+          value: noteDrafts.get(row.id) || '',
+          size: 'small',
+          placeholder: '备注',
+          autofocus: true,
+          'onUpdate:value': (val: string) => noteDrafts.set(row.id, val),
+          onKeydown: (e: KeyboardEvent) => {
+            if (e.key === 'Enter') commitEditNote(row)
+            if (e.key === 'Escape') cancelEditNote(row)
+          },
+          onBlur: () => {
+            setTimeout(() => {
+              if (!noteDrafts.has(row.id)) return
+              const draft = noteDrafts.get(row.id) || ''
+              if (draft.trim() === (row.note || '').trim()) {
+                noteDrafts.delete(row.id)
+              }
+            }, 150)
+          },
+        }),
+        h(NButton, {
+          size: 'tiny',
+          quaternary: true,
+          type: 'success',
+          class: 'note-action',
+          onClick: () => commitEditNote(row),
+        }, { default: () => h(NIcon, null, { default: () => h(CheckmarkOutline) }) }),
+        h(NButton, {
+          size: 'tiny',
+          quaternary: true,
+          type: 'error',
+          class: 'note-action',
+          onClick: () => cancelEditNote(row),
+        }, { default: () => h(NIcon, null, { default: () => h(CloseOutline) }) }),
+      ])
+    },
+  },
+  {
+    title: '类型', key: 'mimeType', width: 120, ellipsis: { tooltip: true },
+    cellProps: (row) => ({ style: { whiteSpace: 'nowrap' } }),
     render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.mimeType }),
   },
   {
-    title: '大小', key: 'size', width: 90,
+    title: '大小', key: 'size', width: 85,
+    cellProps: (row) => ({ style: { whiteSpace: 'nowrap' } }),
     render: (row) => formatSize(row.size),
   },
   {
-    title: '哈希', key: 'hash', width: 130, ellipsis: { tooltip: true },
-    render: (row) => row.hash ? h('span', { style: 'font-family:monospace;font-size:12px;color:#94A3B8' }, row.hash) : '-',
+    title: '存储', key: 'storage', width: 90,
+    render: (row) => {
+      // 合并显示：本地 / R2 / OSS·阿里云 / OSS·腾讯云 等
+      const label = row.storageType === 'oss' && row.ossPlatform
+        ? (row.ossPlatform === 'cloudflare' ? 'R2' : `OSS·${ossPlatformLabel[row.ossPlatform] || row.ossPlatform}`)
+        : storageTypeLabel[row.storageType] || row.storageType
+      const type = row.storageType === 'oss' ? 'info' : 'default'
+      return h(NTag, { size: 'small', type, round: true, bordered: false }, { default: () => label })
+    },
   },
   {
-    title: '存储', key: 'storageType', width: 75,
-    render: (row) => h(NTag, {
-      size: 'small',
-      type: row.storageType === 'oss' ? 'info' : 'default',
-      round: true,
-      bordered: false,
-    }, { default: () => storageTypeLabel[row.storageType] || row.storageType }),
+    title: '上传者', key: 'uploader', width: 85,
+    render: (row) => {
+      const name = row.uploader?.nickname || row.uploader?.username || '-'
+      if (name === '-') return '-'
+      return h(NEllipsis, { lineClamp: 1, tooltip: true }, { default: () => name })
+    },
   },
   {
-    title: '平台', key: 'ossPlatform', width: 100,
-    render: (row) => row.ossPlatform ? h(NTag, { size: 'small', type: 'success', round: true, bordered: false }, { default: () => ossPlatformLabel[row.ossPlatform] || row.ossPlatform }) : '-',
-  },
-  {
-    title: '上传者', key: 'uploader', width: 90,
-    render: (row) => row.uploader?.nickname || row.uploader?.username || '-',
-  },
-  {
-    title: '创建时间', key: 'createdAt', width: 165,
+    title: '创建时间', key: 'createdAt', width: 155,
+    cellProps: () => ({ style: { whiteSpace: 'nowrap' } }),
     render: (row) => new Date(row.createdAt).toLocaleString('zh-CN'),
   },
   {
-    title: '操作', key: 'actions', width: 80,
+    title: '操作', key: 'actions', width: 48, fixed: 'right',
     render: (row) => h('div', { style: 'display:flex;align-items:center;justify-content:center;height:100%' }, [
-      h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
-        default: () => '删除', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+      h(NTooltip, null, {
+        trigger: () => h(NButton, {
+          size: 'small', quaternary: true, type: 'error',
+          onClick: () => handleDelete(row),
+        }, { default: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
+        default: () => '删除',
       }),
     ]),
   },
@@ -314,16 +414,55 @@ onMounted(loadMedia)
       </n-button>
     </n-space>
 
-    <n-card :bordered="false" class="table-card">
+    <div class="table-section">
       <n-data-table :columns="columns" :data="mediaList" :loading="loading" :bordered="false"
+        :scroll-x="980"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
-    </n-card>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+</style>
+
+<style>
+/* 备注列样式：不能用 scoped，因为是在 render 函数里 h() 出来的 */
+.note-display {
+  cursor: pointer;
+  color: #475569;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: background 0.12s, color 0.12s;
+}
+.note-display:hover {
+  background: rgba(99, 102, 241, 0.08);
+  color: #6366f1;
+}
+.note-empty {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  color: #C0C4CC;
+  transition: background 0.12s, color 0.12s;
+}
+.note-empty:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+}
+.note-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.note-edit-row .note-action {
+  padding: 0 4px !important;
+  flex-shrink: 0;
+}
 </style>

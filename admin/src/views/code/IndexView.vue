@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, h, onMounted } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber, NTabs, NTabPane } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber, NTabs, NTabPane } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, BanOutline, PricetagOutline, PricetagsOutline } from '@vicons/ionicons5'
 import { getCodes, updateCode, deleteCode, batchCreateCodes, batchDisableCodes, batchDeleteCodes, getAllUsageLogs } from '../../api/code'
@@ -295,7 +295,7 @@ const codeColumns: DataTableColumns<Code> = [
     render: (row) => row.expiresAt ? new Date(row.expiresAt).toLocaleString('zh-CN') : '永久',
   },
   {
-    title: '操作', key: 'actions', width: 130,
+    title: '操作', key: 'actions', width: 130, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small' }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, {
@@ -406,13 +406,14 @@ function handleTabChange(tab: string) {
           </n-button>
         </n-space>
 
-        <n-card :bordered="false" class="table-card">
+        <div class="table-section">
           <n-data-table :columns="codeColumns" :data="list" :loading="loading" :bordered="false"
+        :scroll-x="1000"
             :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
           <div class="pagination-wrap" v-if="total > 0">
             <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
           </div>
-        </n-card>
+        </div>
       </n-tab-pane>
 
       <!-- ===== Tab 2: 使用日志 ===== -->
@@ -424,12 +425,12 @@ function handleTabChange(tab: string) {
             搜索
           </n-button>
         </n-space>
-        <n-card :bordered="false" class="table-card">
+        <div class="table-section">
           <n-data-table :columns="logColumns" :data="logList" :loading="logLoading" :bordered="false" />
           <div class="pagination-wrap" v-if="logTotal > 0">
             <n-pagination :page="logPage" :page-size="logPageSize" :page-sizes="[10, 20, 50]" :item-count="logTotal" show-size-picker @update:page="handleLogPageChange" @update:page-size="handleLogPageSizeChange" />
           </div>
-        </n-card>
+        </div>
       </n-tab-pane>
     </n-tabs>
 
@@ -482,6 +483,4 @@ function handleTabChange(tab: string) {
 </template>
 
 <style scoped>
-.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
-.search-bar { margin-bottom: 12px; }
 </style>

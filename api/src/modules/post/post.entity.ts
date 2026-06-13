@@ -58,13 +58,8 @@ export class PostEntity {
   })
   tags: TagEntity[];
 
-  @ManyToMany(() => UserEntity)
-  @JoinTable({
-    name: 'post_allowed_users',
-    joinColumn: { name: 'post_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' },
-  })
-  allowedUsers: UserEntity[];
+  // 注意：allowedUsers / allowedRoles 关系已迁移到 entity_visibility 多态表
+  // 不在 entity 上声明关系，由 PostService 通过 EntityVisibilityService 管理
 
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })
   createdAt: Date;

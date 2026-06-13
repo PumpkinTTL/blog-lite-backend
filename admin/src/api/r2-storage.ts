@@ -19,6 +19,7 @@ export interface R2Media {
   ossPlatform: 'cloudflare'
   uploaderId: number
   uploader?: { id: number; username: string; nickname: string }
+  note: string | null
   createdAt: string
 }
 
@@ -40,11 +41,12 @@ export function getR2MediaList(params?: { page?: number; pageSize?: number; id?:
 /**
  * 上传文件到 R2
  */
-export function uploadToR2(file: File) {
+export function uploadToR2(file: File, options?: { note?: string }) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('storageType', 'oss')
   formData.append('ossPlatform', 'cloudflare')
+  if (options?.note) formData.append('note', options.note)
   return request.post('/media/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
@@ -53,11 +55,12 @@ export function uploadToR2(file: File) {
 /**
  * 批量上传文件到 R2
  */
-export function uploadToR2Many(files: File[]) {
+export function uploadToR2Many(files: File[], options?: { note?: string }) {
   const formData = new FormData()
   files.forEach((f) => formData.append('files', f))
   formData.append('storageType', 'oss')
   formData.append('ossPlatform', 'cloudflare')
+  if (options?.note) formData.append('note', options.note)
   return request.post('/media/upload-many', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })

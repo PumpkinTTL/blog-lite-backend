@@ -21,10 +21,17 @@
   margin: 0;
 }
 
-.table-card {
-  border-radius: 12px;
+.search-bar {
+  /* page-wrapper gap 已负责与表格的间距，这里不再加 margin */
 }
 
-.search-bar {
-  margin-bottom: 12px;
+.table-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pagination-wrap {
+  display: flex;
+  justify-content: flex-end;
 }

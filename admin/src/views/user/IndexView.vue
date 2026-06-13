@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getUsers, createUser, updateUser, deleteUser, toggleUserStatus } from '../../api/user'
@@ -172,6 +172,7 @@ const columns: DataTableColumns<User> = [
     title: '操作',
     key: 'actions',
     width: 140,
+    fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 'small' }, {
         default: () => [
@@ -212,12 +213,12 @@ const columns: DataTableColumns<User> = [
       </n-button>
     </n-space>
 
-    <n-card :bordered="false" class="table-card">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" />
+    <div class="table-section">
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1000" />
       <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
-    </n-card>
+    </div>
 
     <n-modal
       v-model:show="showModal"
@@ -250,5 +251,4 @@ const columns: DataTableColumns<User> = [
 </template>
 
 <style scoped>
-.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

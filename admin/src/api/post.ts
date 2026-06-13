@@ -2,12 +2,6 @@ import request from './request'
 import type { Tag } from './tag'
 import type { Category } from './category'
 
-export interface PostAllowedUser {
-  id: number
-  username: string
-  nickname: string
-}
-
 export interface Post {
   id: number
   title: string
@@ -21,8 +15,9 @@ export interface Post {
   category: Category | null
   tags: Tag[]
   tagIds?: number[]
-  allowedUsers?: PostAllowedUser[]
+  // private 文章可见性（来自 entity_visibility 表）
   allowedUserIds?: number[]
+  allowedRoleIds?: number[]
   createdAt: string
   updatedAt: string
   publishedAt: string | null

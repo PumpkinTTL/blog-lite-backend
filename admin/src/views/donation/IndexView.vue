@@ -358,14 +358,14 @@ onMounted(() => { loadList(); loadStats() })
     </n-card>
 
     <!-- 表格 -->
-    <n-card :bordered="false" class="table-card">
+    <div class="table-section">
       <n-data-table :columns="columns" :data="donationList" :loading="loading" :bordered="false"
         :row-key="(row: Donation) => row.id" :scroll-x="1200" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 50]" :item-count="total"
           show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
-    </n-card>
+    </div>
 
     <!-- 新增/编辑弹窗 -->
     <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑捐赠' : '新增捐赠'"
@@ -524,11 +524,5 @@ onMounted(() => { loadList(); loadStats() })
 .chip-amount {
   color: #10B981;
   font-weight: 600;
-}
-
-.pagination-wrap {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
 }
 </style>

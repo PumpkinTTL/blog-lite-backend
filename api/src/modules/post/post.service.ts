@@ -1,14 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { PostEntity } from './post.entity';
 import { PostViewEntity } from './post-view.entity';
 import { TagEntity } from '../tag/tag.entity';
-import { UserEntity } from '../user/user.entity';
+import { EntityVisibilityService } from '../entity-visibility/entity-visibility.service';
 import { POST_STATUS } from '../../common/constants/status';
 
+const POST_ENTITY_TYPE = 'post';
+
 @Injectable()
-export class PostService {
+export class PostService implements OnModuleInit {
   constructor(
     @InjectRepository(PostEntity)
     private readonly postRepo: Repository<PostEntity>,
@@ -16,16 +18,49 @@ export class PostService {
     private readonly postViewRepo: Repository<PostViewEntity>,
     @InjectRepository(TagEntity)
     private readonly tagRepo: Repository<TagEntity>,
-    @InjectRepository(UserEntity)
-    private readonly userRepo: Repository<UserEntity>,
+    private readonly visibilityService: EntityVisibilityService,
   ) {}
 
-  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: string; categoryId?: number; tagId?: number }, publicOnly = false) {
+  /**
+   * 一次性迁移：把旧 post_allowed_users 表的数据搬到 entity_visibility
+   * 幂等：目标表已有 entityType='post' 的记录时跳过
+   */
+  async onModuleInit() {
+    try {
+      const migrated = await this.visibilityService.getVisibilityCount?.(POST_ENTITY_TYPE);
+      if (migrated && migrated > 0) return;
+
+      // 旧表还存在的话查询迁移（raw query 兼容 synchronize 旧表残留）
+      const rawRepo = this.postRepo.manager;
+      const rows: any[] = await rawRepo.query(
+        'SELECT post_id AS entityId, user_id AS subjectId FROM post_allowed_users',
+      );
+      if (rows.length === 0) return;
+      await rawRepo.query(
+        `INSERT IGNORE INTO entity_visibility (entity_type, entity_id, subject_type, subject_id, created_at)
+         VALUES ${rows.map(() => '(?, ?, ?, ?, NOW())').join(', ')}`,
+        rows.flatMap((r) => [POST_ENTITY_TYPE, r.entityId, 'user', r.subjectId]),
+      );
+      // 迁移完成清空旧表
+      await rawRepo.query('TRUNCATE TABLE post_allowed_users');
+      // eslint-disable-next-line no-console
+      console.log(`[PostService] 迁移完成：${rows.length} 条 post_allowed_users → entity_visibility`);
+    } catch (e) {
+      // 旧表可能已不存在，忽略
+    }
+  }
+
+  async findAll(
+    page = 1,
+    pageSize = 20,
+    filters?: { id?: number; keyword?: string; status?: string; categoryId?: number; tagId?: number },
+    publicOnly = false,
+    withVisibility = false,
+  ) {
     const qb = this.postRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.author', 'author')
       .leftJoinAndSelect('p.category', 'category')
-      .leftJoinAndSelect('p.tags', 'tags')
-      .leftJoinAndSelect('p.allowedUsers', 'allowedUsers');
+      .leftJoinAndSelect('p.tags', 'tags');
 
     // 公开接口只返回已发布文章
     if (publicOnly) {
@@ -54,6 +89,22 @@ export class PostService {
       .take(pageSize);
 
     const [list, total] = await qb.getManyAndCount();
+
+    // admin 列表：仅为 private 行注入可见性配置（避免 N+1，已用批量查询）
+    if (withVisibility && list.length) {
+      const privateIds = list.filter((p) => p.status === POST_STATUS.PRIVATE).map((p) => p.id);
+      if (privateIds.length) {
+        const visMap = await this.getVisibilityMap(privateIds);
+        for (const p of list) {
+          if (visMap.has(p.id)) {
+            const v = visMap.get(p.id)!;
+            (p as any).allowedUserIds = v.allowedUserIds;
+            (p as any).allowedRoleIds = v.allowedRoleIds;
+          }
+        }
+      }
+    }
+
     return { list, total, page, pageSize };
   }
 
@@ -62,18 +113,15 @@ export class PostService {
     if (publicOnly) {
       where.status = POST_STATUS.PUBLISHED;
     }
-    return this.postRepo.findOne({ where, relations: ['author', 'category', 'tags', 'allowedUsers'] });
+    return this.postRepo.findOne({ where, relations: ['author', 'category', 'tags'] });
   }
 
-  async create(data: Partial<PostEntity> & { tagIds?: number[]; allowedUserIds?: number[] }) {
-    const { tagIds, allowedUserIds, ...postData } = data;
+  async create(data: Partial<PostEntity> & { tagIds?: number[]; allowedUserIds?: number[]; allowedRoleIds?: number[] }) {
+    const { tagIds, allowedUserIds, allowedRoleIds, ...postData } = data;
     const post = this.postRepo.create(postData);
 
     if (tagIds?.length) {
       post.tags = await this.tagRepo.findBy({ id: In(tagIds) });
-    }
-    if (allowedUserIds?.length) {
-      post.allowedUsers = await this.userRepo.findBy({ id: In(allowedUserIds) });
     }
 
     if (post.status === POST_STATUS.PUBLISHED && !post.publishedAt) {
@@ -82,22 +130,29 @@ export class PostService {
       post.publishedAt = null;
     }
 
-    return this.postRepo.save(post);
+    const saved = await this.postRepo.save(post);
+
+    // 写入可见性配置（即使是 private 状态，也允许配置空的可见性）
+    await this.visibilityService.setVisibility(
+      POST_ENTITY_TYPE,
+      saved.id,
+      allowedUserIds ?? [],
+      allowedRoleIds ?? [],
+    );
+
+    return saved;
   }
 
-  async update(id: number, data: Partial<PostEntity> & { tagIds?: number[]; allowedUserIds?: number[] }) {
-    const { tagIds, allowedUserIds, ...postData } = data;
+  async update(id: number, data: Partial<PostEntity> & { tagIds?: number[]; allowedUserIds?: number[]; allowedRoleIds?: number[] }) {
+    const { tagIds, allowedUserIds, allowedRoleIds, ...postData } = data;
 
-    const post = await this.postRepo.findOne({ where: { id }, relations: ['tags', 'allowedUsers'] });
+    const post = await this.postRepo.findOne({ where: { id }, relations: ['tags'] });
     if (!post) return null;
 
     Object.assign(post, postData);
 
     if (tagIds !== undefined) {
       post.tags = tagIds.length ? await this.tagRepo.findBy({ id: In(tagIds) }) : [];
-    }
-    if (allowedUserIds !== undefined) {
-      post.allowedUsers = allowedUserIds.length ? await this.userRepo.findBy({ id: In(allowedUserIds) }) : [];
     }
 
     if (postData.status === POST_STATUS.PUBLISHED && !post.publishedAt) {
@@ -106,11 +161,58 @@ export class PostService {
       post.publishedAt = null;
     }
 
-    return this.postRepo.save(post);
+    const saved = await this.postRepo.save(post);
+
+    // 只在显式传入 allowedUserIds/allowedRoleIds 时才更新可见性
+    if (allowedUserIds !== undefined || allowedRoleIds !== undefined) {
+      await this.visibilityService.setVisibility(
+        POST_ENTITY_TYPE,
+        saved.id,
+        allowedUserIds ?? [],
+        allowedRoleIds ?? [],
+      );
+    }
+
+    return saved;
+  }
+
+  /**
+   * 获取文章可见性配置（包含 allowedUsers + allowedRoles）
+   * 给详情接口、admin 列表使用
+   */
+  async getVisibility(postId: number) {
+    return this.visibilityService.getVisibility(POST_ENTITY_TYPE, postId);
+  }
+
+  /**
+   * 批量获取多篇文章的可见性（列表使用，避免 N+1）
+   * 返回 Map<postId, { allowedUserIds, allowedRoleIds }>
+   */
+  async getVisibilityMap(postIds: number[]) {
+    if (postIds.length === 0) return new Map();
+    // 利用 service 的批量查询能力
+    const result = new Map<number, { allowedUserIds: number[]; allowedRoleIds: number[] }>();
+    // 简单实现：并行查（postIds 通常一页最多 50 个）
+    const items = await Promise.all(
+      postIds.map(async (id) => [id, await this.visibilityService.getVisibility(POST_ENTITY_TYPE, id)] as const),
+    );
+    for (const [id, vis] of items) {
+      result.set(id, vis);
+    }
+    return result;
+  }
+
+  /**
+   * 判定用户能否访问 private 文章
+   * 直接授权 OR 用户角色命中
+   */
+  async canAccess(postId: number, userId: number, userRoleIds: number[] = []): Promise<boolean> {
+    return this.visibilityService.canAccess(POST_ENTITY_TYPE, postId, userId, userRoleIds);
   }
 
   async remove(id: number) {
     await this.postRepo.update(id, { deletedAt: new Date() });
+    // 软删除不清除可见性配置，restore 后仍生效
   }
 
   async restore(id: number) {
