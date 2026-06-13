@@ -4,7 +4,7 @@ import request from './request'
 
 export type PayMethod = 'wechat' | 'alipay' | 'crypto' | 'other'
 export type CryptoNetwork = 'TRC20' | 'BSC' | 'POL'
-export type DonationStatus = 0 | 1 | 2
+export type DonationStatus = 'pending' | 'confirmed' | 'refunded'
 
 export interface Donation {
   id: number
@@ -67,7 +67,7 @@ export type UpdateDonationData = Partial<CreateDonationData>
 
 // ── API ──
 
-export function getDonationList(params?: { page?: number; pageSize?: number; id?: number; keyword?: string; status?: number; payMethod?: string; cryptoNetwork?: string }) {
+export function getDonationList(params?: { page?: number; pageSize?: number; id?: number; keyword?: string; status?: DonationStatus; payMethod?: string; cryptoNetwork?: string }) {
   return request.get<any, { success: boolean; data: DonationListResponse; message: string }>('/donation', { params })
 }
 

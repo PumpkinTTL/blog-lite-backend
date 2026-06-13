@@ -9,7 +9,7 @@ export interface Post {
   content: string
   summary: string | null
   coverImage: string | null
-  status: number
+  status: string
   authorId: number
   categoryId: number | null
   category: Category | null
@@ -25,7 +25,7 @@ export interface PostListParams {
   pageSize?: number
   id?: number
   keyword?: string
-  status?: number | string
+  status?: string
   categoryId?: number
   tagId?: number
 }

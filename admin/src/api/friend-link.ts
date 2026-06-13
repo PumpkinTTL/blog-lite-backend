@@ -7,14 +7,14 @@ export interface FriendLink {
   logo: string | null
   description: string | null
   sortOrder: number
-  status: number
+  status: string
   postId: number | null
   post?: { id: number; title: string } | null
   createdAt: string
   updatedAt: string
 }
 
-export function getFriendLinks(params?: { id?: number; keyword?: string; status?: number; page?: number; pageSize?: number }) {
+export function getFriendLinks(params?: { id?: number; keyword?: string; status?: string; page?: number; pageSize?: number }) {
   return request.get('/friend-link', { params })
 }
 

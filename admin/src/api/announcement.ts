@@ -4,13 +4,13 @@ export interface Announcement {
   id: number
   title: string
   content: string
-  status: number
+  status: string
   sortOrder: number
   createdAt: string
   updatedAt: string
 }
 
-export function getAnnouncements(params?: { id?: number; keyword?: string; status?: number; page?: number; pageSize?: number }) {
+export function getAnnouncements(params?: { id?: number; keyword?: string; status?: string; page?: number; pageSize?: number }) {
   return request.get('/announcement', { params })
 }
 

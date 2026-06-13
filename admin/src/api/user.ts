@@ -31,13 +31,13 @@ export interface User {
   nickname: string
   email: string | null
   avatar: string | null
-  status: number
+  status: string
   roles: Role[]
   createdAt: string
   updatedAt: string
 }
 
-export function getUsers(params?: { page?: number; pageSize?: number; id?: number; keyword?: string; status?: number }) {
+export function getUsers(params?: { page?: number; pageSize?: number; id?: number; keyword?: string; status?: string }) {
   return request.get('/user', { params })
 }
 
