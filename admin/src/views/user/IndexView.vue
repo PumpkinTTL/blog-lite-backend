@@ -17,12 +17,12 @@ const page = ref(1)
 const pageSize = ref(5)
 
 // Extra search field
-const searchStatus = ref<number | null>(null)
+const searchStatus = ref<string | null>(null)
 
 const userStatusOptions = [
   { label: '全部', value: null },
-  { label: '正常', value: 1 },
-  { label: '禁用', value: 0 },
+  { label: '正常', value: 'active' },
+  { label: '禁用', value: 'disabled' },
 ]
 
 // Role options for form select
@@ -112,7 +112,7 @@ function handlePageSizeChange(s: number) {
 async function handleToggleStatus(row: User) {
   try {
     await toggleUserStatus(row.id)
-    message.success(row.status === 1 ? '已禁用用户' : '已启用用户')
+    message.success(row.status === 'active' ? '已禁用用户' : '已启用用户')
     _handleSearch()
   } catch (e: any) {
     message.error(e.message || '操作失败')
@@ -162,7 +162,7 @@ const columns: DataTableColumns<User> = [
     width: 100,
     render: (row) =>
       h(NSwitch, {
-        value: row.status === 1,
+        value: row.status === 'active',
         loading: false,
         onUpdateValue: () => handleToggleStatus(row),
       }),

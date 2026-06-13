@@ -14,12 +14,12 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(5)
 
-const searchStatus = ref<number | null>(null)
+const searchStatus = ref<string | null>(null)
 
 const friendLinkStatusOptions = [
   { label: '全部', value: null },
-  { label: '显示', value: 1 },
-  { label: '隐藏', value: 0 },
+  { label: '显示', value: 'visible' },
+  { label: '隐藏', value: 'hidden' },
 ]
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
@@ -36,7 +36,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     updateApi: (id, data) => updateFriendLink(id, data),
     deleteApi: deleteFriendLink,
     deleteContent: (row) => `确定删除友链「${row.name}」？`,
-    defaultForm: () => ({ name: '', url: '', logo: '', description: '', status: 1, sortOrder: 0, postId: null }),
+    defaultForm: () => ({ name: '', url: '', logo: '', description: '', status: 'visible', sortOrder: 0, postId: null }),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) {
@@ -101,7 +101,7 @@ const columns: DataTableColumns<FriendLink> = [
   },
   {
     title: '状态', key: 'status', width: 80,
-    render: (row) => h(NTag, { size: 'small', type: row.status === 1 ? 'success' : 'default' }, { default: () => (row.status === 1 ? '显示' : '隐藏') }),
+    render: (row) => h(NTag, { size: 'small', type: row.status === 'visible' ? 'success' : 'default' }, { default: () => (row.status === 'visible' ? '显示' : '隐藏') }),
   },
   {
     title: '操作', key: 'actions', width: 140,
@@ -164,8 +164,8 @@ const columns: DataTableColumns<FriendLink> = [
         <n-form-item label="描述"><n-input v-model:value="formValue.description" type="textarea" placeholder="可选" :rows="2" /></n-form-item>
         <n-form-item label="状态" path="status">
           <n-select v-model:value="formValue.status" :options="[
-            { label: '显示', value: 1 },
-            { label: '隐藏', value: 0 },
+            { label: '显示', value: 'visible' },
+            { label: '隐藏', value: 'hidden' },
           ]" />
         </n-form-item>
         <n-form-item label="绑定文章 ID"><n-input v-model:value="formValue.postId" placeholder="留空为全局友链，填文章 ID 绑定到指定文章" clearable /></n-form-item>

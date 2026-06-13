@@ -26,7 +26,7 @@ const formValue = ref({
   content: '',
   summary: '',
   coverImage: '',
-  status: 0,
+  status: 'draft' as string,
   categoryId: null as number | null,
   tagIds: [] as number[],
 })
@@ -66,7 +66,7 @@ async function loadPost(id: number) {
         content: post.content || '',
         summary: post.summary || '',
         coverImage: post.coverImage || '',
-        status: post.status ?? 0,
+        status: post.status ?? 'draft',
         categoryId: post.categoryId,
         tagIds: (post.tags || []).map((t: any) => t.id),
       }
@@ -78,7 +78,7 @@ async function loadPost(id: number) {
   }
 }
 
-async function handleSave(status: number) {
+async function handleSave(status: string) {
   try {
     await formRef.value?.validate()
   } catch {
@@ -96,7 +96,7 @@ async function handleSave(status: number) {
       router.push('/posts')
       return
     }
-    if (status === 1) {
+    if (status === 'published') {
       message.success('文章已发布')
     }
   } catch (e: any) {
@@ -124,11 +124,11 @@ onMounted(async () => {
         <h2 class="page-title">{{ isEdit ? '编辑文章' : '新建文章' }}</h2>
       </n-space>
       <n-space>
-        <n-button :loading="saving" @click="handleSave(0)">
+        <n-button :loading="saving" @click="handleSave('draft')">
           <template #icon><n-icon><SaveOutline /></n-icon></template>
           存为草稿
         </n-button>
-        <n-button type="primary" :loading="saving" @click="handleSave(1)">
+        <n-button type="primary" :loading="saving" @click="handleSave('published')">
           <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
           发布
         </n-button>

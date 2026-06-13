@@ -97,9 +97,9 @@ const cryptoNetworkOptions = [
 ]
 const statusFilterOptions = [
   { label: '全部状态', value: null },
-  { label: '待确认', value: 0 },
-  { label: '已确认', value: 1 },
-  { label: '已退款', value: 2 },
+  { label: '待确认', value: 'pending' },
+  { label: '已确认', value: 'confirmed' },
+  { label: '已退款', value: 'refunded' },
 ]
 const payMethodFilterOptions = [
   { label: '全部方式', value: null },
@@ -279,9 +279,9 @@ const columns: DataTableColumns<Donation> = [
         }, { default: () => '编辑', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) }),
         h(NButton, {
           size: 'tiny', quaternary: true,
-          type: row.status === 1 ? 'warning' : 'success',
+          type: row.status === 'confirmed' ? 'warning' : 'success',
           onClick: async () => { await toggleDonationStatus(row.id); loadList(); loadStats() },
-        }, { default: () => row.status === 1 ? '取消确认' : '确认' }),
+        }, { default: () => row.status === 'confirmed' ? '取消确认' : '确认' }),
         h(NButton, {
           size: 'tiny', quaternary: true, type: 'error',
           onClick: () => handleDelete(row),

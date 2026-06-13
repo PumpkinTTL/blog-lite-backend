@@ -18,15 +18,16 @@ const page = ref(1)
 const pageSize = ref(5)
 const searchId = ref('')
 const searchKeyword = ref('')
-const searchStatus = ref<number | null>(null)
+const searchStatus = ref<string | null>(null)
 const searchCategoryId = ref<number | null>(null)
 const categoryOptions = ref<{ label: string; value: number }[]>([])
 
 const statusOptions = [
   { label: '全部', value: null },
-  { label: '草稿', value: 0 },
-  { label: '已发布', value: 1 },
-  { label: '已下架', value: 2 },
+  { label: '草稿', value: 'draft' },
+  { label: '已发布', value: 'published' },
+  { label: '登录可见', value: 'login' },
+  { label: '指定用户', value: 'private' },
 ]
 
 const columns: DataTableColumns<Post> = [
@@ -49,14 +50,17 @@ const columns: DataTableColumns<Post> = [
   {
     title: '状态',
     key: 'status',
-    width: 90,
-    render: (row) =>
-      h(NTag, {
-        size: 'small',
-        type: row.status === 1 ? 'success' : row.status === 2 ? 'warning' : 'default',
-      }, {
-        default: () => row.status === 1 ? '已发布' : row.status === 2 ? '已下架' : '草稿',
-      }),
+    width: 110,
+    render: (row) => {
+      const map: Record<string, { type: 'success' | 'warning' | 'info' | 'default'; label: string }> = {
+        published: { type: 'success', label: '已发布' },
+        draft: { type: 'default', label: '草稿' },
+        login: { type: 'info', label: '登录可见' },
+        private: { type: 'warning', label: '指定用户' },
+      }
+      const s = map[row.status] || { type: 'default' as const, label: row.status }
+      return h(NTag, { size: 'small', type: s.type }, { default: () => s.label })
+    },
   },
   { title: '更新时间', key: 'updatedAt', width: 170, render: (row) => new Date(row.updatedAt).toLocaleString('zh-CN') },
   { title: '阅读', key: 'viewCount', width: 80, render: (row) => row.viewCount || 0 },
