@@ -8,7 +8,7 @@ import {
 
 export type PayMethod = 'wechat' | 'alipay' | 'crypto' | 'other';
 export type CryptoNetwork = 'TRC20' | 'BSC' | 'POL' | null;
-export type DonationStatus = 0 | 1 | 2; // 0=待确认 1=已确认 2=已退款
+export type DonationStatus = 'pending' | 'confirmed' | 'refunded';
 
 @Entity('donations')
 export class DonationEntity {
@@ -91,9 +91,10 @@ export class DonationEntity {
   tradeNo: string | null;
 
   @Column({
-    type: 'tinyint',
-    default: 1,
-    comment: '状态: 0=待确认 1=已确认 2=已退款',
+    type: 'varchar',
+    length: 20,
+    default: 'confirmed',
+    comment: '状态: pending=待确认 confirmed=已确认 refunded=已退款',
   })
   status: DonationStatus;
 

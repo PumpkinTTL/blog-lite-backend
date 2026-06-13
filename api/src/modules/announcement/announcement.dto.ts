@@ -7,9 +7,9 @@ export class CreateAnnouncementDto {
   @IsString()
   content: string;
 
-  @IsIn([0, 1])
+  @IsIn(['hidden', 'visible'])
   @IsOptional()
-  status?: number;
+  status?: string;
 
   @IsInt()
   @IsOptional()
@@ -25,9 +25,9 @@ export class UpdateAnnouncementDto {
   @IsOptional()
   content?: string;
 
-  @IsIn([0, 1])
+  @IsIn(['hidden', 'visible'])
   @IsOptional()
-  status?: number;
+  status?: string;
 
   @IsInt()
   @IsOptional()

@@ -25,9 +25,9 @@ export class CreatePostDto {
   @IsOptional()
   coverImage?: string;
 
-  @IsIn([0, 1, 2])
+  @IsIn(['draft', 'published', 'login', 'private'])
   @IsOptional()
-  status?: number;
+  status?: string;
 
   @IsInt()
   @IsOptional()
@@ -60,9 +60,9 @@ export class UpdatePostDto {
   @IsOptional()
   coverImage?: string;
 
-  @IsIn([0, 1, 2])
+  @IsIn(['draft', 'published', 'login', 'private'])
   @IsOptional()
-  status?: number;
+  status?: string;
 
   @IsInt()
   @IsOptional()

@@ -17,8 +17,8 @@ export class AnnouncementEntity {
   @Column({ type: 'text', comment: '内容' })
   content: string;
 
-  @Column({ type: 'tinyint', default: 1, comment: '状态 1=显示 0=隐藏' })
-  status: number;
+  @Column({ type: 'varchar', length: 20, default: 'visible', comment: '状态 visible=显示 hidden=隐藏' })
+  status: string;
 
   @Column({ type: 'int', default: 0, name: 'sort_order', comment: '排序权重' })
   sortOrder: number;

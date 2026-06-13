@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsInt, MinLength, IsEmail } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsInt, MinLength, IsEmail, IsIn } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -19,9 +19,9 @@ export class CreateUserDto {
   @IsOptional()
   avatar?: string;
 
-  @IsInt()
+  @IsIn(['active', 'disabled'])
   @IsOptional()
-  status?: number;
+  status?: string;
 
   @IsArray()
   @IsInt({ each: true })
@@ -47,9 +47,9 @@ export class UpdateUserDto {
   @IsOptional()
   avatar?: string;
 
-  @IsInt()
+  @IsIn(['active', 'disabled'])
   @IsOptional()
-  status?: number;
+  status?: string;
 
   @IsArray()
   @IsInt({ each: true })

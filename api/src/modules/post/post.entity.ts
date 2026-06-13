@@ -33,8 +33,8 @@ export class PostEntity {
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'cover_image', comment: '封面图 URL' })
   coverImage: string | null;
 
-  @Column({ type: 'tinyint', default: 0, comment: '状态 0=草稿 1=已发布 2=已下架' })
-  status: number;
+  @Column({ type: 'varchar', length: 20, default: 'draft', comment: '状态 draft=草稿 published=公开 login=登录可见 private=指定用户可见' })
+  status: string;
 
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'author_id' })

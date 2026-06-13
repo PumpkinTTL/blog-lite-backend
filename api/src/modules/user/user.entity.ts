@@ -33,8 +33,8 @@ export class UserEntity {
   @Column({ type: 'varchar', length: 255, nullable: true, comment: '头像 URL' })
   avatar: string | null;
 
-  @Column({ type: 'tinyint', default: 1, comment: '状态 1=正常 0=禁用' })
-  status: number;
+  @Column({ type: 'varchar', length: 20, default: 'active', comment: '状态 active=正常 disabled=禁用' })
+  status: string;
 
   @Column({ type: 'int', nullable: true, name: 'register_code_id', comment: '注册时使用的邀请码ID' })
   registerCodeId: number | null;

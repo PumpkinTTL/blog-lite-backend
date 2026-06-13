@@ -15,9 +15,9 @@ export class CreateFriendLinkDto {
   @IsOptional()
   description?: string;
 
-  @IsIn([0, 1])
+  @IsIn(['hidden', 'visible'])
   @IsOptional()
-  status?: number;
+  status?: string;
 
   @IsInt()
   @IsOptional()
@@ -45,9 +45,9 @@ export class UpdateFriendLinkDto {
   @IsOptional()
   description?: string;
 
-  @IsIn([0, 1])
+  @IsIn(['hidden', 'visible'])
   @IsOptional()
-  status?: number;
+  status?: string;
 
   @IsInt()
   @IsOptional()
