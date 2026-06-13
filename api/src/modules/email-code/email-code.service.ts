@@ -45,7 +45,12 @@ export class EmailCodeService {
 
     // 发送邮件
     const expireMinutes = this.CODE_TTL / 60000;
-    const sent = await this.mailerService.sendVerifyCode(email, code, expireMinutes);
+    let sent: boolean;
+    try {
+      sent = await this.mailerService.sendVerifyCode(email, code, expireMinutes);
+    } catch (err) {
+      throw new BadRequestException(`邮件发送失败: ${err.message}`);
+    }
     if (!sent) {
       throw new BadRequestException('邮件发送失败，请稍后重试');
     }

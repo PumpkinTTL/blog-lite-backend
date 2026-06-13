@@ -17,6 +17,8 @@ export class MailerService {
     const user = this.configService.get<string>('SMTP_USER');
     const pass = this.configService.get<string>('SMTP_PASS');
 
+    this.logger.log(`SMTP 配置: host=${host}, port=${port}, user=${user}, pass=${pass ? '***已设置' : '未设置'}`);
+
     if (!host || !user || !pass) {
       this.logger.warn('SMTP 配置缺失，邮件功能不可用。请配置 SMTP_HOST/SMTP_USER/SMTP_PASS');
       return;
@@ -27,6 +29,9 @@ export class MailerService {
       port: port || 465,
       secure: (port || 465) === 465,
       auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
     });
 
     this.logger.log(`SMTP 已配置: ${host}:${port}`);
@@ -45,12 +50,16 @@ export class MailerService {
       `"观书星" <${this.configService.get<string>('SMTP_USER')}>`;
 
     try {
-      await this.transporter.sendMail({ from, to, subject, html });
+      const result = await this.transporter.sendMail({ from, to, subject, html });
       this.logger.log(`邮件已发送: ${to} - ${subject}`);
+      this.logger.debug(`邮件发送结果: ${JSON.stringify(result)}`);
       return true;
     } catch (error) {
-      this.logger.error(`邮件发送失败: ${to} - ${error.message}`);
-      return false;
+      const errMsg = error.message || '未知错误';
+      const errCode = error.code || '';
+      const errCmd = error.command || '';
+      this.logger.error(`邮件发送失败: ${to} - code=${errCode} cmd=${errCmd} msg=${errMsg}`);
+      throw error; // 往上抛，让 controller 能看到具体原因
     }
   }
 
