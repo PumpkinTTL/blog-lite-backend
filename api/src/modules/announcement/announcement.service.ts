@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AnnouncementEntity } from './announcement.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
+import { ANNOUNCEMENT_STATUS } from '../../common/constants/status';
 
 @Injectable()
 export class AnnouncementService {
@@ -11,7 +12,7 @@ export class AnnouncementService {
     private readonly repo: Repository<AnnouncementEntity>,
   ) {}
 
-  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: number }) {
+  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: string }) {
     const qb = this.repo.createQueryBuilder('e');
     applyFilters(qb, {
       exact: { 'e.id': filters?.id, 'e.status': filters?.status },
@@ -40,7 +41,7 @@ export class AnnouncementService {
   async toggleStatus(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('公告不存在');
-    entity.status = entity.status === 1 ? 0 : 1;
+    entity.status = entity.status === ANNOUNCEMENT_STATUS.VISIBLE ? ANNOUNCEMENT_STATUS.HIDDEN : ANNOUNCEMENT_STATUS.VISIBLE;
     return this.repo.save(entity);
   }
 

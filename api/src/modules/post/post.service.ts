@@ -4,6 +4,7 @@ import { Repository, In } from 'typeorm';
 import { PostEntity } from './post.entity';
 import { PostViewEntity } from './post-view.entity';
 import { TagEntity } from '../tag/tag.entity';
+import { POST_STATUS } from '../../common/constants/status';
 
 @Injectable()
 export class PostService {
@@ -16,20 +17,23 @@ export class PostService {
     private readonly tagRepo: Repository<TagEntity>,
   ) {}
 
-  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: number; categoryId?: number; tagId?: number }) {
+  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: string; categoryId?: number; tagId?: number }, publicOnly = false) {
     const qb = this.postRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.author', 'author')
       .leftJoinAndSelect('p.category', 'category')
       .leftJoinAndSelect('p.tags', 'tags');
 
+    // 公开接口只返回已发布文章
+    if (publicOnly) {
+      qb.andWhere('p.status = :published', { published: POST_STATUS.PUBLISHED });
+    } else if (filters?.status !== undefined) {
+      qb.andWhere('p.status = :status', { status: filters.status });
+    }
     if (filters?.id !== undefined) {
       qb.andWhere('p.id = :id', { id: filters.id });
     }
     if (filters?.keyword) {
       qb.andWhere('p.title LIKE :keyword', { keyword: `%${filters.keyword}%` });
-    }
-    if (filters?.status !== undefined) {
-      qb.andWhere('p.status = :status', { status: filters.status });
     }
     if (filters?.categoryId !== undefined) {
       qb.andWhere('p.categoryId = :categoryId', { categoryId: filters.categoryId });
@@ -49,8 +53,12 @@ export class PostService {
     return { list, total, page, pageSize };
   }
 
-  async findById(id: number) {
-    return this.postRepo.findOne({ where: { id }, relations: ['author', 'category', 'tags'] });
+  async findById(id: number, publicOnly = false) {
+    const where: any = { id };
+    if (publicOnly) {
+      where.status = POST_STATUS.PUBLISHED;
+    }
+    return this.postRepo.findOne({ where, relations: ['author', 'category', 'tags'] });
   }
 
   async create(data: Partial<PostEntity> & { tagIds?: number[] }) {
@@ -61,9 +69,9 @@ export class PostService {
       post.tags = await this.tagRepo.findBy({ id: In(tagIds) });
     }
 
-    if (post.status === 1 && !post.publishedAt) {
+    if (post.status === POST_STATUS.PUBLISHED && !post.publishedAt) {
       post.publishedAt = new Date();
-    } else if (post.status === 2) {
+    } else if (post.status === POST_STATUS.DRAFT) {
       post.publishedAt = null;
     }
 
@@ -82,9 +90,9 @@ export class PostService {
       post.tags = tagIds.length ? await this.tagRepo.findBy({ id: In(tagIds) }) : [];
     }
 
-    if (postData.status === 1 && !post.publishedAt) {
+    if (postData.status === POST_STATUS.PUBLISHED && !post.publishedAt) {
       post.publishedAt = new Date();
-    } else if (postData.status === 2) {
+    } else if (postData.status === POST_STATUS.DRAFT) {
       post.publishedAt = null;
     }
 
@@ -113,13 +121,13 @@ export class PostService {
     return { list, total, page, pageSize };
   }
 
-  async batchUpdateStatus(ids: number[], status: number) {
+  async batchUpdateStatus(ids: number[], status: string) {
     const posts = await this.postRepo.findBy({ id: In(ids) });
     for (const post of posts) {
       const update: Record<string, unknown> = { status };
-      if (status === 1 && !post.publishedAt) {
+      if (status === POST_STATUS.PUBLISHED && !post.publishedAt) {
         update.publishedAt = new Date();
-      } else if (status === 2) {
+      } else if (status === POST_STATUS.DRAFT) {
         update.publishedAt = null;
       }
       await this.postRepo.update(post.id, update as any);

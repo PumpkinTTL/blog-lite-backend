@@ -5,6 +5,7 @@ import { PostEntity } from '../post/post.entity';
 import { CategoryEntity } from '../category/category.entity';
 import { TagEntity } from '../tag/tag.entity';
 import { MediaEntity } from '../media/media.entity';
+import { POST_STATUS } from '../../common/constants/status';
 
 @Injectable()
 export class DashboardService {
@@ -22,7 +23,7 @@ export class DashboardService {
   async getStats() {
     const [postCount, publishedCount, categoryCount, tagCount, mediaCount] = await Promise.all([
       this.postRepo.count(),
-      this.postRepo.count({ where: { status: 1 } }),
+      this.postRepo.count({ where: { status: POST_STATUS.PUBLISHED } }),
       this.categoryRepo.count(),
       this.tagRepo.count(),
       this.mediaRepo.count(),

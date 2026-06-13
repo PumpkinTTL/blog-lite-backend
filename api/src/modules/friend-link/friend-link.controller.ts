@@ -1,11 +1,15 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { FriendLinkService } from './friend-link.service';
 import { CreateFriendLinkDto, UpdateFriendLinkDto } from './friend-link.dto';
+import { Public } from '../../common/decorators/public.decorator';
+import { FRIEND_LINK_STATUS } from '../../common/constants/status';
 
 @Controller('friend-link')
 export class FriendLinkController {
   constructor(private readonly service: FriendLinkService) {}
 
+  @Public()
   @Get()
   async list(
     @Query('page') page?: string,
@@ -13,14 +17,18 @@ export class FriendLinkController {
     @Query('id') id?: string,
     @Query('keyword') keyword?: string,
     @Query('status') status?: string,
+    @Req() req?: Request,
   ) {
+    // 未登录只返回已启用的友链
+    const isLoggedIn = !!(req as any)?.user;
+    const finalStatus = !isLoggedIn ? FRIEND_LINK_STATUS.VISIBLE : status;
     const data = await this.service.findAll(
       page ? parseInt(page) : 1,
       pageSize ? parseInt(pageSize) : 20,
       {
         id: id !== undefined ? parseInt(id) : undefined,
         keyword,
-        status: status !== undefined ? parseInt(status) : undefined,
+        status: finalStatus,
       },
     );
     return { success: true, data, message: 'ok' };

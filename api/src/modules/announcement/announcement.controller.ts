@@ -1,11 +1,15 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { AnnouncementService } from './announcement.service';
 import { CreateAnnouncementDto, UpdateAnnouncementDto } from './announcement.dto';
+import { Public } from '../../common/decorators/public.decorator';
+import { ANNOUNCEMENT_STATUS } from '../../common/constants/status';
 
 @Controller('announcement')
 export class AnnouncementController {
   constructor(private readonly service: AnnouncementService) {}
 
+  @Public()
   @Get()
   async list(
     @Query('page') page?: string,
@@ -13,14 +17,18 @@ export class AnnouncementController {
     @Query('id') id?: string,
     @Query('keyword') keyword?: string,
     @Query('status') status?: string,
+    @Req() req?: Request,
   ) {
+    // 未登录只返回已发布的公告
+    const isLoggedIn = !!(req as any)?.user;
+    const finalStatus = !isLoggedIn ? ANNOUNCEMENT_STATUS.VISIBLE : status;
     const data = await this.service.findAll(
       page ? parseInt(page) : 1,
       pageSize ? parseInt(pageSize) : 20,
       {
         id: id !== undefined ? parseInt(id) : undefined,
         keyword,
-        status: status !== undefined ? parseInt(status) : undefined,
+        status: finalStatus,
       },
     );
     return { success: true, data, message: 'ok' };

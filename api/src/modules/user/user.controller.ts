@@ -6,6 +6,7 @@ import { CreateUserDto, UpdateUserDto, UpdateProfileDto, ResetPasswordDto, SendR
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { EmailCodeService } from '../email-code/email-code.service';
+import { USER_STATUS } from '../../common/constants/status';
 
 @Controller('user')
 export class UserController {
@@ -149,7 +150,7 @@ export class UserController {
       return { success: false, message: '不能禁用自己' };
     }
     const data = await this.userService.toggleStatus(id);
-    return { success: true, data, message: data.status === 1 ? '已启用' : '已禁用' };
+    return { success: true, data, message: data.status === USER_STATUS.ACTIVE ? '已启用' : '已禁用' };
   }
 
   @Put(':id/reset-password')

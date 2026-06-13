@@ -15,6 +15,7 @@ import {
 import type { Response } from 'express';
 import { DonationService } from './donation.service';
 import { CreateDonationDto, UpdateDonationDto } from './donation.dto';
+import { DonationStatus } from './donation.entity';
 
 @Controller('donation')
 export class DonationController {
@@ -50,7 +51,7 @@ export class DonationController {
     const data = await this.service.findAll(p, ps, {
       id: id ? (Number(id) || undefined) : undefined,
       keyword: keyword || undefined,
-      status: status !== undefined ? (Number(status) || undefined) : undefined,
+      status: (status as DonationStatus) || undefined,
       payMethod: payMethod || undefined,
       cryptoNetwork: cryptoNetwork || undefined,
     });

@@ -8,6 +8,7 @@ import { UserEntity } from './user.entity';
 import { RoleEntity } from './role.entity';
 import { LoginDto } from './login.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
+import { USER_STATUS } from '../../common/constants/status';
 import { UpdateProfileDto } from './user.dto';
 import { AuthService } from '../auth/auth.service';
 import { CodeService } from '../code/code.service';
@@ -51,7 +52,7 @@ export class UserService {
       .where('u.username = :username', { username: dto.username })
       .getOne();
 
-    if (!user || user.status !== 1) {
+    if (!user || user.status !== USER_STATUS.ACTIVE) {
       throw new UnauthorizedException('账号不存在或已禁用');
     }
 
@@ -179,7 +180,7 @@ export class UserService {
     if (!user) {
       throw new NotFoundException('用户不存在');
     }
-    user.status = user.status === 1 ? 0 : 1;
+    user.status = user.status === USER_STATUS.ACTIVE ? USER_STATUS.DISABLED : USER_STATUS.ACTIVE;
     return this.userRepo.save(user);
   }
 
@@ -223,7 +224,7 @@ export class UserService {
         password: await bcrypt.hash(dto.password, 10),
         email: dto.email || null,
         avatar: dto.avatar || null,
-        status: 1,
+        status: USER_STATUS.ACTIVE,
         registerIp: clientIp,
         registerSource: dto.registerSource || 'web',
         registerCodeId: codeEntity.id,

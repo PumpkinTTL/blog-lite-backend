@@ -1,11 +1,13 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './category.dto';
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('category')
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 
+  @Public()
   @Get()
   async list(
     @Query('id') id?: string,
@@ -18,12 +20,14 @@ export class CategoryController {
     return { success: true, data, message: 'ok' };
   }
 
+  @Public()
   @Get('tree')
   async tree() {
     const data = await this.categoryService.findTree();
     return { success: true, data, message: 'ok' };
   }
 
+  @Public()
   @Get(':id')
   async detail(@Param('id', ParseIntPipe) id: number) {
     const data = await this.categoryService.findById(id);

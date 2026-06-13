@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DonationEntity } from './donation.entity';
+import { DonationEntity, DonationStatus } from './donation.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
+import { DONATION_STATUS } from '../../common/constants/status';
 
 @Injectable()
 export class DonationService {
@@ -14,7 +15,7 @@ export class DonationService {
   async findAll(
     page = 1,
     pageSize = 20,
-    filters?: { id?: number; keyword?: string; status?: number; payMethod?: string; cryptoNetwork?: string },
+    filters?: { id?: number; keyword?: string; status?: DonationStatus; payMethod?: string; cryptoNetwork?: string },
   ) {
     const qb = this.repo.createQueryBuilder('e');
     applyFilters(qb, {
@@ -52,7 +53,7 @@ export class DonationService {
   async toggleStatus(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('捐赠记录不存在');
-    entity.status = entity.status === 1 ? 0 : 1;
+    entity.status = entity.status === DONATION_STATUS.CONFIRMED ? DONATION_STATUS.PENDING : DONATION_STATUS.CONFIRMED;
     return this.repo.save(entity);
   }
 
@@ -70,8 +71,8 @@ export class DonationService {
       this.repo
         .createQueryBuilder('e')
         .select('COUNT(*)', 'total')
-        .addSelect("SUM(CASE WHEN e.status = 1 THEN 1 ELSE 0 END)", 'confirmed')
-        .addSelect("SUM(CASE WHEN e.status = 0 THEN 1 ELSE 0 END)", 'pending')
+        .addSelect(`SUM(CASE WHEN e.status = ${DONATION_STATUS.CONFIRMED} THEN 1 ELSE 0 END)`, 'confirmed')
+        .addSelect(`SUM(CASE WHEN e.status = ${DONATION_STATUS.PENDING} THEN 1 ELSE 0 END)`, 'pending')
         .getRawOne(),
       this.repo
         .createQueryBuilder('e')
@@ -116,7 +117,7 @@ export class DonationService {
   /** 导出 CSV（仅已确认，最多 10000 条防 OOM） */
   async exportCsv(): Promise<string> {
     const list = await this.repo.find({
-      where: { status: 1 },
+      where: { status: DONATION_STATUS.CONFIRMED },
       order: { createdAt: 'DESC' },
       take: 10000,
     });
@@ -132,7 +133,7 @@ export class DonationService {
         d.cryptoNetwork || '',
         d.cryptoTxHash || '',
         `"${(d.message || '').replace(/"/g, '""')}"`,
-        d.status === 1 ? '已确认' : d.status === 0 ? '待确认' : '已退款',
+        d.status === DONATION_STATUS.CONFIRMED ? '已确认' : d.status === DONATION_STATUS.PENDING ? '待确认' : '已退款',
         d.isVisible ? '是' : '否',
         d.sortOrder,
         `"${(d.remark || '').replace(/"/g, '""')}"`,

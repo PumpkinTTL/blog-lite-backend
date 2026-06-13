@@ -2,11 +2,14 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, R
 import type { Request } from 'express';
 import { PostService } from './post.service';
 import { CreatePostDto, UpdatePostDto, BatchIdsDto } from './post.dto';
+import { Public } from '../../common/decorators/public.decorator';
+import { POST_STATUS } from '../../common/constants/status';
 
 @Controller('post')
 export class PostController {
   constructor(private readonly postService: PostService) {}
 
+  @Public()
   @Get()
   async list(
     @Query('page') page?: string,
@@ -16,17 +19,21 @@ export class PostController {
     @Query('keyword') keyword?: string,
     @Query('categoryId') categoryId?: string,
     @Query('tagId') tagId?: string,
+    @Req() req?: Request,
   ) {
+    // 已登录用户（后台管理）可按 status 过滤；未登录（公开）只返回已发布
+    const isLoggedIn = !!(req as any)?.user;
     const data = await this.postService.findAll(
       Math.max(parseInt(page || '1'), 1),
       Math.min(parseInt(pageSize || '20'), 100),
       {
         id: id !== undefined ? parseInt(id) : undefined,
         keyword,
-        status: status !== undefined ? parseInt(status) : undefined,
+        status: status !== undefined ? status : undefined,
         categoryId: categoryId !== undefined ? parseInt(categoryId) : undefined,
         tagId: tagId !== undefined ? parseInt(tagId) : undefined,
       },
+      !isLoggedIn,
     );
     return { success: true, data, message: 'ok' };
   }
@@ -43,12 +50,15 @@ export class PostController {
     return { success: true, data, message: 'ok' };
   }
 
+  @Public()
   @Get(':id')
-  async detail(@Param('id', ParseIntPipe) id: number) {
-    const data = await this.postService.findById(id);
+  async detail(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const isLoggedIn = !!(req as any)?.user;
+    const data = await this.postService.findById(id, !isLoggedIn);
     return { success: true, data, message: 'ok' };
   }
 
+  @Public()
   @Post(':id/view')
   async recordView(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
     const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
@@ -59,13 +69,13 @@ export class PostController {
 
   @Post('batch/publish')
   async batchPublish(@Body() body: BatchIdsDto) {
-    await this.postService.batchUpdateStatus(body.ids, 1);
+    await this.postService.batchUpdateStatus(body.ids, POST_STATUS.PUBLISHED);
     return { success: true, message: '批量发布成功' };
   }
 
   @Post('batch/unpublish')
   async batchUnpublish(@Body() body: BatchIdsDto) {
-    await this.postService.batchUpdateStatus(body.ids, 2);
+    await this.postService.batchUpdateStatus(body.ids, POST_STATUS.DRAFT);
     return { success: true, message: '批量下架成功' };
   }
 
