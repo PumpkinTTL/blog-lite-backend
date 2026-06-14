@@ -286,7 +286,8 @@ const columns: DataTableColumns<User> = [
         </n-form-item>
         <n-form-item label="头像">
           <div class="av-row">
-            <n-avatar :src="avatarUrl || undefined" :size="64" round />
+            <n-avatar v-if="avatarUrl" :src="avatarUrl" :size="64" round />
+            <n-avatar v-else :size="64" round :color="'#E2E8F0'">{{ formValue.nickname?.charAt(0)?.toUpperCase() || '?' }}</n-avatar>
             <n-upload
               :show-file-list="false"
               accept="image/*"
