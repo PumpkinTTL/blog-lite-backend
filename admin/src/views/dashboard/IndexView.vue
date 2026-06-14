@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { NSpin, NIcon, NEmpty, NButton } from 'naive-ui'
+import { NSpin, NIcon, NEmpty, NButton, NAvatar } from 'naive-ui'
 import {
   DocumentTextOutline,
   PaperPlaneOutline,
@@ -17,6 +17,7 @@ import {
   CashOutline,
   CreateOutline,
   GiftOutline,
+  TimeOutline,
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts/core'
 import { LineChart, PieChart, BarChart } from 'echarts/charts'
@@ -80,6 +81,54 @@ async function loadStats() {
 function axisColor() { return isDark.value ? '#334155' : '#E2E8F0' }
 function textColor() { return isDark.value ? '#CBD5E1' : '#64748B' }
 function tooltipBg() { return isDark.value ? '#1E293B' : '#FFFFFF' }
+
+function getAvatarStyle(username: string) {
+  const darkThemes = [
+    { bg: 'rgba(59, 130, 246, 0.2)', color: '#60A5FA' },   // Blue
+    { bg: 'rgba(236, 72, 153, 0.2)', color: '#F472B6' },  // Pink
+    { bg: 'rgba(16, 185, 129, 0.2)', color: '#34D399' },  // Emerald
+    { bg: 'rgba(245, 158, 11, 0.2)', color: '#FBBF24' },  // Amber
+    { bg: 'rgba(139, 92, 246, 0.2)', color: '#A78BFA' },  // Purple
+    { bg: 'rgba(239, 68, 68, 0.2)', color: '#F87171' },    // Red
+    { bg: 'rgba(6, 182, 212, 0.2)', color: '#22D3EE' },    // Cyan
+  ]
+  const lightThemes = [
+    { bg: 'rgba(59, 130, 246, 0.1)', color: '#2563EB' },   // Blue
+    { bg: 'rgba(236, 72, 153, 0.1)', color: '#DB2777' },  // Pink
+    { bg: 'rgba(16, 185, 129, 0.1)', color: '#059669' },  // Emerald
+    { bg: 'rgba(245, 158, 11, 0.1)', color: '#D97706' },  // Amber
+    { bg: 'rgba(139, 92, 246, 0.1)', color: '#7C3AED' },  // Purple
+    { bg: 'rgba(239, 68, 68, 0.1)', color: '#DC2626' },    // Red
+    { bg: 'rgba(6, 182, 212, 0.1)', color: '#0891B2' },    // Cyan
+  ]
+  const themes = isDark.value ? darkThemes : lightThemes
+  if (!username) return themes[0]
+  let hash = 0
+  for (let i = 0; i < username.length; i++) {
+    hash = username.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  const index = Math.abs(hash) % themes.length
+  return themes[index]
+}
+
+function resolveAvatarUrl(url: string | null): string {
+  if (!url) return ''
+  if (/^https?:\/\//.test(url)) return url
+  const base = import.meta.env.VITE_API_BASE_URL || window.location.origin
+  return new URL(url, base).toString()
+}
+
+function formatTime(dateStr: string): string {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  if (diffDays === 0) return '今天'
+  if (diffDays === 1) return '昨天'
+  if (diffDays < 7) return `${diffDays}天前`
+  return `${date.getMonth() + 1}月${date.getDate()}日`
+}
 
 function fmtNum(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + 'w'
@@ -149,17 +198,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="dash">
+  <div class="dash" :class="{ 'is-dark': isDark }">
     <div class="dash-bar">
-      <div>
+      <div class="dash-left">
         <span class="dash-title">数据概览</span>
-        <span class="dash-sub">·</span>
-        <n-button text size="tiny" @click="router.push('/posts/create')" style="gap:4px">
+        <n-button text size="tiny" style="color:#3B82F6;gap:4px;margin-left:16px" @click="router.push('/posts/create')">
           <n-icon size="14"><CreateOutline /></n-icon>写文章
         </n-button>
-        <span class="dash-sub">·</span>
-        <n-button text size="tiny" @click="router.push('/memberships')" style="gap:4px">
-          <n-icon size="14"><GiftOutline /></n-icon>开通
+        <n-button text size="tiny" style="color:#8B5CF6;gap:4px;margin-left:8px" @click="router.push('/memberships')">
+          <n-icon size="14"><GiftOutline /></n-icon>开通会员
         </n-button>
       </div>
       <n-button size="small" :loading="loading" @click="loadStats" quaternary>
@@ -229,15 +276,26 @@ onBeforeUnmount(() => {
             <div v-if="!stats.topPosts.length" class="empty"><n-empty description="暂无数据" /></div>
             <div v-else class="rank">
               <div v-for="(p, i) in stats.topPosts.slice(0, 5)" :key="p.id" class="rank-row" @click="router.push(`/posts/${p.id}/edit`)">
-                <span class="r-no" :class="{ 'r-top': i < 3 }">{{ i + 1 }}</span>
+                <span class="r-num" :class="`r-num-${i + 1}`">0{{ i + 1 }}</span>
                 <div class="r-info">
                   <span class="r-name">{{ p.title }}</span>
-                  <span class="r-slug">/{{ p.slug }}</span>
+                  <div class="r-sub">
+                    <span class="r-slug">/{{ p.slug }}</span>
+                    <span class="r-dot">·</span>
+                    <span class="r-stat-item">
+                      <n-icon size="12" style="margin-right:2px"><EyeOutline /></n-icon>
+                      {{ fmtNum(p.viewCount) }} 阅读
+                    </span>
+                    <span class="r-dot">·</span>
+                    <span class="r-stat-item">
+                      <n-icon size="11" style="margin-right:2px"><HeartOutline /></n-icon>
+                      {{ fmtNum(p.likeCount) }} 点赞
+                    </span>
+                  </div>
                 </div>
-                <span class="r-meta">
-                  <n-icon size="12"><EyeOutline /></n-icon>{{ fmtNum(p.viewCount) }}
-                  <n-icon size="12" style="margin-left:8px"><HeartOutline /></n-icon>{{ fmtNum(p.likeCount) }}
-                </span>
+                <div class="r-action">
+                  <n-button size="tiny" quaternary type="primary" class="r-edit-btn">编辑</n-button>
+                </div>
               </div>
             </div>
           </div>
@@ -249,12 +307,36 @@ onBeforeUnmount(() => {
             <div v-if="!stats.recentUsers?.length" class="empty"><n-empty description="暂无数据" /></div>
             <div v-else class="rank">
               <div v-for="u in stats.recentUsers.slice(0, 5)" :key="u.id" class="rank-row" @click="router.push('/users')">
-                <span class="r-av">{{ (u.nickname || u.username).charAt(0) }}</span>
+                <n-avatar
+                  round
+                  :size="34"
+                  class="r-av"
+                  :src="u.avatar ? resolveAvatarUrl(u.avatar) : undefined"
+                  :style="!u.avatar ? {
+                    background: getAvatarStyle(u.username).bg,
+                    color: getAvatarStyle(u.username).color,
+                    fontWeight: '600',
+                    fontSize: '14px'
+                  } : {}"
+                >
+                  <template v-if="!u.avatar">
+                    {{ (u.nickname || u.username).charAt(0).toUpperCase() }}
+                  </template>
+                </n-avatar>
                 <div class="r-info">
                   <span class="r-name">{{ u.nickname || u.username }}</span>
-                  <span class="r-slug">{{ u.username }}</span>
+                  <div class="r-sub">
+                    <span class="r-slug">@{{ u.username }}</span>
+                    <span class="r-dot">·</span>
+                    <span class="r-stat-item">
+                      <n-icon size="12" style="margin-right:2px; vertical-align: -1px;"><TimeOutline /></n-icon>
+                      {{ formatTime(u.createdAt) }}
+                    </span>
+                  </div>
                 </div>
-                <span class="r-meta">{{ u.createdAt ? new Date(u.createdAt).toLocaleDateString('zh-CN') : '' }}</span>
+                <div class="r-action">
+                  <n-button size="tiny" quaternary type="primary" class="r-edit-btn">管理</n-button>
+                </div>
               </div>
             </div>
           </div>
@@ -274,8 +356,8 @@ onBeforeUnmount(() => {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 16px;
 }
+.dash-left { display: flex; align-items: center; }
 .dash-title { font-size: 18px; font-weight: 700; color: var(--n-text-color); }
-.dash-sub { margin: 0 6px; color: var(--n-divider-color); user-select: none; }
 
 /* card */
 .card {
@@ -344,43 +426,58 @@ onBeforeUnmount(() => {
 
 /* rank */
 .empty { padding: 40px 0; }
-.rank { display: flex; flex-direction: column; gap: 2px; }
+.rank { display: flex; flex-direction: column; gap: 6px; }
 .rank-row {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px; border-radius: 8px; cursor: pointer;
-  background: var(--n-fill-color, rgba(0,0,0,0.02));
-  transition: all 0.15s;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: transparent;
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
 }
-.rank-row:hover { background: var(--n-color-hover); }
-.r-no {
-  flex-shrink: 0; width: 22px; height: 22px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 6px;
-  font-size: 11px; font-weight: 700; color: var(--n-text-color-3);
-  background: var(--n-card-color);
+.rank-row:hover {
+  background: var(--n-color-hover, rgba(37, 99, 235, 0.04));
 }
-.r-top {
-  background: var(--n-primary-color, #1E40AF);
-  color: #fff;
+.r-num {
+  font-family: 'Poppins', sans-serif;
+  font-size: 15px; font-weight: 700;
+  color: var(--n-text-color-3);
+  width: 24px; flex-shrink: 0;
+  text-align: left;
 }
+.r-num-1 { color: #F59E0B !important; }
+.r-num-2 { color: #94A3B8 !important; }
+.r-num-3 { color: #F97316 !important; }
 .r-av {
-  flex-shrink: 0; width: 32px; height: 32px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 50%;
-  background: var(--n-primary-color-suppl, #60A5FA);
-  font-size: 13px; font-weight: 600; color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
-.r-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.r-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .r-name {
-  font-size: 13px; font-weight: 500; color: var(--n-text-color);
+  font-size: 13.5px; font-weight: 600; color: var(--n-text-color);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.r-sub {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  font-size: 11px; color: var(--n-text-color-3);
 }
 .r-slug {
-  font-size: 11px; color: var(--n-text-color-3); font-family: monospace;
+  max-width: 140px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.r-meta {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 12px; color: var(--n-text-color-3); flex-shrink: 0;
+.r-dot {
+  color: var(--n-text-color-3); opacity: 0.5; user-select: none;
+}
+.r-stat-item {
+  display: inline-flex; align-items: center; color: var(--n-text-color-3);
+}
+.r-action {
+  opacity: 0; transition: opacity 0.2s ease-in-out; margin-left: auto;
+}
+.rank-row:hover .r-action {
+  opacity: 1;
+}
+@media (max-width: 768px) {
+  .r-action { opacity: 1; }
 }
 </style>
