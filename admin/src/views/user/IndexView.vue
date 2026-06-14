@@ -53,16 +53,15 @@ const roleOptions = ref<{ label: string; value: number }[]>([])
 const avatarUrl = ref<string | null>(null)
 const avatarUploading = ref(false)
 
-async function handleAvatarChange(options: { file: File; fileList: File[] }) {
-  const file = options.file
-  if (!file) return
+async function handleAvatarChange(data: { file: any; fileList: any[] }) {
+  const rawFile = data.file?.file
+  if (!rawFile) return
   avatarUploading.value = true
   try {
-    const res: any = await uploadToR2(file, { app: 'vibehub', folder: 'avatar' })
+    const res: any = await uploadToR2(rawFile, { app: 'vibehub', folder: 'avatar' })
     avatarUrl.value = res.data?.url || res.url || ''
-    message.success('头像上传成功')
   } catch (e: any) {
-    message.error(e.message || '头像上传失败')
+    message.error(e?.message || '头像上传失败')
   } finally {
     avatarUploading.value = false
   }
@@ -276,6 +275,7 @@ const columns: DataTableColumns<User> = [
       :negative-text="saving ? undefined : '取消'"
       :loading="saving"
       @positive-click="handleSave"
+      style="width:560px"
     >
       <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="top">
         <n-form-item label="登录账号" path="username">
@@ -285,13 +285,13 @@ const columns: DataTableColumns<User> = [
           <n-input v-model:value="formValue.password" type="password" :placeholder="editingId ? '留空不修改' : '至少6位'" show-password-on="click" />
         </n-form-item>
         <n-form-item label="头像">
-          <div style="display:flex;align-items:center;gap:12px">
-            <n-avatar v-if="avatarUrl" :src="avatarUrl" :size="48" round />
-            <n-avatar v-else :size="48" round>{{ formValue.nickname?.charAt(0) || '?' }}</n-avatar>
+          <div class="av-row">
+            <n-avatar :src="avatarUrl || undefined" :size="64" round />
             <n-upload
               :show-file-list="false"
               accept="image/*"
               :disabled="avatarUploading"
+              :default-upload="false"
               @change="handleAvatarChange"
             >
               <n-button size="small" :loading="avatarUploading">上传头像</n-button>
@@ -313,4 +313,5 @@ const columns: DataTableColumns<User> = [
 </template>
 
 <style scoped>
+.av-row { display: flex; align-items: center; gap: 16px; }
 </style>
