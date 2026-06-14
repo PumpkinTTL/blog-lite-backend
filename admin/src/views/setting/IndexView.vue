@@ -54,8 +54,8 @@ async function loadSettings() {
   try {
     const res = await getSettings()
     groups.value = res.data || {}
-  } catch {
-    message.error('加载设置失败')
+  } catch (e: any) {
+    message.error(e?.message || '加载设置失败')
   } finally {
     loading.value = false
   }

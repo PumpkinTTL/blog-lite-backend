@@ -140,8 +140,8 @@ async function loadPosts() {
       posts.value = payload
       total.value = payload.length
     }
-  } catch {
-    message.error('加载文章列表失败')
+  } catch (e: any) {
+    message.error(e?.message || '加载文章列表失败')
   } finally {
     loading.value = false
   }

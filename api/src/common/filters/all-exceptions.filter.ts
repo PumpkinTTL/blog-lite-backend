@@ -17,8 +17,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
-    let message = 'Internal server error';
-    let error: any = undefined;
+    let message = '服务器内部错误';
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -27,7 +26,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
         typeof exceptionResponse === 'string'
           ? exceptionResponse
           : (exceptionResponse as any).message || exception.message;
-      error = (exceptionResponse as any).error;
+
+      // HttpException 只在开发环境打印堆栈到日志，不暴露给客户端
+      if (process.env.NODE_ENV !== 'production') {
+        this.logger.warn(`HTTP ${status}: ${message}`);
+      }
     } else if (exception instanceof Error) {
       message = exception.message;
       this.logger.error(`Unhandled exception: ${exception.message}`, exception.stack);
@@ -35,13 +38,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.error('Unhandled exception', String(exception));
     }
 
+    // 统一响应格式，与业务接口一致
     response.status(status).json({
-      statusCode: status,
+      success: false,
       message: Array.isArray(message) ? message.join(', ') : message,
-      ...(error ? { error } : {}),
-      ...(process.env.NODE_ENV !== 'production' && exception instanceof Error
-        ? { stack: (exception as Error).stack }
-        : {}),
+      data: null,
     });
   }
 }

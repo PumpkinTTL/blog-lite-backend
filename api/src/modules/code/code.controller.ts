@@ -3,8 +3,10 @@ import type { Request } from 'express';
 import { CodeService } from './code.service';
 import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto, BatchCreateCodeDto, BatchIdsDto } from './code.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('code')
+@Roles('admin')
 export class CodeController {
   constructor(private readonly codeService: CodeService) {}
 

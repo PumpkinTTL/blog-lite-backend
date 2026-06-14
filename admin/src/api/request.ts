@@ -23,13 +23,14 @@ request.interceptors.response.use(
   (response) => response.data,
   (error) => {
     const status = error.response?.status
+    const serverMsg = error.response?.data?.message || ''
+
     if (status === 401) {
       localStorage.removeItem('accessToken')
       localStorage.removeItem('refreshToken')
       localStorage.removeItem('deviceId')
       if (!isRedirecting) {
         isRedirecting = true
-        // 动态导入避免循环依赖，用 Naive UI 的 message 提示
         import('naive-ui').then(({ createDiscreteApi }) => {
           const { message } = createDiscreteApi(['message'])
           message.warning('登录已过期，请重新登录', {
@@ -40,9 +41,14 @@ request.interceptors.response.use(
           })
         })
       }
-      return new Promise(() => {}) // 挂起，不触发页面内的错误处理
+      return new Promise(() => {})
     }
-    const message = error.response?.data?.message || error.message || '请求失败'
+
+    if (status === 403) {
+      return Promise.reject(new Error(serverMsg || '无权访问'))
+    }
+
+    const message = serverMsg || error.message || '请求失败'
     return Promise.reject(new Error(message))
   },
 )

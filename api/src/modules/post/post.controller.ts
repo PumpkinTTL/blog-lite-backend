@@ -23,9 +23,10 @@ export class PostController {
     @Query('tagId') tagId?: string,
     @Req() req?: Request,
   ) {
-    // 已登录管理员看全部；未登录或普通用户只返回已发布
+    // 已登录管理员看全部；登录用户看 published+login；未登录只看 published
     const user = (req as any)?.user;
     const isAdmin = user?.roles?.includes('admin') ?? false;
+    const isLoggedIn = !!user && !isAdmin;
     const data = await this.postService.findAll(
       Math.max(parseInt(page || '1'), 1),
       Math.min(parseInt(pageSize || '20'), 100),
@@ -38,6 +39,7 @@ export class PostController {
       },
       !isAdmin,
       isAdmin, // withVisibility：admin 列表带可见性配置
+      isLoggedIn, // 登录用户额外可见 login 状态文章
     );
     return { success: true, data, message: 'ok' };
   }
@@ -63,10 +65,20 @@ export class PostController {
     // AuthGuard 已挂载 user.roles（数组），用于角色授权校验
     const userRoleIds: number[] = user?.roleIds ?? [];
 
-    // admin 看全部，未登录只看 published
+    // admin 看全部，登录用户看 published+login，未登录只看 published
     const publicOnly = !isAdmin && userId === null;
     const post = await this.postService.findById(id, publicOnly);
     if (!post) {
+      return { success: false, message: '文章不存在', data: null };
+    }
+
+    // login 文章：匿名用户不可见（findById publicOnly 已过滤，此处防御）
+    if (post.status === POST_STATUS.LOGIN && userId === null) {
+      return { success: false, message: '无权访问', data: null };
+    }
+
+    // draft 文章：非 admin 不可见
+    if (post.status === POST_STATUS.DRAFT && !isAdmin) {
       return { success: false, message: '文章不存在', data: null };
     }
 

@@ -131,8 +131,8 @@ async function loadPost(id: number) {
           allowedRoleIds: post.allowedRoleIds || [],
       }
     }
-  } catch {
-    message.error('加载文章失败')
+  } catch (e: any) {
+    message.error(e?.message || '加载文章失败')
   } finally {
     loading.value = false
   }

@@ -56,15 +56,22 @@ export class PostService implements OnModuleInit {
     filters?: { id?: number; keyword?: string; status?: string; categoryId?: number; tagId?: number },
     publicOnly = false,
     withVisibility = false,
+    isLoggedIn = false,
   ) {
     const qb = this.postRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.author', 'author')
       .leftJoinAndSelect('p.category', 'category')
       .leftJoinAndSelect('p.tags', 'tags');
 
-    // 公开接口只返回已发布文章
+    // 公开接口只返回已发布文章；已登录用户额外可见 login 状态
     if (publicOnly) {
-      qb.andWhere('p.status = :published', { published: POST_STATUS.PUBLISHED });
+      if (isLoggedIn) {
+        qb.andWhere('p.status IN (:...visible)', {
+          visible: [POST_STATUS.PUBLISHED, POST_STATUS.LOGIN],
+        });
+      } else {
+        qb.andWhere('p.status = :published', { published: POST_STATUS.PUBLISHED });
+      }
     } else if (filters?.status !== undefined) {
       qb.andWhere('p.status = :status', { status: filters.status });
     }

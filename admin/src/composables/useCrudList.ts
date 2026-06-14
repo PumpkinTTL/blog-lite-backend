@@ -54,8 +54,8 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
             const payload = res.data
             return Array.isArray(payload) ? payload : (payload?.list || [])
           })()
-    } catch {
-      message.error(options.loadErrorMessage || '加载列表失败')
+    } catch (e: any) {
+      message.error(e?.message || options.loadErrorMessage || '加载列表失败')
     } finally {
       loading.value = false
     }

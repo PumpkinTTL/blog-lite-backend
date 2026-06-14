@@ -324,7 +324,8 @@ async function loadLogs() {
     const payload = res.data
     logList.value = payload?.list || []
     logTotal.value = payload?.total || 0
-  } catch {
+  } catch (e: any) {
+    message.error(e?.message || '加载使用日志失败')
     logList.value = []
   } finally {
     logLoading.value = false

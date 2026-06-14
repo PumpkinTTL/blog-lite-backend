@@ -130,7 +130,7 @@ async function loadList() {
     const res = await getDonationList(params)
     total.value = res.data.total
     donationList.value = res.data.list
-  } catch { message.error('加载列表失败') }
+  } catch (e: any) { message.error(e?.message || '加载列表失败') }
   finally { loading.value = false }
 }
 

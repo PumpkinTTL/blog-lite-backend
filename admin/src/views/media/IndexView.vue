@@ -90,8 +90,8 @@ async function loadMedia() {
     } else {
       mediaList.value = Array.isArray(payload) ? payload : []
     }
-  } catch {
-    message.error('加载文件列表失败')
+  } catch (e: any) {
+    message.error(e?.message || '加载文件列表失败')
   } finally {
     loading.value = false
   }
