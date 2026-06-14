@@ -68,7 +68,7 @@ export class MediaController {
     }
     const payload = req as { user?: { sub?: string } };
     const uploaderId = parseInt(payload.user?.sub ?? '1', 10);
-    const data = await this.mediaService.uploadMany(files, uploaderId, dto);
+    const data = await this.mediaService.uploadMany(files, uploaderId, { storageType: dto.storageType, ossPlatform: dto.ossPlatform, note: dto.note, app: dto.app, folder: dto.folder });
     return { success: true, data, message: '上传成功' };
   }
 
@@ -99,7 +99,7 @@ export class MediaController {
     }
     const payload = req as { user?: { sub?: string } };
     const uploaderId = parseInt(payload.user?.sub ?? '1', 10);
-    const data = await this.mediaService.upload(file, uploaderId, dto);
+    const data = await this.mediaService.upload(file, uploaderId, { storageType: dto.storageType, ossPlatform: dto.ossPlatform, note: dto.note, app: dto.app, folder: dto.folder });
     return { success: true, data, message: '上传成功' };
   }
 

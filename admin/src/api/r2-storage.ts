@@ -41,12 +41,14 @@ export function getR2MediaList(params?: { page?: number; pageSize?: number; id?:
 /**
  * 上传文件到 R2
  */
-export function uploadToR2(file: File, options?: { note?: string }) {
+export function uploadToR2(file: File, options?: { note?: string; app?: string; folder?: string }) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('storageType', 'oss')
   formData.append('ossPlatform', 'cloudflare')
   if (options?.note) formData.append('note', options.note)
+  if (options?.app) formData.append('app', options.app)
+  if (options?.folder) formData.append('folder', options.folder)
   return request.post('/media/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })

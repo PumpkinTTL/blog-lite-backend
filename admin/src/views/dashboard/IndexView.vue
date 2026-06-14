@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { NSpin, NIcon, NEmpty, NButton, NAvatar } from 'naive-ui'
+import { NSpin, NIcon, NEmpty, NButton } from 'naive-ui'
 import {
   DocumentTextOutline,
   PaperPlaneOutline,
@@ -13,11 +13,9 @@ import {
   StarOutline,
   EyeOutline,
   RefreshOutline,
-  TrendingUpOutline,
   CashOutline,
   CreateOutline,
   GiftOutline,
-  TimeOutline,
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts/core'
 import { LineChart, PieChart, BarChart } from 'echarts/charts'
@@ -82,53 +80,7 @@ function axisColor() { return isDark.value ? '#334155' : '#E2E8F0' }
 function textColor() { return isDark.value ? '#CBD5E1' : '#64748B' }
 function tooltipBg() { return isDark.value ? '#1E293B' : '#FFFFFF' }
 
-function getAvatarStyle(username: string) {
-  const darkThemes = [
-    { bg: 'rgba(59, 130, 246, 0.2)', color: '#60A5FA' },   // Blue
-    { bg: 'rgba(236, 72, 153, 0.2)', color: '#F472B6' },  // Pink
-    { bg: 'rgba(16, 185, 129, 0.2)', color: '#34D399' },  // Emerald
-    { bg: 'rgba(245, 158, 11, 0.2)', color: '#FBBF24' },  // Amber
-    { bg: 'rgba(139, 92, 246, 0.2)', color: '#A78BFA' },  // Purple
-    { bg: 'rgba(239, 68, 68, 0.2)', color: '#F87171' },    // Red
-    { bg: 'rgba(6, 182, 212, 0.2)', color: '#22D3EE' },    // Cyan
-  ]
-  const lightThemes = [
-    { bg: 'rgba(59, 130, 246, 0.1)', color: '#2563EB' },   // Blue
-    { bg: 'rgba(236, 72, 153, 0.1)', color: '#DB2777' },  // Pink
-    { bg: 'rgba(16, 185, 129, 0.1)', color: '#059669' },  // Emerald
-    { bg: 'rgba(245, 158, 11, 0.1)', color: '#D97706' },  // Amber
-    { bg: 'rgba(139, 92, 246, 0.1)', color: '#7C3AED' },  // Purple
-    { bg: 'rgba(239, 68, 68, 0.1)', color: '#DC2626' },    // Red
-    { bg: 'rgba(6, 182, 212, 0.1)', color: '#0891B2' },    // Cyan
-  ]
-  const themes = isDark.value ? darkThemes : lightThemes
-  if (!username) return themes[0]
-  let hash = 0
-  for (let i = 0; i < username.length; i++) {
-    hash = username.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  const index = Math.abs(hash) % themes.length
-  return themes[index]
-}
 
-function resolveAvatarUrl(url: string | null): string {
-  if (!url) return ''
-  if (/^https?:\/\//.test(url)) return url
-  const base = import.meta.env.VITE_API_BASE_URL || window.location.origin
-  return new URL(url, base).toString()
-}
-
-function formatTime(dateStr: string): string {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return '今天'
-  if (diffDays === 1) return '昨天'
-  if (diffDays < 7) return `${diffDays}天前`
-  return `${date.getMonth() + 1}月${date.getDate()}日`
-}
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -305,81 +257,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- bottom: top posts + recent users -->
-        <div class="bottom-row">
-          <div class="card">
-            <div class="card-hd">
-              <span class="card-title">热门文章</span>
-              <n-button text type="primary" size="small" @click="router.push('/posts')">查看全部</n-button>
-            </div>
-            <div v-if="!stats.topPosts.length" class="empty"><n-empty description="暂无数据" /></div>
-            <div v-else class="rank">
-              <div v-for="(p, i) in stats.topPosts.slice(0, 5)" :key="p.id" class="rank-row" @click="router.push(`/posts/${p.id}/edit`)">
-                <span class="r-num" :class="`r-num-${i + 1}`">0{{ i + 1 }}</span>
-                <div class="r-info">
-                  <span class="r-name">{{ p.title }}</span>
-                  <div class="r-sub">
-                    <span class="r-slug">/{{ p.slug }}</span>
-                    <span class="r-dot">·</span>
-                    <span class="r-stat-item">
-                      <n-icon size="12" style="margin-right:2px"><EyeOutline /></n-icon>
-                      {{ fmtNum(p.viewCount) }} 阅读
-                    </span>
-                    <span class="r-dot">·</span>
-                    <span class="r-stat-item">
-                      <n-icon size="11" style="margin-right:2px"><HeartOutline /></n-icon>
-                      {{ fmtNum(p.likeCount) }} 点赞
-                    </span>
-                  </div>
-                </div>
-                <div class="r-action">
-                  <n-button size="tiny" quaternary type="primary" class="r-edit-btn">编辑</n-button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-hd">
-              <span class="card-title">最近用户</span>
-              <n-button text type="primary" size="small" @click="router.push('/users')">查看全部</n-button>
-            </div>
-            <div v-if="!stats.recentUsers?.length" class="empty"><n-empty description="暂无数据" /></div>
-            <div v-else class="rank">
-              <div v-for="u in stats.recentUsers.slice(0, 5)" :key="u.id" class="rank-row" @click="router.push('/users')">
-                <n-avatar
-                  round
-                  :size="34"
-                  class="r-av"
-                  :src="u.avatar ? resolveAvatarUrl(u.avatar) : undefined"
-                  :style="!u.avatar ? {
-                    background: getAvatarStyle(u.username).bg,
-                    color: getAvatarStyle(u.username).color,
-                    fontWeight: '600',
-                    fontSize: '14px'
-                  } : {}"
-                >
-                  <template v-if="!u.avatar">
-                    {{ (u.nickname || u.username).charAt(0).toUpperCase() }}
-                  </template>
-                </n-avatar>
-                <div class="r-info">
-                  <span class="r-name">{{ u.nickname || u.username }}</span>
-                  <div class="r-sub">
-                    <span class="r-slug">@{{ u.username }}</span>
-                    <span class="r-dot">·</span>
-                    <span class="r-stat-item">
-                      <n-icon size="12" style="margin-right:2px; vertical-align: -1px;"><TimeOutline /></n-icon>
-                      {{ formatTime(u.createdAt) }}
-                    </span>
-                  </div>
-                </div>
-                <div class="r-action">
-                  <n-button size="tiny" quaternary type="primary" class="r-edit-btn">管理</n-button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+
 
       </div>
     </n-spin>
@@ -516,68 +394,4 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
 .chart-box { width: 100%; height: 230px; }
 
-/* bottom 2-col */
-.bottom-row {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
-}
-@media (max-width: 900px) { .bottom-row { grid-template-columns: 1fr; } }
-
-.bottom-row .card { min-height: 320px; }
-
-/* rank */
-.empty { padding: 40px 0; }
-.rank { display: flex; flex-direction: column; gap: 6px; }
-.rank-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: transparent;
-  transition: all 0.2s ease-in-out;
-  cursor: pointer;
-}
-.rank-row:hover {
-  background: var(--n-color-hover, rgba(37, 99, 235, 0.04));
-}
-.r-num {
-  font-family: 'Poppins', sans-serif;
-  font-size: 15px; font-weight: 700;
-  color: var(--n-text-color-3);
-  width: 24px; flex-shrink: 0;
-  text-align: left;
-}
-.r-num-1 { color: #F59E0B !important; }
-.r-num-2 { color: #94A3B8 !important; }
-.r-num-3 { color: #F97316 !important; }
-.r-av {
-  flex-shrink: 0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-}
-.r-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.r-name {
-  font-size: 13.5px; font-weight: 600; color: var(--n-text-color);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.r-sub {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
-  font-size: 11px; color: var(--n-text-color-3);
-}
-.r-slug {
-  max-width: 140px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.r-dot {
-  color: var(--n-text-color-3); opacity: 0.5; user-select: none;
-}
-.r-stat-item {
-  display: inline-flex; align-items: center; color: var(--n-text-color-3);
-}
-.r-action {
-  opacity: 0; transition: opacity 0.2s ease-in-out; margin-left: auto;
-}
-.rank-row:hover .r-action {
-  opacity: 1;
-}
-@media (max-width: 768px) {
-  .r-action { opacity: 1; }
-}
 </style>

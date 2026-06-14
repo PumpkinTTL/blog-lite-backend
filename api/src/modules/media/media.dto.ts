@@ -53,5 +53,13 @@ export class UploadStorageDto {
 
   @IsString()
   @IsOptional()
+  app?: string;
+
+  @IsString()
+  @IsOptional()
+  folder?: string;
+
+  @IsString()
+  @IsOptional()
   note?: string;
 }

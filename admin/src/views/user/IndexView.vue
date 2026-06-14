@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch, NAvatar, NUpload } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getUsers, createUser, updateUser, deleteUser, toggleUserStatus } from '../../api/user'
@@ -8,6 +8,7 @@ import type { User } from '../../api/user'
 import { getRoles } from '../../api/role'
 import type { Role } from '../../api/role'
 import type { PlanLevel } from '../../api/plan'
+import { uploadToR2 } from '../../api/r2-storage'
 import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
@@ -80,6 +81,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
   })
 
 function openEdit(row: User) {
+  avatarUrl.value = row.avatar || null
   _openEdit(row, (r) => ({
     username: r.username,
     password: '',
@@ -116,6 +118,7 @@ async function handleSave() {
   if (!formValue.value.email) {
     delete formValue.value.email
   }
+  formValue.value.avatar = avatarUrl.value
   return _handleSave()
 }
 
@@ -262,6 +265,20 @@ const columns: DataTableColumns<User> = [
         </n-form-item>
         <n-form-item :label="editingId ? '新密码（留空不修改）' : '密码'" path="password">
           <n-input v-model:value="formValue.password" type="password" :placeholder="editingId ? '留空不修改' : '至少6位'" show-password-on="click" />
+        </n-form-item>
+        <n-form-item label="头像">
+          <div style="display:flex;align-items:center;gap:12px">
+            <n-avatar v-if="avatarUrl" :src="avatarUrl" :size="48" round />
+            <n-avatar v-else :size="48" round>{{ formValue.nickname?.charAt(0) || '?' }}</n-avatar>
+            <n-upload
+              :show-file-list="false"
+              accept="image/*"
+              :disabled="avatarUploading"
+              @change="handleAvatarChange"
+            >
+              <n-button size="small" :loading="avatarUploading">上传头像</n-button>
+            </n-upload>
+          </div>
         </n-form-item>
         <n-form-item label="昵称" path="nickname">
           <n-input v-model:value="formValue.nickname" placeholder="显示昵称" />

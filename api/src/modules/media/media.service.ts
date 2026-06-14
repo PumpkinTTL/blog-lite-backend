@@ -45,11 +45,13 @@ export class MediaService {
   async upload(
     file: Express.Multer.File,
     uploaderId: number,
-    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null>; note?: string },
+    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null>; note?: string; app?: string; folder?: string },
   ) {
     const storageType = options?.storageType ?? 'local';
     const ossPlatform: OssPlatform = storageType === 'oss' ? (options?.ossPlatform ?? null) : null;
     const note = options?.note?.trim() || null;
+    const app = options?.app?.trim() || null;
+    const folder = options?.folder?.trim() || null;
 
     // 1. 计算文件哈希
     const hash = this.computeHash(file.buffer);
@@ -74,7 +76,7 @@ export class MediaService {
 
     // 3. 存储文件
     const originalName = this.decodeFilename(file.originalname);
-    const filename = this.generateFilename(originalName);
+    const filename = this.generateFilename(originalName, app, folder);
     const provider = this.createStorageProvider(storageType, ossPlatform);
     const url = await provider.upload(file.buffer, filename, file.mimetype);
 
@@ -97,7 +99,7 @@ export class MediaService {
   async uploadMany(
     files: Express.Multer.File[],
     uploaderId: number,
-    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null>; note?: string },
+    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null>; note?: string; app?: string; folder?: string },
   ) {
     const result: MediaEntity[] = [];
     for (const file of files) {
@@ -144,9 +146,13 @@ export class MediaService {
     return name;
   }
 
-  private generateFilename(originalName: string): string {
+  private generateFilename(originalName: string, app?: string | null, folder?: string | null): string {
     const ext = extname(originalName) || '';
-    return `${Date.now()}-${randomUUID()}${ext}`;
+    const parts: string[] = [];
+    if (app) parts.push(app);
+    if (folder) parts.push(folder);
+    const prefix = parts.length ? parts.join('/') + '/' : '';
+    return `${prefix}${Date.now()}-${randomUUID()}${ext}`;
   }
 
   private computeHash(buffer: Buffer): string {
