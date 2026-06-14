@@ -22,6 +22,8 @@ import {
   SunnyOutline,
   RibbonOutline,
   CardOutline,
+  ChatbubblesOutline,
+  StarOutline,
 } from '@vicons/ionicons5'
 import { useAuth } from '../stores/auth'
 import { isDark } from '../theme'
@@ -48,6 +50,8 @@ const menuOptions: MenuOption[] = [
   { type: 'divider', key: 'd2' },
   { label: '激活码管理', key: '/codes', icon: renderIcon(KeyOutline) },
   { label: '会员管理', key: '/membership', icon: renderIcon(RibbonOutline) },
+  { label: '评论管理', key: '/comments', icon: renderIcon(ChatbubblesOutline) },
+  { label: '互动管理', key: '/interactions', icon: renderIcon(StarOutline) },
   { label: '公告管理', key: '/announcements', icon: renderIcon(MegaphoneOutline) },
   { label: '友情链接', key: '/friend-links', icon: renderIcon(LinkOutline) },
   { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
@@ -90,6 +94,8 @@ const breadcrumbItems = computed(() => {
     '/roles': '角色管理',
     '/codes': '激活码管理',
     '/membership': '会员管理',
+    '/comments': '评论管理',
+    '/interactions': '互动管理',
     '/announcements': '公告管理',
     '/friend-links': '友情链接',
     '/donations': '捐赠管理',

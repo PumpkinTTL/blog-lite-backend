@@ -84,6 +84,18 @@ const router = createRouter({
           meta: { title: '会员管理' },
         },
         {
+          path: 'comments',
+          name: 'comments',
+          component: () => import('../views/comment/IndexView.vue'),
+          meta: { title: '评论管理' },
+        },
+        {
+          path: 'interactions',
+          name: 'interactions',
+          component: () => import('../views/interaction/IndexView.vue'),
+          meta: { title: '互动管理' },
+        },
+        {
           path: 'announcements',
           name: 'announcements',
           component: () => import('../views/announcement/IndexView.vue'),

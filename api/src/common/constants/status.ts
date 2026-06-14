@@ -55,3 +55,22 @@ export const PLAN_LEVEL = {
   PRO: 'pro',     // Pro（专业版）
   MAX: 'max',     // Max（旗舰版，最高级）
 } as const;
+
+// ── 评论状态 ──
+export const COMMENT_STATUS = {
+  PENDING: 'pending',   // 待审核（默认）
+  APPROVED: 'approved', // 已通过
+  REJECTED: 'rejected', // 已拒绝
+} as const;
+
+// ── 互动类型（点赞/收藏/未来扩展如踩） ──
+export const INTERACTION_TYPE = {
+  LIKE: 'like',           // 点赞
+  FAVORITE: 'favorite',   // 收藏
+} as const;
+
+// ── 互动目标实体类型（多态） ──
+export const INTERACTION_ENTITY = {
+  POST: 'post',         // 文章
+  COMMENT: 'comment',   // 评论
+} as const;

@@ -1,15 +1,24 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, Req } from '@nestjs/common';
 import type { Request } from 'express';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { PostService } from './post.service';
+import { PostEntity } from './post.entity';
 import { CreatePostDto, UpdatePostDto, BatchIdsDto } from './post.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { POST_STATUS } from '../../common/constants/status';
+import { InteractionService } from '../interaction/interaction.service';
 
 @Controller('post')
 @Roles('admin')
 export class PostController {
-  constructor(private readonly postService: PostService) {}
+  constructor(
+    private readonly postService: PostService,
+    @InjectRepository(PostEntity)
+    private readonly postRepo: Repository<PostEntity>,
+    private readonly interactionService: InteractionService,
+  ) {}
 
   @Public()
   @Get()
@@ -159,5 +168,45 @@ export class PostController {
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.postService.remove(id);
     return { success: true, message: '删除成功' };
+  }
+
+  // ===== 用户端：点赞/收藏（登录即可，方法级 @Roles() 空数组覆盖类级 admin 限制）=====
+
+  /**
+   * 切换当前用户对文章的点赞/收藏
+   * 同步更新 posts.like_count / favorite_count 冗余字段
+   */
+  @Roles() // 空角色覆盖类级 @Roles('admin')，允许任意登录用户
+  @Post(':id/interact')
+  async toggleInteract(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { type: 'like' | 'favorite' },
+    @Req() req: Request,
+  ) {
+    const userId = Number((req as any)?.user?.sub);
+    if (!userId) {
+      return { success: false, message: '请先登录', data: null };
+    }
+    const type = body?.type;
+    if (type !== 'like' && type !== 'favorite') {
+      return { success: false, message: 'type 只能是 like 或 favorite', data: null };
+    }
+    const result = await this.interactionService.toggle(
+      userId,
+      'post',
+      id,
+      type,
+    );
+    // 同步冗余计数（避免每次列表查询都 GROUP BY interactions）
+    const count = await this.interactionService.countOne('post', id, type);
+    await this.postRepo.update(id, {
+      ...(type === 'like' ? { likeCount: count } : {}),
+      ...(type === 'favorite' ? { favoriteCount: count } : {}),
+    });
+    return {
+      success: true,
+      data: result,
+      message: result.active ? '已操作' : '已取消',
+    };
   }
 }

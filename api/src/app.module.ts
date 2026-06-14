@@ -19,6 +19,8 @@ import { SettingModule } from './modules/setting/setting.module';
 import { DonationModule } from './modules/donation/donation.module';
 import { PlanModule } from './modules/plan/plan.module';
 import { MembershipModule } from './modules/membership/membership.module';
+import { InteractionModule } from './modules/interaction/interaction.module';
+import { CommentModule } from './modules/comment/comment.module';
 
 @Module({
   providers: [
@@ -91,6 +93,8 @@ import { MembershipModule } from './modules/membership/membership.module';
     DonationModule,
     PlanModule,
     MembershipModule,
+    InteractionModule,
+    CommentModule,
   ],
 })
 export class AppModule {}
