@@ -342,38 +342,47 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 900px) { .bottom-row { grid-template-columns: 1fr; } }
 
+.bottom-row .card { min-height: 320px; }
+
 /* rank */
 .empty { padding: 40px 0; }
-.rank { display: flex; flex-direction: column; }
+.rank { display: flex; flex-direction: column; gap: 2px; }
 .rank-row {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px; border-radius: 8px; cursor: pointer;
-  transition: background 0.15s;
+  padding: 12px; border-radius: 8px; cursor: pointer;
+  background: var(--n-fill-color, rgba(0,0,0,0.02));
+  transition: all 0.15s;
 }
 .rank-row:hover { background: var(--n-color-hover); }
 .r-no {
-  flex-shrink: 0; width: 20px; text-align: center;
-  font-size: 12px; font-weight: 600; color: var(--n-text-color-3);
+  flex-shrink: 0; width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  font-size: 11px; font-weight: 700; color: var(--n-text-color-3);
+  background: var(--n-card-color);
 }
-.r-top { color: var(--n-primary-color, #1E40AF); font-weight: 700; }
+.r-top {
+  background: var(--n-primary-color, #1E40AF);
+  color: #fff;
+}
 .r-av {
-  flex-shrink: 0; width: 28px; height: 28px;
+  flex-shrink: 0; width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%;
-  background: var(--n-fill-color);
-  font-size: 12px; font-weight: 600; color: var(--n-text-color-2);
+  background: var(--n-primary-color-suppl, #60A5FA);
+  font-size: 13px; font-weight: 600; color: #fff;
 }
 .r-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .r-name {
-  font-size: 13px; color: var(--n-text-color);
+  font-size: 13px; font-weight: 500; color: var(--n-text-color);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .r-slug {
-  font-size: 11px; color: var(--n-text-color-3);
+  font-size: 11px; color: var(--n-text-color-3); font-family: monospace;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .r-meta {
-  display: inline-flex; align-items: center; gap: 2px;
+  display: inline-flex; align-items: center; gap: 3px;
   font-size: 12px; color: var(--n-text-color-3); flex-shrink: 0;
 }
 </style>
