@@ -19,14 +19,14 @@ import {
   GiftOutline,
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts/core'
-import { LineChart, PieChart } from 'echarts/charts'
+import { LineChart, PieChart, BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getDashboardStats } from '../../api/dashboard'
 import type { DashboardStats } from '../../api/dashboard'
 import { isDark } from '../../theme'
 
-echarts.use([LineChart, PieChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+echarts.use([LineChart, PieChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const router = useRouter()
 const loading = ref(true)
@@ -63,8 +63,10 @@ const donation = computed(() => {
 
 let trendChart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
+let donChart: echarts.ECharts | null = null
 const trendEl = ref<HTMLElement | null>(null)
 const pieEl = ref<HTMLElement | null>(null)
+const donEl = ref<HTMLElement | null>(null)
 
 async function loadStats() {
   loading.value = true
@@ -115,14 +117,34 @@ function renderPieChart() {
   })
 }
 
-function renderCharts() { renderTrendChart(); renderPieChart() }
-function handleResize() { trendChart?.resize(); pieChart?.resize() }
+function renderDonChart() {
+  if (!donEl.value) return
+  if (!donChart) donChart = echarts.init(donEl.value)
+  const data = stats.value.donationTrend
+  donChart.setOption({
+    tooltip: { trigger: 'axis', backgroundColor: tooltipBg(), borderColor: axisColor(), textStyle: { color: textColor(), fontSize: 12 } },
+    legend: { data: ['金额', '笔数'], top: 0, right: 0, textStyle: { color: textColor(), fontSize: 12 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
+    grid: { left: 44, right: 44, top: 36, bottom: 28 },
+    xAxis: { type: 'category', data: data.map((t: any) => t.date.slice(5)), axisLine: { lineStyle: { color: axisColor() } }, axisLabel: { color: textColor(), fontSize: 11 }, axisTick: { show: false } },
+    yAxis: [
+      { type: 'value', name: '元', axisLine: { show: false }, axisLabel: { color: textColor(), fontSize: 11 }, splitLine: { lineStyle: { color: axisColor(), type: 'dashed' } } },
+      { type: 'value', name: '笔', axisLine: { show: false }, axisLabel: { color: textColor(), fontSize: 11 }, splitLine: { show: false } },
+    ],
+    series: [
+      { name: '金额', type: 'line', smooth: true, symbol: 'circle', symbolSize: 4, data: data.map((t: any) => t.amount), itemStyle: { color: '#10B981' }, lineStyle: { color: '#10B981', width: 2 } },
+      { name: '笔数', type: 'bar', yAxisIndex: 1, data: data.map((t: any) => t.count), itemStyle: { color: '#F59E0B', borderRadius: [2, 2, 0, 0] }, barWidth: 12, barGap: '30%' },
+    ],
+  })
+}
+
+function renderCharts() { renderTrendChart(); renderPieChart(); renderDonChart() }
+function handleResize() { trendChart?.resize(); pieChart?.resize(); donChart?.resize() }
 watch(isDark, () => nextTick(renderCharts))
 
 onMounted(() => { loadStats(); window.addEventListener('resize', handleResize) })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
-  trendChart?.dispose(); pieChart?.dispose()
+  trendChart?.dispose(); pieChart?.dispose(); donChart?.dispose()
 })
 </script>
 
@@ -174,7 +196,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- charts -->
+        <!-- charts 3-col -->
         <div class="chart-row">
           <div class="card">
             <div class="card-hd">
@@ -189,6 +211,13 @@ onBeforeUnmount(() => {
               <span class="card-tag">共 {{ stats.postCount }} 篇</span>
             </div>
             <div ref="pieEl" class="chart-box"></div>
+          </div>
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">捐赠趋势</span>
+              <span class="card-tag">金额 / 笔数</span>
+            </div>
+            <div ref="donEl" class="chart-box"></div>
           </div>
         </div>
 
@@ -279,10 +308,11 @@ onBeforeUnmount(() => {
 
 /* charts */
 .chart-row {
-  display: grid; grid-template-columns: 7fr 5fr; gap: 16px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
 }
-@media (max-width: 1100px) { .chart-row { grid-template-columns: 1fr; } }
-.chart-box { width: 100%; height: 250px; }
+@media (max-width: 1400px) { .chart-row { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
+.chart-box { width: 100%; height: 230px; }
 
 /* rank */
 .empty { padding: 40px 0; }
