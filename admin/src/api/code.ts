@@ -9,13 +9,14 @@ export interface CodeDiscount {
 export interface Code {
   id: number
   code: string
-  type: 'invitation' | 'activation' | 'discount'
+  type: 'invitation' | 'activation' | 'discount' | 'membership'
   status: 'active' | 'used' | 'expired' | 'disabled'
   maxUses: number
   usedCount: number
   expiresAt: string | null
   creatorId: number | null
   discount: CodeDiscount | null
+  metadata: Record<string, unknown> | null
   createdAt: string
   updatedAt: string
 }
@@ -39,7 +40,7 @@ export function createCode(data: any) {
   return request.post('/code', data)
 }
 
-export function batchCreateCodes(data: { count: number; type: string; maxUses?: number; expiresAt?: string; discount?: CodeDiscount }) {
+export function batchCreateCodes(data: { count: number; type: string; maxUses?: number; expiresAt?: string; discount?: CodeDiscount; metadata?: Record<string, unknown> }) {
   return request.post('/code/batch', data)
 }
 

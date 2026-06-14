@@ -78,6 +78,12 @@ const router = createRouter({
           meta: { title: '激活码管理' },
         },
         {
+          path: 'membership',
+          name: 'membership',
+          component: () => import('../views/membership/IndexView.vue'),
+          meta: { title: '会员管理' },
+        },
+        {
           path: 'announcements',
           name: 'announcements',
           component: () => import('../views/announcement/IndexView.vue'),

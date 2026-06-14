@@ -1,5 +1,6 @@
 import request from './request'
 import type { Role } from './role'
+import type { PlanLevel } from './plan'
 
 export interface LoginParams {
   username: string
@@ -29,6 +30,12 @@ export function refreshTokenApi(refreshToken: string, deviceId: string): Promise
   return request.post('/user/refresh', { refreshToken, deviceId })
 }
 
+export interface UserMembership {
+  level: PlanLevel
+  expiresAt: string | null // null = 终身
+  planName: string
+}
+
 export interface User {
   id: number
   username: string
@@ -37,6 +44,7 @@ export interface User {
   avatar: string | null
   status: string
   roles: Role[]
+  membership: UserMembership | null
   createdAt: string
   updatedAt: string
 }

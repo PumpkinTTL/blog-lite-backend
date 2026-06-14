@@ -7,6 +7,7 @@ import { getUsers, createUser, updateUser, deleteUser, toggleUserStatus } from '
 import type { User } from '../../api/user'
 import { getRoles } from '../../api/role'
 import type { Role } from '../../api/role'
+import type { PlanLevel } from '../../api/plan'
 import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
@@ -24,6 +25,26 @@ const userStatusOptions = [
   { label: '正常', value: 'active' },
   { label: '禁用', value: 'disabled' },
 ]
+
+// 会员等级标签（与 membership 页一致）
+const levelTagType: Record<PlanLevel, 'info' | 'success' | 'warning'> = {
+  plus: 'info',
+  pro: 'success',
+  max: 'warning',
+}
+const levelLabel: Record<PlanLevel, string> = { plus: 'Plus', pro: 'Pro', max: 'Max' }
+
+function renderMembership(row: User) {
+  const m = row.membership
+  if (!m) return h(NTag, { size: 'small', bordered: false }, { default: () => '无' })
+  const expireText = m.expiresAt === null ? '终身' : new Date(m.expiresAt).toLocaleDateString('zh-CN')
+  return h(NSpace, { size: 4, align: 'center', wrap: false }, {
+    default: () => [
+      h(NTag, { size: 'small', type: levelTagType[m.level], bordered: false }, { default: () => levelLabel[m.level] }),
+      h('span', { style: 'font-size: 12px; color: #999; white-space: nowrap;' }, `${expireText}到期`),
+    ],
+  })
+}
 
 // Role options for form select
 const roleOptions = ref<{ label: string; value: number }[]>([])
@@ -150,11 +171,17 @@ const columns: DataTableColumns<User> = [
     key: 'roles',
     width: 200,
     render: (row) =>
-      h(NSpace, { size: 4 }, {
+      h(NSpace, { size: 4, wrap: false }, {
         default: () => (row.roles || []).map((r) =>
           h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => r.displayName }),
         ),
       }),
+  },
+  {
+    title: '会员',
+    key: 'membership',
+    width: 220,
+    render: (row) => renderMembership(row),
   },
   {
     title: '状态',
@@ -174,7 +201,7 @@ const columns: DataTableColumns<User> = [
     width: 140,
     fixed: 'right',
     render: (row) =>
-      h(NSpace, { size: 'small' }, {
+      h(NSpace, { size: 'small', wrap: false }, {
         default: () => [
           h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, {
             default: () => '编辑',
@@ -214,7 +241,7 @@ const columns: DataTableColumns<User> = [
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1000" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1260" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
