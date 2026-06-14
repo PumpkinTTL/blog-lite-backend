@@ -93,7 +93,7 @@ function renderTrendChart() {
   const trend = stats.value.interactionTrend
   trendChart.setOption({
     tooltip: { trigger: 'axis', backgroundColor: tooltipBg(), borderColor: axisColor(), textStyle: { color: textColor(), fontSize: 12 } },
-    legend: { data: ['点赞', '收藏'], top: 8, right: 8, itemGap: 20, textStyle: { color: textColor(), fontSize: 11, padding: [0, 0, 0, 4] }, icon: 'roundRect', itemWidth: 10, itemHeight: 10 },
+    legend: { data: ['点赞', '收藏'], top: 8, right: 8, itemGap: 16, textStyle: { color: textColor(), fontSize: 12 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
     grid: { left: 36, right: 16, top: 36, bottom: 28 },
     xAxis: { type: 'category', data: trend.map((t: any) => t.date.slice(5)), axisLine: { lineStyle: { color: axisColor() } }, axisLabel: { color: textColor(), fontSize: 11 }, axisTick: { show: false } },
     yAxis: { type: 'value', minInterval: 1, axisLine: { show: false }, axisLabel: { color: textColor(), fontSize: 11 }, splitLine: { lineStyle: { color: axisColor(), type: 'dashed' } } },
@@ -123,12 +123,12 @@ function renderDonChart() {
   const data = stats.value.donationTrend
   donChart.setOption({
     tooltip: { trigger: 'axis', backgroundColor: tooltipBg(), borderColor: axisColor(), textStyle: { color: textColor(), fontSize: 12 } },
-    legend: { data: ['金额', '笔数'], top: 8, right: 8, itemGap: 20, textStyle: { color: textColor(), fontSize: 11, padding: [0, 0, 0, 4] }, icon: 'roundRect', itemWidth: 10, itemHeight: 10 },
+    legend: { data: ['金额', '笔数'], top: 8, right: 8, itemGap: 16, textStyle: { color: textColor(), fontSize: 12 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
     grid: { left: 44, right: 44, top: 36, bottom: 28 },
     xAxis: { type: 'category', data: data.map((t: any) => t.date.slice(5)), axisLine: { lineStyle: { color: axisColor() } }, axisLabel: { color: textColor(), fontSize: 11 }, axisTick: { show: false } },
     yAxis: [
-      { type: 'value', name: '元', axisLine: { show: false }, axisLabel: { color: textColor(), fontSize: 11 }, splitLine: { lineStyle: { color: axisColor(), type: 'dashed' } } },
-      { type: 'value', name: '笔', axisLine: { show: false }, axisLabel: { color: textColor(), fontSize: 11 }, splitLine: { show: false } },
+      { type: 'value', axisLine: { show: false }, axisLabel: { color: textColor(), fontSize: 11 }, splitLine: { lineStyle: { color: axisColor(), type: 'dashed' } } },
+      { type: 'value', axisLine: { show: false }, axisLabel: { color: textColor(), fontSize: 11 }, splitLine: { show: false } },
     ],
     series: [
       { name: '金额', type: 'line', smooth: true, symbol: 'circle', symbolSize: 4, data: data.map((t: any) => t.amount), itemStyle: { color: '#10B981' }, lineStyle: { color: '#10B981', width: 2 } },
