@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue'
-import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber, NTabs, NTabPane } from 'naive-ui'
+import { ref, h, computed, onMounted } from 'vue'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber, NTabs, NTabPane, NDatePicker } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, BanOutline, PricetagOutline, PricetagsOutline } from '@vicons/ionicons5'
 import { getCodes, updateCode, deleteCode, batchCreateCodes, batchDisableCodes, batchDeleteCodes, getAllUsageLogs } from '../../api/code'
 import type { Code, CodeUsageLog, CodeDiscount } from '../../api/code'
+import { getPlans } from '../../api/plan'
+import type { Plan } from '../../api/plan'
 import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
@@ -25,6 +27,7 @@ const typeOptions = [
   { label: '邀请码', value: 'invitation' },
   { label: '激活码', value: 'activation' },
   { label: '优惠码', value: 'discount' },
+  { label: '会员码', value: 'membership' },
 ]
 
 const statusOptions = [
@@ -35,8 +38,8 @@ const statusOptions = [
   { label: '禁用', value: 'disabled' },
 ]
 
-const typeTagMap: Record<string, string> = { invitation: 'info', activation: 'success', discount: 'warning' }
-const typeLabelMap: Record<string, string> = { invitation: '邀请码', activation: '激活码', discount: '优惠码' }
+const typeTagMap: Record<string, string> = { invitation: 'info', activation: 'success', discount: 'warning', membership: 'error' }
+const typeLabelMap: Record<string, string> = { invitation: '邀请码', activation: '激活码', discount: '优惠码', membership: '会员码' }
 const statusTagMap: Record<string, string> = { active: 'success', used: 'warning', expired: 'default', disabled: 'error' }
 const statusLabelMap: Record<string, string> = { active: '有效', used: '已用', expired: '过期', disabled: '禁用' }
 
@@ -78,7 +81,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     updateApi: updateCode,
     deleteApi: deleteCode,
     deleteContent: (row) => `确定删除激活码「${row.code}」？`,
-    defaultForm: () => ({ type: 'activation', count: 1, maxUses: 1, expiresAt: '', discountType: 'fixed', discountValue: null, discountThreshold: null }),
+    defaultForm: () => ({ type: 'activation', count: 1, maxUses: 1, expiryPreset: '30d' as string, expiresAt: null as number | null, discountType: 'fixed', discountValue: null, discountThreshold: null, planId: null as number | null }),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) {
@@ -93,15 +96,43 @@ function openEdit(row: Code) {
   const d = row.discount
   // percentage 存的是小数，回显转为百分比
   const displayValue = d?.type === 'percentage' && d.value != null ? Math.round(d.value * 100) : d?.value ?? null
+  // 回显关联套餐（仅 membership 类型）
+  const meta = (row.metadata as any) || {}
+  const metaPlanId = (meta.planId as number | undefined) ?? null
+  // expiresAt 字符串 → timestamp，NDatePicker 需要 number
+  const expiresTs = row.expiresAt ? new Date(row.expiresAt).getTime() : null
   _openEdit(row, (r) => ({
     type: r.type,
     maxUses: r.maxUses,
-    expiresAt: r.expiresAt || '',
+    expiresAt: expiresTs,
     status: r.status,
     discountType: d?.type || 'fixed',
     discountValue: displayValue,
     discountThreshold: d?.threshold ?? null,
+    planId: r.type === 'membership' ? metaPlanId : null,
   }))
+}
+
+// ==================== 套餐下拉（会员码用）====================
+const planList = ref<Plan[]>([])
+const planOptions = computed(() => planList.value
+  .filter((p) => p.isActive)
+  .map((p) => ({ label: `${p.name}（${p.level}）`, value: p.id })))
+const planMap = computed(() => {
+  const m = new Map<number, Plan>()
+  planList.value.forEach((p) => m.set(p.id, p))
+  return m
+})
+
+async function loadPlans() {
+  try {
+    const res = await getPlans()
+    const payload = res.data
+    // 后端 GET /plan 直接返回数组（非分页），兼容 list 字段以防未来变更
+    planList.value = Array.isArray(payload) ? payload : (payload?.list || [])
+  } catch {
+    planList.value = []
+  }
 }
 
 function handleSearch() {
@@ -168,12 +199,32 @@ async function handleSave() {
   }
   // 前端校验 discount，不通过直接拦截不发请求
   if (!validateDiscount()) return false
+  // 会员码必须选套餐
+  if (formValue.value.type === 'membership' && !formValue.value.planId) {
+    message.warning('会员码必须关联一个套餐')
+    return false
+  }
 
   saving.value = true
   try {
     const discount = buildDiscountPayload()
-    const expiresAt = formValue.value.expiresAt || undefined
+    // 编辑模式：expiresAt 是 timestamp；创建模式：根据 preset 计算
+    let expiresAt: string | undefined
+    if (editingId.value) {
+      expiresAt = formValue.value.expiresAt ? new Date(formValue.value.expiresAt).toISOString() : undefined
+    } else {
+      const preset = formValue.value.expiryPreset as string | undefined
+      if (preset && preset !== 'permanent') {
+        const days = parseInt(preset, 10)
+        if (days > 0) expiresAt = new Date(Date.now() + days * 86400000).toISOString()
+      }
+    }
     const maxUses = Number(formValue.value.maxUses) || 1
+    // 构造 metadata：会员码只带 planId，时长由套餐决定
+    let metadata: Record<string, unknown> | undefined
+    if (formValue.value.type === 'membership' && formValue.value.planId) {
+      metadata = { planId: Number(formValue.value.planId) }
+    }
 
     if (editingId.value) {
       // 更新：只传 UpdateCodeDto 允许的字段
@@ -181,6 +232,7 @@ async function handleSave() {
       if (formValue.value.status) payload.status = formValue.value.status
       if (discount) payload.discount = discount
       if (expiresAt) payload.expiresAt = expiresAt
+      if (metadata) payload.metadata = metadata
       await updateCode(editingId.value, payload)
       message.success('更新成功')
     } else {
@@ -197,6 +249,7 @@ async function handleSave() {
       }
       if (expiresAt) payload.expiresAt = expiresAt
       if (discount) payload.discount = discount
+      if (metadata) payload.metadata = metadata
       await batchCreateCodes(payload as any)
       message.success('创建成功')
     }
@@ -264,6 +317,7 @@ const createTypeOptions = [
   { label: '邀请码', value: 'invitation' },
   { label: '激活码', value: 'activation' },
   { label: '优惠码', value: 'discount' },
+  { label: '会员码', value: 'membership' },
 ]
 
 const discountTypeOptions = [
@@ -272,8 +326,19 @@ const discountTypeOptions = [
   { label: '立减', value: 'fixed' },
 ]
 
+// 创建时的有效期预设：值 = 天数（'permanent' 表示永久）
+const expiryPresetOptions = [
+  { label: '7 天', value: '7d' },
+  { label: '30 天（1 个月）', value: '30d' },
+  { label: '90 天（3 个月）', value: '90d' },
+  { label: '180 天（半年）', value: '180d' },
+  { label: '365 天（1 年）', value: '365d' },
+  { label: '永久（不过期）', value: 'permanent' },
+]
+
+// 会员码开通时长预设：覆盖套餐默认时长（'default' = 用套餐 durationDays）
 const codeColumns: DataTableColumns<Code> = [
-  { type: 'selection' },
+  { type: 'selection', width: 40 },
   { title: 'ID', key: 'id', width: 60 },
   { title: '激活码', key: 'code', width: 210 },
   {
@@ -288,6 +353,29 @@ const codeColumns: DataTableColumns<Code> = [
     title: '优惠', key: 'discount', width: 120,
     render: (row) => row.type === 'discount' ? h('span', null, renderDiscount(row.discount)) : '-',
   },
+  {
+    title: '关联套餐', key: 'metadata', width: 140,
+    render: (row) => {
+      if (row.type !== 'membership') return '-'
+      const pid = row.metadata?.planId as number | undefined
+      if (!pid) return '-'
+      const p = planMap.value.get(pid)
+      return p ? h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => p.name }) : `#${pid}`
+    },
+  },
+  {
+    title: '会员时长', key: 'duration', width: 110,
+    render: (row) => {
+      if (row.type !== 'membership') return '-'
+      const pid = row.metadata?.planId as number | undefined
+      if (!pid) return '-'
+      const plan = planMap.value.get(pid)
+      if (!plan) return '-'
+      const days = plan.durationDays
+      if (days === 0) return h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => '终身' })
+      return h(NTag, { size: 'small', type: 'success', bordered: false }, { default: () => `${days} 天` })
+    },
+  },
   { title: '最大次数', key: 'maxUses', width: 80 },
   { title: '已用', key: 'usedCount', width: 70 },
   {
@@ -295,8 +383,8 @@ const codeColumns: DataTableColumns<Code> = [
     render: (row) => row.expiresAt ? new Date(row.expiresAt).toLocaleString('zh-CN') : '永久',
   },
   {
-    title: '操作', key: 'actions', width: 130, fixed: 'right',
-    render: (row) => h(NSpace, { size: 'small' }, {
+    title: '操作', key: 'actions', width: 160, fixed: 'right',
+    render: (row) => h(NSpace, { size: 'small', wrap: false }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, {
           default: () => '编辑', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
@@ -373,6 +461,10 @@ function handleTabChange(tab: string) {
   activeTab.value = tab
   if (tab === 'logs') loadLogs()
 }
+
+onMounted(() => {
+  loadPlans()
+})
 </script>
 
 <template>
@@ -409,7 +501,7 @@ function handleTabChange(tab: string) {
 
         <div class="table-section">
           <n-data-table :columns="codeColumns" :data="list" :loading="loading" :bordered="false"
-        :scroll-x="1000"
+        :scroll-x="1320"
             :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
           <div class="pagination-wrap" v-if="total > 0">
             <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
@@ -427,7 +519,7 @@ function handleTabChange(tab: string) {
           </n-button>
         </n-space>
         <div class="table-section">
-          <n-data-table :columns="logColumns" :data="logList" :loading="logLoading" :bordered="false" />
+          <n-data-table :columns="logColumns" :data="logList" :loading="logLoading" :bordered="false" :scroll-x="780" />
           <div class="pagination-wrap" v-if="logTotal > 0">
             <n-pagination :page="logPage" :page-size="logPageSize" :page-sizes="[10, 20, 50]" :item-count="logTotal" show-size-picker @update:page="handleLogPageChange" @update:page-size="handleLogPageSizeChange" />
           </div>
@@ -472,8 +564,26 @@ function handleTabChange(tab: string) {
           </template>
         </template>
 
-        <n-form-item label="过期时间" path="expiresAt">
-          <n-input v-model:value="formValue.expiresAt" placeholder="可选，格式如 2026-12-31 23:59:59" />
+        <!-- 会员码专属字段 -->
+        <template v-if="formValue.type === 'membership'">
+          <n-form-item label="关联套餐" path="planId">
+            <n-select v-model:value="formValue.planId" :options="planOptions" placeholder="选择要开通的套餐" filterable />
+          </n-form-item>
+        </template>
+
+        <!-- 创建模式：预设有效期 -->
+        <n-form-item v-if="!editingId" label="有效期" path="expiryPreset">
+          <n-select v-model:value="formValue.expiryPreset" :options="expiryPresetOptions" placeholder="选择有效期" />
+        </n-form-item>
+        <!-- 编辑模式：精确日期 -->
+        <n-form-item v-else label="过期时间" path="expiresAt">
+          <n-date-picker
+            v-model:value="formValue.expiresAt"
+            type="datetime"
+            clearable
+            placeholder="留空 = 永不过期"
+            style="width: 100%"
+          />
         </n-form-item>
         <n-form-item v-if="editingId" label="状态" path="status">
           <n-select v-model:value="formValue.status" :options="editStatusOptions" placeholder="选择状态" />
