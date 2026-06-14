@@ -50,6 +50,24 @@ function renderMembership(row: User) {
 // Role options for form select
 const roleOptions = ref<{ label: string; value: number }[]>([])
 
+const avatarUrl = ref<string | null>(null)
+const avatarUploading = ref(false)
+
+async function handleAvatarChange(options: { file: File; fileList: File[] }) {
+  const file = options.file
+  if (!file) return
+  avatarUploading.value = true
+  try {
+    const res: any = await uploadToR2(file, { app: 'vibehub', folder: 'avatar' })
+    avatarUrl.value = res.data?.url || res.url || ''
+    message.success('头像上传成功')
+  } catch (e: any) {
+    message.error(e.message || '头像上传失败')
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
   handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit: _openEdit,
   handleSave: _handleSave, handleDelete, message } =
