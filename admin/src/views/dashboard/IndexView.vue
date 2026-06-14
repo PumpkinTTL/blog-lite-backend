@@ -221,21 +221,43 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- top posts -->
-        <div class="card">
-          <div class="card-hd">
-            <span class="card-title">热门文章 TOP 5</span>
-            <n-button text type="primary" size="small" @click="router.push('/posts')">查看全部</n-button>
+        <!-- bottom: top posts + recent users -->
+        <div class="bottom-row">
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">热门文章</span>
+              <n-button text type="primary" size="small" @click="router.push('/posts')">查看全部</n-button>
+            </div>
+            <div v-if="!stats.topPosts.length" class="empty"><n-empty description="暂无数据" /></div>
+            <div v-else class="rank">
+              <div v-for="(p, i) in stats.topPosts.slice(0, 5)" :key="p.id" class="rank-row" @click="router.push(`/posts/${p.id}/edit`)">
+                <span class="r-no" :class="{ 'r-top': i < 3 }">{{ i + 1 }}</span>
+                <div class="r-info">
+                  <span class="r-name">{{ p.title }}</span>
+                  <span class="r-slug">/{{ p.slug }}</span>
+                </div>
+                <span class="r-meta">
+                  <n-icon size="12"><EyeOutline /></n-icon>{{ fmtNum(p.viewCount) }}
+                  <n-icon size="12" style="margin-left:8px"><HeartOutline /></n-icon>{{ fmtNum(p.likeCount) }}
+                </span>
+              </div>
+            </div>
           </div>
-          <div v-if="!stats.topPosts.length" class="empty"><n-empty description="暂无数据" /></div>
-          <div v-else class="rank">
-            <div v-for="(p, i) in stats.topPosts" :key="p.id" class="rank-row" @click="router.push(`/posts/${p.id}/edit`)">
-              <span class="r-no">{{ i + 1 }}</span>
-              <span class="r-name">{{ p.title }}</span>
-              <span class="r-meta">
-                <n-icon size="12"><EyeOutline /></n-icon>{{ p.viewCount }}
-                <n-icon size="12" style="margin-left:8px"><HeartOutline /></n-icon>{{ p.likeCount }}
-              </span>
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">最近用户</span>
+              <n-button text type="primary" size="small" @click="router.push('/users')">查看全部</n-button>
+            </div>
+            <div v-if="!stats.recentUsers?.length" class="empty"><n-empty description="暂无数据" /></div>
+            <div v-else class="rank">
+              <div v-for="u in stats.recentUsers.slice(0, 5)" :key="u.id" class="rank-row" @click="router.push('/users')">
+                <span class="r-av">{{ (u.nickname || u.username).charAt(0) }}</span>
+                <div class="r-info">
+                  <span class="r-name">{{ u.nickname || u.username }}</span>
+                  <span class="r-slug">{{ u.username }}</span>
+                </div>
+                <span class="r-meta">{{ u.createdAt ? new Date(u.createdAt).toLocaleDateString('zh-CN') : '' }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -314,6 +336,12 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
 .chart-box { width: 100%; height: 230px; }
 
+/* bottom 2-col */
+.bottom-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+@media (max-width: 900px) { .bottom-row { grid-template-columns: 1fr; } }
+
 /* rank */
 .empty { padding: 40px 0; }
 .rank { display: flex; flex-direction: column; }
@@ -327,8 +355,21 @@ onBeforeUnmount(() => {
   flex-shrink: 0; width: 20px; text-align: center;
   font-size: 12px; font-weight: 600; color: var(--n-text-color-3);
 }
+.r-top { color: var(--n-primary-color, #1E40AF); font-weight: 700; }
+.r-av {
+  flex-shrink: 0; width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--n-fill-color);
+  font-size: 12px; font-weight: 600; color: var(--n-text-color-2);
+}
+.r-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .r-name {
-  flex: 1; min-width: 0; font-size: 13px; color: var(--n-text-color);
+  font-size: 13px; color: var(--n-text-color);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.r-slug {
+  font-size: 11px; color: var(--n-text-color-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .r-meta {
