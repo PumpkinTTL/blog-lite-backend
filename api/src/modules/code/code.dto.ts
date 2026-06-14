@@ -22,8 +22,8 @@ export class DiscountDto {
 
 export class CreateCodeDto {
   @IsString()
-  @IsEnum(['invitation', 'activation', 'discount'])
-  type: 'invitation' | 'activation' | 'discount';
+  @IsEnum(['invitation', 'activation', 'discount', 'membership'])
+  type: 'invitation' | 'activation' | 'discount' | 'membership';
 
   @IsInt()
   @Min(0)
@@ -52,6 +52,10 @@ export class UpdateCodeDto {
   @IsOptional()
   status?: 'active' | 'used' | 'expired' | 'disabled';
 
+  @IsDateString()
+  @IsOptional()
+  expiresAt?: string;
+
   @IsObject()
   @IsOptional()
   metadata?: Record<string, unknown>;
@@ -67,13 +71,13 @@ export class VerifyCodeDto {
 
   @IsString()
   @IsOptional()
-  type?: 'invitation' | 'activation' | 'discount';
+  type?: 'invitation' | 'activation' | 'discount' | 'membership';
 }
 
 export class BatchCreateCodeDto {
   @IsString()
-  @IsEnum(['invitation', 'activation', 'discount'])
-  type: 'invitation' | 'activation' | 'discount';
+  @IsEnum(['invitation', 'activation', 'discount', 'membership'])
+  type: 'invitation' | 'activation' | 'discount' | 'membership';
 
   @IsInt()
   @Min(1)

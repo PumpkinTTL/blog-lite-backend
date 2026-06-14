@@ -14,6 +14,7 @@ import { AuthService } from '../auth/auth.service';
 import { CodeService } from '../code/code.service';
 import { CodeEntity } from '../code/code.entity';
 import { CodeUsageLogEntity } from '../code/code-usage-log.entity';
+import { MembershipService, MembershipSummary } from '../membership/membership.service';
 import { applyFilters } from '../../common/utils/apply-filters';
 
 export interface TokenPayload {
@@ -35,6 +36,7 @@ export class UserService {
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
     private readonly codeService: CodeService,
+    private readonly membershipService: MembershipService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -127,7 +129,16 @@ export class UserService {
       .take(pageSize);
 
     const [list, total] = await qb.getManyAndCount();
-    return { list, total, page, pageSize };
+
+    // 批量查会员等级（避免 N+1）
+    const userIds = list.map((u) => u.id);
+    const membershipMap = await this.membershipService.getHighestActiveBatch(userIds);
+    const enrichedList = list.map((u) => ({
+      ...u,
+      membership: membershipMap.get(u.id) || null,
+    }));
+
+    return { list: enrichedList, total, page, pageSize };
   }
 
   async findById(id: number) {

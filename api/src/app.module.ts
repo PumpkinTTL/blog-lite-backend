@@ -17,6 +17,8 @@ import { AnnouncementModule } from './modules/announcement/announcement.module';
 import { FriendLinkModule } from './modules/friend-link/friend-link.module';
 import { SettingModule } from './modules/setting/setting.module';
 import { DonationModule } from './modules/donation/donation.module';
+import { PlanModule } from './modules/plan/plan.module';
+import { MembershipModule } from './modules/membership/membership.module';
 
 @Module({
   providers: [
@@ -87,6 +89,8 @@ import { DonationModule } from './modules/donation/donation.module';
     FriendLinkModule,
     SettingModule,
     DonationModule,
+    PlanModule,
+    MembershipModule,
   ],
 })
 export class AppModule {}

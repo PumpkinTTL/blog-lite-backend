@@ -177,6 +177,10 @@ export class CodeService {
     const code = await this.findById(id);
 
     if (dto.status) code.status = dto.status;
+    // 允许调整有效期：传字符串 → null 表示清除（永久）；否则 Date
+    if (dto.expiresAt !== undefined) {
+      code.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
+    }
     if (dto.metadata) code.metadata = dto.metadata;
     if (dto.discount !== undefined) {
       this.validateDiscount(code.type, dto.discount as any);

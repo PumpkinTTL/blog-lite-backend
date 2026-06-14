@@ -34,3 +34,24 @@ export const USER_STATUS = {
   DISABLED: 'disabled', // 禁用
   ACTIVE: 'active',     // 正常
 } as const;
+
+// ── 会员订阅状态 ──
+export const MEMBERSHIP_STATUS = {
+  ACTIVE: 'active',       // 生效中
+  EXPIRED: 'expired',     // 已过期
+  CANCELLED: 'cancelled', // 已取消（管理员手动撤销）
+} as const;
+
+// ── 会员开通来源 ──
+export const MEMBERSHIP_SOURCE = {
+  ADMIN: 'admin',     // 管理员手动开通
+  CODE: 'code',       // 兑换码开通
+  PAYMENT: 'payment', // 支付订单（未实现）
+} as const;
+
+// ── 套餐等级 ──
+export const PLAN_LEVEL = {
+  PLUS: 'plus',   // Plus（基础会员）
+  PRO: 'pro',     // Pro（专业版）
+  MAX: 'max',     // Max（旗舰版，最高级）
+} as const;
