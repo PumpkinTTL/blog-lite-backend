@@ -92,9 +92,9 @@ const rules: FormRules = {
 
 const columns: DataTableColumns<FriendLink> = [
   { title: 'ID', key: 'id', width: 70 },
-  { title: '名称', key: 'name', width: 150 },
+  { title: '名称', key: 'name', width: 200, ellipsis: { tooltip: true } },
   { title: 'URL', key: 'url', ellipsis: { tooltip: true }, width: 200 },
-  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
+  { title: '描述', key: 'description', width: 200, ellipsis: { tooltip: true } },
   {
     title: '绑定文章', key: 'postId', width: 140,
     render: (row) => row.postId ? h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => row.post?.title || `#${row.postId}` }) : h(NTag, { size: 'small', bordered: false }, { default: () => '全局' }),
@@ -105,7 +105,7 @@ const columns: DataTableColumns<FriendLink> = [
   },
   {
     title: '操作', key: 'actions', width: 140, fixed: 'right',
-    render: (row) => h(NSpace, { size: 'small' }, {
+    render: (row) => h(NSpace, { size: 'small', wrap: false }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({
           name: r.name,
@@ -150,7 +150,7 @@ const columns: DataTableColumns<FriendLink> = [
       </n-button>
     </n-space>
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="800" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1030" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

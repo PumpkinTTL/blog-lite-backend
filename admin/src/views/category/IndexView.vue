@@ -73,7 +73,7 @@ const columns: DataTableColumns<Category> = [
   { title: 'ID', key: 'id', width: 70 },
   { title: '名称', key: 'name', width: 180 },
   { title: 'Slug', key: 'slug', width: 180 },
-  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
+  { title: '描述', key: 'description', width: 200, ellipsis: { tooltip: true } },
   { title: '创建时间', key: 'createdAt', width: 180 },
   {
     title: '操作',
@@ -81,7 +81,7 @@ const columns: DataTableColumns<Category> = [
     width: 140,
     fixed: 'right',
     render: (row) =>
-      h(NSpace, { size: 'small' }, {
+      h(NSpace, { size: 'small', wrap: false }, {
         default: () => [
           h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, slug: r.slug, description: r.description ?? '' })) }, {
             default: () => '编辑',
@@ -125,7 +125,7 @@ const columns: DataTableColumns<Category> = [
         :data="list"
         :loading="loading"
         :bordered="false"
-        :scroll-x="900"
+        :scroll-x="950"
       />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

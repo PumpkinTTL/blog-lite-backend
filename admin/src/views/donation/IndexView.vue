@@ -270,8 +270,8 @@ const columns: DataTableColumns<Donation> = [
     render: (row) => new Date(row.createdAt).toLocaleString('zh-CN'),
   },
   {
-    title: '操作', key: 'actions', width: 150, fixed: 'right',
-    render: (row) => h(NSpace, { size: 4 }, {
+    title: '操作', key: 'actions', width: 180, fixed: 'right',
+    render: (row) => h(NSpace, { size: 4, wrap: false }, {
       default: () => [
         h(NButton, {
           size: 'tiny', quaternary: true,
@@ -360,7 +360,7 @@ onMounted(() => { loadList(); loadStats() })
     <!-- 表格 -->
     <div class="table-section">
       <n-data-table :columns="columns" :data="donationList" :loading="loading" :bordered="false"
-        :row-key="(row: Donation) => row.id" :scroll-x="1200" />
+        :row-key="(row: Donation) => row.id" :scroll-x="1230" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 50]" :item-count="total"
           show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

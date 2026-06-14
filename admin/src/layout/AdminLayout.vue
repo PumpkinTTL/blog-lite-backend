@@ -20,6 +20,8 @@ import {
   PersonOutline,
   MoonOutline,
   SunnyOutline,
+  RibbonOutline,
+  CardOutline,
 } from '@vicons/ionicons5'
 import { useAuth } from '../stores/auth'
 import { isDark } from '../theme'
@@ -45,6 +47,7 @@ const menuOptions: MenuOption[] = [
   { label: '角色管理', key: '/roles', icon: renderIcon(ShieldOutline) },
   { type: 'divider', key: 'd2' },
   { label: '激活码管理', key: '/codes', icon: renderIcon(KeyOutline) },
+  { label: '会员管理', key: '/membership', icon: renderIcon(RibbonOutline) },
   { label: '公告管理', key: '/announcements', icon: renderIcon(MegaphoneOutline) },
   { label: '友情链接', key: '/friend-links', icon: renderIcon(LinkOutline) },
   { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
@@ -86,6 +89,7 @@ const breadcrumbItems = computed(() => {
     '/users': '用户管理',
     '/roles': '角色管理',
     '/codes': '激活码管理',
+    '/membership': '会员管理',
     '/announcements': '公告管理',
     '/friend-links': '友情链接',
     '/donations': '捐赠管理',
@@ -171,9 +175,14 @@ function toggleDark() {
       </n-layout-header>
 
       <!-- 内容区 -->
+      <!-- native-scrollbar 必须=true。
+           NScrollbar (native-scrollbar=false) 用 transform 模拟滚动,
+           而 transform 容器不是 CSS scroll container, 会让 DataTable
+           fixed:right 列的 position: sticky 找不到正确滚动祖先,
+           导致 fixed 列飘出可视区域。原生 overflow 才是合法 scroll container。 -->
       <n-layout-content
         content-style="padding: 24px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box;"
-        :native-scrollbar="false"
+        :native-scrollbar="true"
         class="admin-content"
       >
         <router-view />

@@ -70,7 +70,7 @@ const columns: DataTableColumns<Post> = [
     key: 'tags',
     width: 200,
     render: (row) =>
-      h(NSpace, { size: 4 }, {
+      h(NSpace, { size: 4, wrap: false }, {
         default: () => (row.tags || []).map((t) =>
           h(NTag, { size: 'small', bordered: false }, { default: () => t.name }),
         ),
@@ -108,7 +108,7 @@ const columns: DataTableColumns<Post> = [
     width: 140,
     fixed: 'right',
     render: (row) =>
-      h(NSpace, { size: 'small' }, {
+      h(NSpace, { size: 'small', wrap: false }, {
         default: () => [
           h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => router.push(`/posts/${row.id}/edit`) }, {
             default: () => '编辑',
@@ -229,7 +229,7 @@ onMounted(() => { loadPosts(); loadCategoryOptions() })
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" :scroll-x="1300" />
+      <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" :scroll-x="1560" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

@@ -81,7 +81,7 @@ const columns: DataTableColumns<Tag> = [
     width: 140,
     fixed: 'right',
     render: (row) =>
-      h(NSpace, { size: 'small' }, {
+      h(NSpace, { size: 'small', wrap: false }, {
         default: () => [
           h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, slug: r.slug })) }, {
             default: () => '编辑',
@@ -120,7 +120,7 @@ const columns: DataTableColumns<Tag> = [
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="950" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1000" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

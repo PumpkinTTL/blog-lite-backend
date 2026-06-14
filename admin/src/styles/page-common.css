@@ -7,6 +7,13 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* flex 子元素默认 min-width: auto，会让超宽内容撑破父容器。
+     min-width:0 让 flex 收缩，表格内部自己滚动。
+     注意：不能用 overflow: hidden，会创建滚动容器，截胡 Naive UI
+     表格 fixed 列的 position: sticky 参考系，导致 fixed 列飘出。
+     overflow: clip 只裁剪不创建滚动容器，sticky 能正确指向 DataTable 内部。*/
+  min-width: 0;
+  overflow: clip;
 }
 
 .page-header {
@@ -29,6 +36,13 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* n-tab-pane 内的元素之间也保持间距（page-wrapper 的 gap 不会穿透到 tab pane 内） */
+.n-tab-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .pagination-wrap {

@@ -371,16 +371,18 @@ const columns: DataTableColumns<Media> = [
     render: (row) => new Date(row.createdAt).toLocaleString('zh-CN'),
   },
   {
-    title: '操作', key: 'actions', width: 48, fixed: 'right',
-    render: (row) => h('div', { style: 'display:flex;align-items:center;justify-content:center;height:100%' }, [
-      h(NTooltip, null, {
-        trigger: () => h(NButton, {
+    title: '操作', key: 'actions', width: 100, fixed: 'right',
+    render: (row) => h(NSpace, { size: 'small', wrap: false }, {
+      default: () => [
+        h(NButton, {
           size: 'small', quaternary: true, type: 'error',
           onClick: () => handleDelete(row),
-        }, { default: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
-        default: () => '删除',
-      }),
-    ]),
+        }, {
+          default: () => '删除',
+          icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+        }),
+      ],
+    }),
   },
 ]
 
@@ -416,7 +418,7 @@ onMounted(loadMedia)
 
     <div class="table-section">
       <n-data-table :columns="columns" :data="mediaList" :loading="loading" :bordered="false"
-        :scroll-x="980"
+        :scroll-x="1032"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

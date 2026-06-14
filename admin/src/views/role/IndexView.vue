@@ -71,7 +71,7 @@ const columns: DataTableColumns<Role> = [
   { title: 'ID', key: 'id', width: 70 },
   { title: '标识', key: 'name', width: 160 },
   { title: '显示名称', key: 'displayName', width: 160 },
-  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
+  { title: '描述', key: 'description', width: 200, ellipsis: { tooltip: true } },
   { title: '创建时间', key: 'createdAt', width: 180, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') },
   {
     title: '操作',
@@ -79,7 +79,7 @@ const columns: DataTableColumns<Role> = [
     width: 140,
     fixed: 'right',
     render: (row) =>
-      h(NSpace, { size: 'small' }, {
+      h(NSpace, { size: 'small', wrap: false }, {
         default: () => [
           h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, displayName: r.displayName, description: r.description })) }, {
             default: () => '编辑',
@@ -123,7 +123,7 @@ const columns: DataTableColumns<Role> = [
         :data="list"
         :loading="loading"
         :bordered="false"
-        :scroll-x="900"
+        :scroll-x="910"
       />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
