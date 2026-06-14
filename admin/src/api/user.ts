@@ -25,6 +25,10 @@ export function loginApi(params: LoginParams): Promise<ApiResponse<LoginResult>>
   return request.post('/user/login', params)
 }
 
+export function refreshTokenApi(refreshToken: string, deviceId: string): Promise<ApiResponse<LoginResult>> {
+  return request.post('/user/refresh', { refreshToken, deviceId })
+}
+
 export interface User {
   id: number
   username: string

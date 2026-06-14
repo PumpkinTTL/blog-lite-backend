@@ -108,7 +108,8 @@ const router = createRouter({
 
 // 鉴权守卫
 router.beforeEach((to) => {
-  const token = localStorage.getItem('accessToken')
+  // 同时检查 localStorage 和 sessionStorage
+  const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
   if (to.meta.requiresAuth !== false && !token) {
     return '/login'
   }

@@ -50,9 +50,12 @@ async function handleLogin() {
 
     if (res.success && res.data) {
       const { accessToken, refreshToken, deviceId } = res.data
-      localStorage.setItem('accessToken', accessToken)
-      localStorage.setItem('refreshToken', refreshToken)
-      localStorage.setItem('deviceId', deviceId)
+      // 勾选「记住登录状态」→ localStorage（跨浏览器重启持久化）
+      // 未勾选 → sessionStorage（关闭浏览器即失效）
+      const storage = formValue.value.remember ? localStorage : sessionStorage
+      storage.setItem('accessToken', accessToken)
+      storage.setItem('refreshToken', refreshToken)
+      storage.setItem('deviceId', deviceId)
       message.success('登录成功')
       router.push('/dashboard')
     } else {

@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, R
 import type { Request } from 'express';
 import { UserService } from './user.service';
 import { LoginDto } from './login.dto';
+import { RefreshTokenDto } from './login.dto';
 import { CreateUserDto, UpdateUserDto, UpdateProfileDto, ResetPasswordDto, SendResetCodeDto, ResetPasswordByCodeDto } from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
@@ -32,6 +33,17 @@ export class UserController {
         tokenType: 'Bearer',
       },
       message: '登录成功',
+    };
+  }
+
+  @Public()
+  @Post('refresh')
+  async refresh(@Body() dto: RefreshTokenDto) {
+    const tokenData = await this.userService.refreshToken(dto.refreshToken, dto.deviceId);
+    return {
+      success: true,
+      data: { ...tokenData, tokenType: 'Bearer' },
+      message: 'Token 已刷新',
     };
   }
 

@@ -312,6 +312,19 @@ export class UserService {
     this.logger.log(`用户 ${userId} 登出`);
   }
 
+  /**
+   * 刷新 Token：调用鉴权中心刷新双 Token
+   */
+  async refreshToken(refreshToken: string, deviceId: string): Promise<TokenPayload> {
+    const tokenData = await this.authService.refreshToken(refreshToken, deviceId);
+    return {
+      accessToken: tokenData.accessToken,
+      refreshToken: tokenData.refreshToken,
+      expiresIn: tokenData.expiresIn,
+      deviceId,
+    };
+  }
+
   async getProfile(userId: number) {
     const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['roles'] });
     if (!user) throw new NotFoundException('用户不存在');

@@ -1,5 +1,15 @@
 import { IsString, IsNotEmpty, IsOptional, MinLength, MaxLength } from 'class-validator';
 
+export class RefreshTokenDto {
+  @IsString()
+  @IsNotEmpty()
+  refreshToken: string;
+
+  @IsString()
+  @IsNotEmpty()
+  deviceId: string;
+}
+
 export class LoginDto {
   @IsString()
   @IsNotEmpty({ message: '请输入账号' })

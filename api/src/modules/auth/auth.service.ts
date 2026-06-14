@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -77,5 +77,29 @@ export class AuthService implements OnModuleInit {
     }
     const { payload } = await jwtVerify(accessToken, this.jwks);
     return payload;
+  }
+
+  /**
+   * 调用鉴权中心 POST /auth/token 刷新双 Token
+   */
+  async refreshToken(refreshToken: string, deviceId: string): Promise<AuthTokenResponse> {
+    const body: Record<string, unknown> = {
+      clientId: this.clientId,
+      clientSecret: this.clientSecret,
+      grantType: 'refresh_token',
+      refreshToken,
+      deviceId,
+    };
+
+    const { data } = await firstValueFrom(
+      this.httpService.post(`${this.authCenterUrl}/auth/token`, body),
+    );
+
+    if (!data.success) {
+      this.logger.error(`刷新 Token 失败: ${data.message}`);
+      throw new UnauthorizedException(data.message || '刷新 Token 失败');
+    }
+
+    return data.data;
   }
 }
