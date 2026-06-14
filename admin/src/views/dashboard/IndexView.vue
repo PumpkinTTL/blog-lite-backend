@@ -93,7 +93,8 @@ function renderTrendChart() {
   const trend = stats.value.interactionTrend
   trendChart.setOption({
     tooltip: { trigger: 'axis', backgroundColor: tooltipBg(), borderColor: axisColor(), textStyle: { color: textColor(), fontSize: 12 } },
-    grid: { left: 36, right: 16, top: 12, bottom: 28 },
+    legend: { data: ['点赞', '收藏'], top: 0, right: 0, textStyle: { color: textColor(), fontSize: 12 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
+    grid: { left: 36, right: 16, top: 36, bottom: 28 },
     xAxis: { type: 'category', data: trend.map((t: any) => t.date.slice(5)), axisLine: { lineStyle: { color: axisColor() } }, axisLabel: { color: textColor(), fontSize: 11 }, axisTick: { show: false } },
     yAxis: { type: 'value', minInterval: 1, axisLine: { show: false }, axisLabel: { color: textColor(), fontSize: 11 }, splitLine: { lineStyle: { color: axisColor(), type: 'dashed' } } },
     series: [
@@ -122,7 +123,8 @@ function renderDonChart() {
   const data = stats.value.donationTrend
   donChart.setOption({
     tooltip: { trigger: 'axis', backgroundColor: tooltipBg(), borderColor: axisColor(), textStyle: { color: textColor(), fontSize: 12 } },
-    grid: { left: 44, right: 44, top: 12, bottom: 28 },
+    legend: { data: ['金额', '笔数'], top: 0, right: 0, textStyle: { color: textColor(), fontSize: 12 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
+    grid: { left: 44, right: 44, top: 36, bottom: 28 },
     xAxis: { type: 'category', data: data.map((t: any) => t.date.slice(5)), axisLine: { lineStyle: { color: axisColor() } }, axisLabel: { color: textColor(), fontSize: 11 }, axisTick: { show: false } },
     yAxis: [
       { type: 'value', name: '元', axisLine: { show: false }, axisLabel: { color: textColor(), fontSize: 11 }, splitLine: { lineStyle: { color: axisColor(), type: 'dashed' } } },
@@ -199,7 +201,6 @@ onBeforeUnmount(() => {
           <div class="card">
             <div class="card-hd">
               <span class="card-title">7 天互动趋势</span>
-              <span class="card-tag">点赞 / 收藏</span>
             </div>
             <div ref="trendEl" class="chart-box"></div>
           </div>
@@ -213,7 +214,6 @@ onBeforeUnmount(() => {
           <div class="card">
             <div class="card-hd">
               <span class="card-title">捐赠趋势</span>
-              <span class="card-tag">金额 / 笔数</span>
             </div>
             <div ref="donEl" class="chart-box"></div>
           </div>
