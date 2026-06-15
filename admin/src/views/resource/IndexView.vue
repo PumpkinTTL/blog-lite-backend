@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, h } from 'vue'
+import { ref, computed, h } from 'vue'
 import {
   NButton,
   NDataTable,
@@ -21,6 +21,7 @@ import {
 } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules, UploadFileInfo } from 'naive-ui'
 import { MdEditor } from 'md-editor-v3'
+import type { UploadImgCallBack } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import {
   AddOutline,
@@ -30,6 +31,7 @@ import {
   RefreshOutline,
   CloudUploadOutline,
   ImagesOutline,
+  ExpandOutline,
 } from '@vicons/ionicons5'
 import {
   getResources,
@@ -226,35 +228,81 @@ function onCreatePanLink() {
   return { name: '', url: '', code: '' }
 }
 
-// ==================== 封面图：上传 + 媒体库选 ====================
+// ==================== 封面图：base64 预览 + 保存时上传 ====================
 const coverUploadFileList = ref<UploadFileInfo[]>([])
+const coverDragOver = ref(false)
 const showMediaPicker = ref(false)
 const mediaList = ref<any[]>([])
 const mediaLoading = ref(false)
 
-async function handleCoverSelect({ file }: { file: UploadFileInfo }) {
-  const raw = file.file
-  if (!raw || !raw.type.startsWith('image/')) {
+/** 封面是否为待上传的 base64（未实际上传） */
+const isCoverPending = computed(() => formValue.value.cover.startsWith('data:'))
+
+function resolveCoverUrl(url: string): string {
+  if (!url) return ''
+  if (url.startsWith('data:')) return url
+  if (/^https?:\/\//.test(url)) return url
+  const base = import.meta.env.VITE_API_BASE_URL || window.location.origin
+  return new URL(url, base).toString()
+}
+const coverUrl = computed(() => resolveCoverUrl(formValue.value.cover))
+
+/** base64 转 File */
+function base64ToFile(dataUrl: string, filename: string): File {
+  const [meta, b64] = dataUrl.split(',')
+  const mime = /:(.*?);/.exec(meta)?.[1] || 'image/png'
+  const ext = mime.split('/')[1] || 'png'
+  const bin = atob(b64)
+  const arr = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+  return new File([arr], `${filename}.${ext}`, { type: mime })
+}
+
+/** File 转 base64 */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+/** 从原生 File 加载封面（转 base64 预览，不实际上传） */
+function loadCoverFromFile(raw: File) {
+  if (!raw.type.startsWith('image/')) {
     message.error('请选择图片文件')
     return
   }
-  try {
-    const cat = categorySelectOptions.value.find(
-      (c) => c.value === formValue.value.categoryId,
-    )
-    const folder = cat?.label || 'uncategorized'
-    const note = formValue.value.title
-      ? `资源「${formValue.value.title}」封面`
-      : '资源封面'
-    const res = await uploadToR2(raw, { note, app: 'resource', folder })
-    formValue.value.cover = res.data.url
-    message.success('封面上传成功')
-  } catch (e: any) {
-    message.error(e?.message || '封面上传失败')
+  const reader = new FileReader()
+  reader.onload = () => {
+    formValue.value.cover = reader.result as string
   }
+  reader.onerror = () => message.error('读取文件失败')
+  reader.readAsDataURL(raw)
+}
+
+/** 选择本地图片：只转 base64 预览 */
+function handleCoverSelect({ file }: { file: UploadFileInfo }) {
+  const raw = file.file
+  if (!raw) return
+  loadCoverFromFile(raw)
   coverUploadFileList.value = []
 }
 
+/** 拖拽图片到封面区 */
+function handleCoverDrop(event: DragEvent) {
+  coverDragOver.value = false
+  const files = event.dataTransfer?.files
+  if (!files || files.length === 0) return
+  loadCoverFromFile(files[0])
+}
+
+function handleRemoveCover() {
+  formValue.value.cover = ''
+}
+
+// ==================== 媒体库选择（带 loading + 点击预览） ====================
 async function openMediaPicker() {
   showMediaPicker.value = true
   mediaLoading.value = true
@@ -262,8 +310,10 @@ async function openMediaPicker() {
     const res = await getMediaList({ pageSize: 60 })
     const payload = res.data
     const all = Array.isArray(payload) ? payload : payload?.list || []
-    // 仅展示图片
-    mediaList.value = all.filter((m: any) => m.mimeType?.startsWith('image/'))
+    // 仅展示图片，并规范化 URL
+    mediaList.value = all
+      .filter((m: any) => m.mimeType?.startsWith('image/'))
+      .map((m: any) => ({ ...m, _resolvedUrl: resolveCoverUrl(m.url) }))
   } catch (e: any) {
     message.error(e?.message || '加载媒体库失败')
   } finally {
@@ -271,19 +321,107 @@ async function openMediaPicker() {
   }
 }
 
+/** 从媒体库选取（已是真实 URL，无需再上传） */
 function pickMedia(m: any) {
-  let url = m.url
-  if (!/^https?:\/\//.test(url)) {
-    const base = import.meta.env.VITE_API_BASE_URL || window.location.origin
-    url = new URL(url, base).toString()
-  }
-  formValue.value.cover = url
+  formValue.value.cover = m._resolvedUrl
   showMediaPicker.value = false
-  message.success('已从媒体库选取封面')
+  message.success('已选取封面')
 }
 
-function handleRemoveCover() {
-  formValue.value.cover = ''
+/** 媒体库大图预览 */
+const previewSrc = ref('')
+const showPreview = ref(false)
+function previewMedia(m: any) {
+  previewSrc.value = m._resolvedUrl
+  showPreview.value = true
+}
+
+// ==================== 正文图片：粘贴/拖拽转 base64 预览 ====================
+const editorRef = ref<any>(null)
+
+async function onEditorUploadImg(files: File[], callback: UploadImgCallBack) {
+  const urls: string[] = []
+  for (const f of files) {
+    if (!f.type.startsWith('image/')) continue
+    try {
+      urls.push(await fileToBase64(f))
+    } catch {
+      // 单张失败跳过
+    }
+  }
+  callback(urls)
+}
+
+async function onEditorDrop(event: DragEvent) {
+  const items = event.dataTransfer?.files
+  if (!items || items.length === 0) return
+  event.preventDefault()
+  for (const f of items) {
+    if (!f.type.startsWith('image/')) continue
+    try {
+      const dataUrl = await fileToBase64(f)
+      editorRef.value?.insert(() => ({
+        targetValue: `\n![](${dataUrl})\n`,
+        select: false,
+      }))
+    } catch {
+      // 静默
+    }
+  }
+}
+
+// ==================== 统一上传（R2 + 分类 folder + 详细 note） ====================
+async function uploadOne(file: File, note: string): Promise<string> {
+  const cat = categorySelectOptions.value.find(
+    (c) => c.value === formValue.value.categoryId,
+  )
+  const folder = cat?.label || 'uncategorized'
+  const res = await uploadToR2(file, { note, app: 'resource', folder })
+  return res.data.url
+}
+
+/** 保存时上传封面：若为 base64 则上传，返回真实 URL；否则原样返回 */
+async function uploadCoverIfNeeded(): Promise<string> {
+  const url = formValue.value.cover
+  if (!url || !url.startsWith('data:')) return url
+  const file = base64ToFile(url, `resource-cover-${Date.now()}`)
+  const note = formValue.value.title
+    ? `资源「${formValue.value.title}」(#${editingId.value || '新'})的封面图`
+    : '资源封面图'
+  return uploadOne(file, note)
+}
+
+/**
+ * 扫描正文中的 base64 图片，逐个上传后替换为真实 URL
+ * 匹配 markdown 图片语法 ![](data:image/...;base64,...)
+ */
+const DATA_IMG_RE = /!\[([^\]]*)\]\(data:image\/[^)]+\)/g
+
+async function uploadContentImages(content: string): Promise<string> {
+  const matches = [...content.matchAll(DATA_IMG_RE)]
+  if (matches.length === 0) return content
+  const note = formValue.value.title
+    ? `资源「${formValue.value.title}」(#${editingId.value || '新'})正文图片`
+    : '资源正文图片'
+  let result = content
+  for (const m of matches) {
+    const full = m[0]
+    const alt = m[1]
+    const dataUrlMatch = full.match(/\(data:image\/[^)]+\)/)
+    if (!dataUrlMatch) continue
+    const dataUrl = dataUrlMatch[0].slice(1, -1)
+    try {
+      const file = base64ToFile(
+        dataUrl,
+        `resource-content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      )
+      const realUrl = await uploadOne(file, note)
+      result = result.replace(full, `![${alt}](${realUrl})`)
+    } catch (e: any) {
+      message.error(e?.message || '正文图片上传失败')
+    }
+  }
+  return result
 }
 
 // ==================== 保存 ====================
@@ -303,6 +441,15 @@ async function handleSave() {
     }))
   fv.sortOrder = Number(fv.sortOrder) || 0
   fv.priceCents = Math.round((Number(fv.priceYuan) || 0) * 100)
+
+  // 保存时上传：封面 base64 → R2；正文 base64 → R2
+  try {
+    fv.cover = await uploadCoverIfNeeded()
+    fv.content = await uploadContentImages(fv.content || '')
+  } catch (e: any) {
+    message.error(e?.message || '图片上传失败')
+    return false
+  }
   delete (fv as any).priceYuan
 
   if (editingId.value && fv.status === 'private') {
@@ -316,7 +463,6 @@ async function handleSave() {
     }
   }
   const ret = await _handleSave()
-  // 保存后刷新分类选项（名称可能改过）
   loadCategoryOptions()
   return ret
 }
@@ -864,11 +1010,18 @@ const catColumns: DataTableColumns<ResourceCategory> = [
           </n-form-item>
         </div>
 
-        <!-- 封面图：上传 + 媒体库选 -->
+        <!-- 封面图：预览（可放大） + 本地上传 + 媒体库选 -->
         <n-form-item label="封面图" class="res-form-item">
           <div class="cover-area">
-            <div v-if="formValue.cover" class="cover-preview-frame">
-              <img :src="formValue.cover" class="cover-img" alt="封面" />
+            <!-- 已有封面：预览 + 待上传标记 + 操作 -->
+            <div v-if="coverUrl" class="cover-preview-frame">
+              <n-image
+                :src="coverUrl"
+                :preview-src="coverUrl"
+                object-fit="cover"
+                style="width: 100%; height: 100%; display: block"
+                alt="封面预览（点击放大）"
+              />
               <div class="cover-overlay">
                 <n-button
                   circle
@@ -881,8 +1034,13 @@ const catColumns: DataTableColumns<ResourceCategory> = [
                   <template #icon><n-icon><TrashOutline /></n-icon></template>
                 </n-button>
               </div>
+              <n-tag v-if="isCoverPending" size="tiny" type="warning" :bordered="false" round class="cover-status-tag">
+                保存时上传
+              </n-tag>
             </div>
-            <div v-else class="cover-actions">
+
+            <!-- 操作区：本地上传 + 媒体库选，与预览顶部对齐 -->
+            <div class="cover-actions">
               <n-upload
                 v-model:file-list="coverUploadFileList"
                 :show-file-list="false"
@@ -890,9 +1048,17 @@ const catColumns: DataTableColumns<ResourceCategory> = [
                 :custom-request="handleCoverSelect"
                 class="cover-upload"
               >
-                <div class="cover-empty">
+                <div
+                  class="cover-empty"
+                  :class="{ 'is-dragover': coverDragOver }"
+                  @dragenter.prevent="coverDragOver = true"
+                  @dragover.prevent="coverDragOver = true"
+                  @dragleave.prevent="coverDragOver = false"
+                  @drop.prevent="handleCoverDrop"
+                >
                   <n-icon size="24" color="#94A3B8"><CloudUploadOutline /></n-icon>
                   <span class="cover-empty-title">本地上传</span>
+                  <span class="cover-empty-hint">点击或拖拽图片</span>
                 </div>
               </n-upload>
               <n-button quaternary type="primary" @click="openMediaPicker" class="cover-pick-btn">
@@ -905,12 +1071,15 @@ const catColumns: DataTableColumns<ResourceCategory> = [
 
         <n-form-item label="详细说明" class="res-form-item">
           <MdEditor
+            ref="editorRef"
             v-model="formValue.content"
             :theme="isDark ? 'dark' : 'light'"
             style="height: 280px"
-            placeholder="资源详细说明（支持 Markdown / 图片拖拽粘贴）"
+            placeholder="资源详细说明（支持 Markdown，可粘贴/拖拽图片，保存时自动上传）"
             :toolbars-exclude="['github', 'htmlPreview', 'catalog', 'save']"
             preview-theme="default"
+            :on-upload-img="onEditorUploadImg"
+            :on-drop="onEditorDrop"
           />
         </n-form-item>
 
@@ -937,33 +1106,49 @@ const catColumns: DataTableColumns<ResourceCategory> = [
       </n-form>
     </n-modal>
 
-    <!-- ============ 媒体库选择弹窗 ============ -->
+    <!-- ============ 媒体库选择弹窗（缩略图完整 + 点击放大） ============ -->
     <n-modal
       v-model:show="showMediaPicker"
       preset="card"
       title="从媒体库选取封面"
-      :style="{ width: '720px', maxWidth: '94vw' }"
+      :style="{ width: '760px', maxWidth: '94vw' }"
     >
-      <div v-if="mediaLoading" style="text-align: center; padding: 40px">加载中...</div>
-      <div v-else-if="mediaList.length === 0" style="text-align: center; padding: 40px; color: #999">
-        媒体库暂无图片
-      </div>
-      <div v-else class="media-grid">
-        <div
-          v-for="m in mediaList"
-          :key="m.id"
-          class="media-item"
-          @click="pickMedia(m)"
-          :title="m.originalName"
-        >
-          <n-image
-            :src="m.url"
-            :preview-disabled="true"
-            object-fit="cover"
-            style="width: 100%; height: 100%; display: block"
-          />
+      <n-spin :show="mediaLoading">
+        <div v-if="!mediaLoading && mediaList.length === 0" class="media-empty">
+          媒体库暂无图片
         </div>
-      </div>
+        <div v-else class="media-grid">
+          <div v-for="m in mediaList" :key="m.id" class="media-item">
+            <!-- 完整缩略图（object-fit:contain 不裁切）：点击选取 -->
+            <div class="media-thumb" @click="pickMedia(m)" :title="`点击选取：${m.originalName}`">
+              <img :src="m._resolvedUrl" :alt="m.originalName" />
+            </div>
+            <div class="media-foot">
+              <n-button
+                size="tiny"
+                quaternary
+                type="primary"
+                @click.stop="previewMedia(m)"
+                title="点击放大预览"
+              >
+                <template #icon><n-icon><ExpandOutline /></n-icon></template>
+              </n-button>
+              <span class="media-name" :title="m.originalName">{{ m.originalName }}</span>
+            </div>
+          </div>
+        </div>
+      </n-spin>
+      <template #footer>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#999">
+          <span>共 {{ mediaList.length }} 张图片</span>
+          <span>点击缩略图选取 · 点放大按钮预览</span>
+        </div>
+      </template>
+    </n-modal>
+
+    <!-- 媒体库大图预览 -->
+    <n-modal v-model:show="showPreview" preset="card" :style="{ width: 'auto', maxWidth: '90vw' }" :bordered="false">
+      <img :src="previewSrc" style="max-width: 80vw; max-height: 78vh; display: block; margin: 0 auto" />
     </n-modal>
 
     <!-- ============ 分类编辑弹窗 ============ -->
@@ -1037,14 +1222,61 @@ const catColumns: DataTableColumns<ResourceCategory> = [
   margin-top: 4px;
 }
 
-/* === 封面图 === */
+/* === 封面图：预览 + 操作区横向排列，顶部对齐 === */
 .cover-area {
   width: 100%;
+  display: flex;
+  align-items: flex-start; /* 关键：顶部对齐 */
+  gap: 16px;
+  flex-wrap: wrap;
 }
+.cover-preview-frame {
+  position: relative;
+  width: 160px;
+  flex-shrink: 0;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+.cover-preview-frame :deep(img) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cover-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 6px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, transparent 30%);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+}
+.cover-preview-frame:hover .cover-overlay {
+  opacity: 1;
+}
+.cover-preview-frame:hover .cover-overlay .n-button {
+  pointer-events: auto;
+}
+.cover-status-tag {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  pointer-events: none;
+}
+
+/* 操作区：与预览框顶部对齐（cover-area 已 align-items:flex-start） */
 .cover-actions {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
 }
 .cover-upload {
   width: auto;
@@ -1060,7 +1292,7 @@ const catColumns: DataTableColumns<ResourceCategory> = [
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 14px 20px;
+  padding: 12px 24px;
   border: 1px dashed rgba(148, 163, 184, 0.4);
   border-radius: 8px;
   color: #94a3b8;
@@ -1071,62 +1303,75 @@ const catColumns: DataTableColumns<ResourceCategory> = [
   font-size: 12px;
   font-weight: 500;
 }
-.cover-empty:hover {
+.cover-empty-hint {
+  font-size: 11px;
+  color: #b0b7c3;
+}
+.cover-empty:hover,
+.cover-empty.is-dragover {
   border-color: #6366f1;
   color: #6366f1;
   background: rgba(99, 102, 241, 0.08);
 }
-.cover-preview-frame {
-  position: relative;
-  width: 160px;
-  aspect-ratio: 16 / 9;
-  border-radius: 8px;
-  overflow: hidden;
-  background: rgba(148, 163, 184, 0.08);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-}
-.cover-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  user-select: none;
-  pointer-events: none;
-}
-.cover-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 6px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, transparent 30%);
-  opacity: 0;
-  transition: opacity 0.18s ease;
-}
-.cover-preview-frame:hover .cover-overlay {
-  opacity: 1;
-}
 
-/* === 媒体库网格 === */
+/* === 媒体库网格：完整缩略图（contain 不裁切） === */
+.media-empty {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+}
 .media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
   max-height: 60vh;
   overflow-y: auto;
   padding: 4px;
 }
 .media-item {
-  aspect-ratio: 1;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
-  cursor: pointer;
-  border: 2px solid transparent;
-  transition: border-color 0.15s ease;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(148, 163, 184, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .media-item:hover {
   border-color: #6366f1;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
+}
+/* 缩略图区：固定正方形，contain 完整显示不裁切 */
+.media-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  background: rgba(0, 0, 0, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+.media-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+/* 底部：放大按钮 + 文件名 */
+.media-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+.media-name {
+  font-size: 11px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 /* === MdEditor === */
