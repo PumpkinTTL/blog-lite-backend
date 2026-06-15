@@ -462,8 +462,8 @@ const columns: DataTableColumns<Resource> = [
           <n-input v-model:value="formValue.title" placeholder="资源标题" />
         </n-form-item>
 
-        <n-space :size="12" style="width: 100%">
-          <n-form-item label="分类" style="flex: 1">
+        <div class="form-grid form-grid-2">
+          <n-form-item label="分类">
             <n-select
               v-model:value="formValue.category"
               :options="categoryPresets.map((c) => ({ label: c, value: c }))"
@@ -472,23 +472,23 @@ const columns: DataTableColumns<Resource> = [
               tag
             />
           </n-form-item>
-          <n-form-item label="状态" style="flex: 1">
+          <n-form-item label="状态">
             <n-select
               v-model:value="formValue.status"
               :options="formStatusOptions"
             />
           </n-form-item>
-        </n-space>
+        </div>
 
-        <n-space :size="12" style="width: 100%">
-          <n-form-item label="最低会员等级" style="flex: 1">
+        <div class="form-grid form-grid-3">
+          <n-form-item label="最低会员等级">
             <n-select
               v-model:value="formValue.minMemberLevel"
               :options="memberLevelOptions"
               placeholder="不限"
             />
           </n-form-item>
-          <n-form-item label="价格（元）" style="flex: 1">
+          <n-form-item label="价格（元）">
             <n-input-number
               v-model:value="formValue.priceYuan"
               :min="0"
@@ -498,15 +498,15 @@ const columns: DataTableColumns<Resource> = [
               style="width: 100%"
             />
           </n-form-item>
-          <n-form-item label="排序权重" style="flex: 1">
+          <n-form-item label="排序权重">
             <n-input-number
               v-model:value="formValue.sortOrder"
               :min="0"
-              placeholder="数字越小越靠前"
+              placeholder="越小越靠前"
               style="width: 100%"
             />
           </n-form-item>
-        </n-space>
+        </div>
 
         <n-form-item label="封面图 URL">
           <n-input v-model:value="formValue.cover" placeholder="https://..." />
@@ -538,23 +538,21 @@ const columns: DataTableColumns<Resource> = [
               :min="1"
             >
               <template #default="{ value }">
-                <n-space :size="8" style="width: 100%" align="center">
+                <div class="pan-link-row">
                   <n-input
                     v-model:value="value.name"
                     placeholder="网盘名称（如 夸克网盘）"
-                    style="width: 140px"
                   />
                   <n-input
                     v-model:value="value.url"
                     placeholder="分享链接"
-                    style="flex: 1"
+                    class="pan-link-url"
                   />
                   <n-input
                     v-model:value="value.code"
                     placeholder="提取码（可选）"
-                    style="width: 110px"
                   />
-                </n-space>
+                </div>
               </template>
             </n-dynamic-input>
             <div style="font-size: 12px; color: #999; margin-top: 4px">
@@ -565,22 +563,51 @@ const columns: DataTableColumns<Resource> = [
 
         <!-- 指定可见配置：仅 private 状态展开 -->
         <template v-if="formValue.status === 'private'">
-          <n-form-item label="可见性 - 指定用户 ID">
-            <n-input
-              v-model:value="formValue.allowedUserIdsInput"
-              placeholder="逗号分隔，如 1, 23, 45"
-            />
-          </n-form-item>
-          <n-form-item label="可见性 - 指定角色 ID">
-            <n-input
-              v-model:value="formValue.allowedRoleIdsInput"
-              placeholder="逗号分隔的角色 ID"
-            />
-          </n-form-item>
+          <div class="form-grid form-grid-2">
+            <n-form-item label="可见性 - 指定用户 ID">
+              <n-input
+                v-model:value="formValue.allowedUserIdsInput"
+                placeholder="逗号分隔，如 1, 23, 45"
+              />
+            </n-form-item>
+            <n-form-item label="可见性 - 指定角色 ID">
+              <n-input
+                v-model:value="formValue.allowedRoleIdsInput"
+                placeholder="逗号分隔的角色 ID"
+              />
+            </n-form-item>
+          </div>
         </template>
       </n-form>
     </n-modal>
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+/* 表单多列布局：用 CSS Grid 替代 n-space+flex:1，宽度均分更稳 */
+.form-grid {
+  display: grid;
+  gap: 0 16px; /* 列间距 16px，行间距由 form-item 自身控制 */
+  margin-bottom: 16px; /* 与下方 form-item 间距对齐 */
+}
+.form-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.form-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+/* grid 子项里的 form-item 撑满列宽，并消除默认下边距（由容器统一控制） */
+.form-grid :deep(.n-form-item) {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+/* 网盘链接行：名称(固定) + 链接(自适应) + 提取码(固定) */
+.pan-link-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 120px;
+  gap: 8px;
+  width: 100%;
+  align-items: center;
+}
+</style>
