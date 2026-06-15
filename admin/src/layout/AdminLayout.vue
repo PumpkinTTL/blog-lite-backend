@@ -25,6 +25,7 @@ import {
   ChatbubblesOutline,
   StarOutline,
   ClipboardOutline,
+  GiftOutline,
 } from '@vicons/ionicons5'
 import { useAuth } from '../stores/auth'
 import { isDark } from '../theme'
@@ -55,6 +56,7 @@ const menuOptions: MenuOption[] = [
   { label: '互动管理', key: '/interactions', icon: renderIcon(StarOutline) },
   { label: '公告管理', key: '/announcements', icon: renderIcon(MegaphoneOutline) },
   { label: '友情链接', key: '/friend-links', icon: renderIcon(LinkOutline) },
+  { label: '资源管理', key: '/resources', icon: renderIcon(GiftOutline) },
   { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
   { type: 'divider', key: 'd3' },
   { label: '系统设置', key: '/settings', icon: renderIcon(SettingsOutline) },

@@ -108,6 +108,12 @@ const router = createRouter({
           meta: { title: '友情链接' },
         },
         {
+          path: 'resources',
+          name: 'resources',
+          component: () => import('../views/resource/IndexView.vue'),
+          meta: { title: '资源管理' },
+        },
+        {
           path: 'donations',
           name: 'donations',
           component: () => import('../views/donation/IndexView.vue'),
