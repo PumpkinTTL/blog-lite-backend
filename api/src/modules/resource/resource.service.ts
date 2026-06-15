@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { ResourceEntity } from './resource.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { RESOURCE_STATUS } from '../../common/constants/status';
@@ -118,8 +118,9 @@ export class ResourceService {
   async findById(id: number, publicOnly = false) {
     const where: any = { id };
     if (publicOnly) {
-      // 非 admin 详情查询：published/login/private 都能查到，由上层做细粒度判定
-      where.status = RESOURCE_STATUS.PUBLISHED;
+      // 非 admin 详情查询：允许 published/login/private，由上层 findByIdForUser 做细粒度判定
+      // draft 对非 admin 完全不可见（当作不存在）
+      where.status = In([RESOURCE_STATUS.PUBLISHED, RESOURCE_STATUS.LOGIN, RESOURCE_STATUS.PRIVATE]);
     }
     return this.repo.findOne({ where });
   }
