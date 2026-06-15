@@ -16,6 +16,7 @@ import { CodeEntity } from '../code/code.entity';
 import { CodeUsageLogEntity } from '../code/code-usage-log.entity';
 import { MembershipService, MembershipSummary } from '../membership/membership.service';
 import { applyFilters } from '../../common/utils/apply-filters';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 export interface TokenPayload {
   accessToken: string;
@@ -38,6 +39,7 @@ export class UserService {
     private readonly codeService: CodeService,
     private readonly membershipService: MembershipService,
     private readonly dataSource: DataSource,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   /**
@@ -160,11 +162,23 @@ export class UserService {
     return this.userRepo.save(user);
   }
 
-  async update(id: number, data: Partial<UserEntity> & { roleIds?: number[]; password?: string }) {
+  async update(id: number, data: Partial<UserEntity> & { roleIds?: number[]; password?: string }, operator?: { id: number; nickname: string }) {
     const { roleIds, password, ...userData } = data;
 
     const user = await this.userRepo.findOne({ where: { id }, relations: ['roles'] });
     if (!user) return null;
+
+    // 变更审计
+    const targetName = `${user.nickname || user.username}(#${id})`;
+    const entries = AuditLogService.diff('user', id, {
+      avatar: user.avatar, nickname: user.nickname, email: user.email, status: user.status,
+    }, {
+      avatar: userData.avatar, nickname: userData.nickname, email: userData.email, status: userData.status,
+    }, ['avatar', 'nickname', 'email', 'status'], {
+      operatorId: operator?.id, operatorName: operator?.nickname, targetName,
+    });
+    if (password) entries.push({ targetType: 'user', targetId: id, field: 'password', note: '密码已修改', targetName, operatorId: operator?.id, operatorName: operator?.nickname });
+    this.auditLog.logMany(entries).catch(e => this.logger.warn('审计日志写入失败', e));
 
     Object.assign(user, userData);
 

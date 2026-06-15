@@ -24,6 +24,7 @@ import {
   CardOutline,
   ChatbubblesOutline,
   StarOutline,
+  ClipboardOutline,
 } from '@vicons/ionicons5'
 import { useAuth } from '../stores/auth'
 import { isDark } from '../theme'
@@ -57,6 +58,7 @@ const menuOptions: MenuOption[] = [
   { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
   { type: 'divider', key: 'd3' },
   { label: '系统设置', key: '/settings', icon: renderIcon(SettingsOutline) },
+  { label: '审计日志', key: '/audit-logs', icon: renderIcon(ClipboardOutline) },
 ]
 
 const activeMenu = computed(() => {

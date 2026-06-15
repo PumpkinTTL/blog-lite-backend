@@ -119,6 +119,12 @@ const router = createRouter({
           component: () => import('../views/setting/IndexView.vue'),
           meta: { title: '系统设置' },
         },
+        {
+          path: 'audit-logs',
+          name: 'audit-logs',
+          component: () => import('../views/audit-log/IndexView.vue'),
+          meta: { title: '审计日志' },
+        },
       ],
     },
   ],

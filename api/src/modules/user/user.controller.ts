@@ -149,8 +149,9 @@ export class UserController {
 
   @Roles('admin')
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUserDto) {
-    const data = await this.userService.update(id, dto);
+  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUserDto, @Req() req: Request) {
+    const op = (req as any).user;
+    const data = await this.userService.update(id, dto, op ? { id: Number(op.sub), nickname: op.nickname || op.sub } : undefined);
     return { success: true, data, message: '更新成功' };
   }
 
