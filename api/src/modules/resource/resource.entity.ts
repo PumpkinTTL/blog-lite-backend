@@ -5,7 +5,10 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { ResourceCategoryEntity } from '../resource-category/resource-category.entity';
 
 /**
  * 网盘链接项
@@ -22,7 +25,7 @@ export interface PanLink {
 @Entity('resources')
 @Index('idx_resource_status', ['status'])
 @Index('idx_resource_sort', ['sortOrder'])
-@Index('idx_resource_category', ['category'])
+@Index('idx_resource_category', ['categoryId'])
 export class ResourceEntity {
   @PrimaryGeneratedColumn({ comment: '资源 ID' })
   id: number;
@@ -30,14 +33,23 @@ export class ResourceEntity {
   @Column({ type: 'varchar', length: 200, comment: '标题' })
   title: string;
 
-  @Column({ type: 'text', nullable: true, comment: '简介' })
+  @Column({ type: 'varchar', length: 200, nullable: true, comment: '副标题/简介' })
   description: string | null;
 
   @Column({ type: 'varchar', length: 500, nullable: true, comment: '封面图 URL' })
   cover: string | null;
 
-  @Column({ type: 'varchar', length: 50, nullable: true, comment: '分类' })
-  category: string | null;
+  @Column({
+    type: 'int',
+    nullable: true,
+    name: 'category_id',
+    comment: '资源分类 ID',
+  })
+  categoryId: number | null;
+
+  @ManyToOne(() => ResourceCategoryEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'category_id' })
+  category: ResourceCategoryEntity | null;
 
   @Column({ type: 'text', nullable: true, comment: '资源详细说明（富文本）' })
   content: string | null;

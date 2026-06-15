@@ -48,17 +48,19 @@ export class ResourceService {
   async findAll(
     page = 1,
     pageSize = 20,
-    filters?: { id?: number; keyword?: string; status?: string; category?: string },
+    filters?: { id?: number; keyword?: string; status?: string; categoryId?: number },
     publicOnly = false,
     isLoggedIn = false,
     withAdminVisibility = false,
   ) {
-    const qb = this.repo.createQueryBuilder('e');
+    const qb = this.repo
+      .createQueryBuilder('e')
+      .leftJoinAndSelect('e.category', 'category');
     applyFilters(qb, {
       exact: {
         'e.id': filters?.id,
         'e.status': filters?.status,
-        'e.category': filters?.category,
+        'e.categoryId': filters?.categoryId,
       },
       like: { keyword: filters?.keyword, fields: ['e.title'] },
     });
@@ -122,7 +124,7 @@ export class ResourceService {
       // draft 对非 admin 完全不可见（当作不存在）
       where.status = In([RESOURCE_STATUS.PUBLISHED, RESOURCE_STATUS.LOGIN, RESOURCE_STATUS.PRIVATE]);
     }
-    return this.repo.findOne({ where });
+    return this.repo.findOne({ where, relations: ['category'] });
   }
 
   /**
@@ -291,7 +293,7 @@ export class ResourceService {
         allowedRoleIds ?? [],
       );
     }
-    return this.repo.findOne({ where: { id } });
+    return this.repo.findOne({ where: { id }, relations: ['category'] });
   }
 
   async toggleStatus(id: number) {

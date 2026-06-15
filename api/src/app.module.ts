@@ -23,6 +23,7 @@ import { InteractionModule } from './modules/interaction/interaction.module';
 import { CommentModule } from './modules/comment/comment.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { ResourceModule } from './modules/resource/resource.module';
+import { ResourceCategoryModule } from './modules/resource-category/resource-category.module';
 
 @Module({
   providers: [
@@ -101,6 +102,7 @@ import { ResourceModule } from './modules/resource/resource.module';
     CommentModule,
     AuditLogModule,
     ResourceModule,
+    ResourceCategoryModule,
   ],
 })
 export class AppModule {}

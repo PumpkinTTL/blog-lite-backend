@@ -41,10 +41,9 @@ export class CreateResourceDto {
   @MaxLength(500)
   cover?: string;
 
-  @IsString()
+  @IsInt()
   @IsOptional()
-  @MaxLength(50)
-  category?: string;
+  categoryId?: number | null;
 
   @IsString()
   @IsOptional()
@@ -101,10 +100,9 @@ export class UpdateResourceDto {
   @MaxLength(500)
   cover?: string;
 
-  @IsString()
+  @IsInt()
   @IsOptional()
-  @MaxLength(50)
-  category?: string;
+  categoryId?: number | null;
 
   @IsString()
   @IsOptional()
