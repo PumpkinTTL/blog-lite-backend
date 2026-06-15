@@ -59,6 +59,10 @@ export class SettingService {
       if (existing) {
         existing.value = value;
         results.push(await this.repo.save(existing));
+      } else {
+        // key 不存在则创建（upsert 语义，供 rate_limit 等动态配置首次写入）
+        const created = this.repo.create({ key, value, group });
+        results.push(await this.repo.save(created));
       }
     }
     return results;

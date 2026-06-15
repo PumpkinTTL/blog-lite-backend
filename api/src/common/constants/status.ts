@@ -89,3 +89,15 @@ export const RESOURCE_UNLOCK_SOURCE = {
   CODE: 'code', // 兑换码兑换
   PAYMENT: 'payment', // 单次购买（支付未实现，预留）
 } as const;
+
+// ── 黑名单类型 ──
+export const BLACKLIST_TYPE = {
+  IP: 'ip', // IP 封禁
+  USER: 'user', // 用户封禁
+} as const;
+
+// ── 黑名单状态 ──
+export const BLACKLIST_STATUS = {
+  ACTIVE: 'active', // 生效中（封禁）
+  EXPIRED: 'expired', // 已过期/已解除
+} as const;

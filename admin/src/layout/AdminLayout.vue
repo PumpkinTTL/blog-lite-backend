@@ -26,6 +26,8 @@ import {
   StarOutline,
   ClipboardOutline,
   GiftOutline,
+  BanOutline,
+  SpeedometerOutline,
 } from '@vicons/ionicons5'
 import { useAuth } from '../stores/auth'
 import { isDark } from '../theme'
@@ -57,6 +59,8 @@ const menuOptions: MenuOption[] = [
   { label: '公告管理', key: '/announcements', icon: renderIcon(MegaphoneOutline) },
   { label: '友情链接', key: '/friend-links', icon: renderIcon(LinkOutline) },
   { label: '资源管理', key: '/resources', icon: renderIcon(GiftOutline) },
+  { label: '黑名单管理', key: '/blacklist', icon: renderIcon(BanOutline) },
+  { label: '限流配置', key: '/rate-limit', icon: renderIcon(SpeedometerOutline) },
   { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
   { type: 'divider', key: 'd3' },
   { label: '系统设置', key: '/settings', icon: renderIcon(SettingsOutline) },
@@ -102,6 +106,9 @@ const breadcrumbItems = computed(() => {
     '/interactions': '互动管理',
     '/announcements': '公告管理',
     '/friend-links': '友情链接',
+    '/resources': '资源管理',
+    '/blacklist': '黑名单管理',
+    '/rate-limit': '限流配置',
     '/donations': '捐赠管理',
     '/settings': '系统设置',
   }

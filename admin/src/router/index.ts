@@ -114,6 +114,18 @@ const router = createRouter({
           meta: { title: '资源管理' },
         },
         {
+          path: 'blacklist',
+          name: 'blacklist',
+          component: () => import('../views/blacklist/IndexView.vue'),
+          meta: { title: '黑名单管理' },
+        },
+        {
+          path: 'rate-limit',
+          name: 'rate-limit',
+          component: () => import('../views/rate-limit/IndexView.vue'),
+          meta: { title: '限流配置' },
+        },
+        {
           path: 'donations',
           name: 'donations',
           component: () => import('../views/donation/IndexView.vue'),
