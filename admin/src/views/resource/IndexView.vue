@@ -15,6 +15,9 @@ import {
   NPagination,
   NDynamicInput,
   NUpload,
+  NTabs,
+  NTabPane,
+  NImage,
 } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules, UploadFileInfo } from 'naive-ui'
 import { MdEditor } from 'md-editor-v3'
@@ -26,6 +29,7 @@ import {
   SearchOutline,
   RefreshOutline,
   CloudUploadOutline,
+  ImagesOutline,
 } from '@vicons/ionicons5'
 import {
   getResources,
@@ -36,26 +40,48 @@ import {
   updateResourceVisibility,
 } from '../../api/resource'
 import type { Resource, PanLink } from '../../api/resource'
+import {
+  getResourceCategories,
+  createResourceCategory,
+  updateResourceCategory,
+  deleteResourceCategory,
+  batchDeleteResourceCategories,
+} from '../../api/resource-category'
+import type { ResourceCategory } from '../../api/resource-category'
 import { getUsers } from '../../api/user'
 import { getRoles } from '../../api/role'
 import { uploadToR2 } from '../../api/r2-storage'
+import { getMediaList } from '../../api/media'
 import { useCrudList } from '../../composables/useCrudList'
 import { isDark } from '../../theme'
 
 const formRef = ref<FormInst | null>(null)
+const activeTab = ref('resources')
 
-// 分页
+// ==================== 资源分类选项（下拉用） ====================
+const categorySelectOptions = ref<{ label: string; value: number }[]>([])
+const searchCategory = ref<number | null>(null)
+
+async function loadCategoryOptions() {
+  try {
+    const res = await getResourceCategories({ pageSize: 1000 })
+    const payload = res.data
+    const cats = Array.isArray(payload) ? payload : payload?.list || []
+    categorySelectOptions.value = cats.map((c: ResourceCategory) => ({
+      label: c.name,
+      value: c.id,
+    }))
+  } catch {
+    /* ignore */
+  }
+}
+loadCategoryOptions()
+
+// ==================== 资源：分页/搜索 ====================
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
-
-// 搜索条件
 const searchStatus = ref<string | null>(null)
-const searchCategory = ref<string | null>(null)
-
-// 可见性多选选项（弹窗打开时加载）
-const userOptions = ref<{ label: string; value: number }[]>([])
-const roleOptions = ref<{ label: string; value: number }[]>([])
 
 const statusOptions = [
   { label: '全部', value: null },
@@ -63,20 +89,6 @@ const statusOptions = [
   { label: '公开', value: 'published' },
   { label: '登录可见', value: 'login' },
   { label: '指定可见', value: 'private' },
-]
-
-// 预设分类（可自定义输入）
-const categoryPresets = [
-  'PPT模板',
-  '开源软件',
-  '电子书',
-  '整合包',
-  '设计素材',
-  '其他',
-]
-const categoryOptions = [
-  { label: '全部分类', value: null },
-  ...categoryPresets.map((c) => ({ label: c, value: c })),
 ]
 
 const memberLevelOptions = [
@@ -92,6 +104,34 @@ const formStatusOptions = [
   { label: '登录可见', value: 'login' },
   { label: '指定可见', value: 'private' },
 ]
+
+// 可见性多选选项（弹窗打开时加载）
+const userOptions = ref<{ label: string; value: number }[]>([])
+const roleOptions = ref<{ label: string; value: number }[]>([])
+
+async function loadVisibilityOptions() {
+  if (userOptions.value.length > 0) return
+  try {
+    const [userRes, roleRes] = await Promise.all([
+      getUsers({ pageSize: 1000 }),
+      getRoles({ pageSize: 1000 }),
+    ])
+    const up = userRes.data
+    const users = Array.isArray(up) ? up : up?.list || []
+    userOptions.value = users.map((u: any) => ({
+      label: `${u.nickname || u.username} (#${u.id})`,
+      value: u.id,
+    }))
+    const rp = roleRes.data
+    const roles = Array.isArray(rp) ? rp : rp?.list || []
+    roleOptions.value = roles.map((r: any) => ({
+      label: `${r.displayName || r.name} (#${r.id})`,
+      value: r.id,
+    }))
+  } catch {
+    /* ignore */
+  }
+}
 
 const {
   loading,
@@ -119,9 +159,7 @@ const {
       page: page.value,
       pageSize: pageSize.value,
       ...(searchStatus.value !== null ? { status: searchStatus.value } : {}),
-      ...(searchCategory.value !== null
-        ? { category: searchCategory.value }
-        : {}),
+      ...(searchCategory.value !== null ? { categoryId: searchCategory.value } : {}),
     }),
   createApi: (data) => createResource(data),
   updateApi: (id, data) => updateResource(id, data),
@@ -132,7 +170,7 @@ const {
     title: '',
     description: '',
     cover: '',
-    category: null,
+    categoryId: null,
     content: '',
     panLinks: [{ name: '', url: '', code: '' }] as PanLink[],
     priceYuan: 0,
@@ -152,32 +190,6 @@ const {
   },
 })
 
-// 弹窗打开时加载用户/角色选项
-async function loadVisibilityOptions() {
-  if (userOptions.value.length > 0) return
-  try {
-    const [userRes, roleRes] = await Promise.all([
-      getUsers({ pageSize: 1000 }),
-      getRoles({ pageSize: 1000 }),
-    ])
-    const userPayload = userRes.data
-    const users = Array.isArray(userPayload) ? userPayload : (userPayload?.list || [])
-    userOptions.value = users.map((u: any) => ({
-      label: `${u.nickname || u.username} (#${u.id})`,
-      value: u.id,
-    }))
-    const rolePayload = roleRes.data
-    const roles = Array.isArray(rolePayload) ? rolePayload : (rolePayload?.list || [])
-    roleOptions.value = roles.map((r: any) => ({
-      label: `${r.displayName || r.name} (#${r.id})`,
-      value: r.id,
-    }))
-  } catch (e: any) {
-    message.error(e?.message || '加载可见性选项失败')
-  }
-}
-
-// 状态联动：切换为非 private 时清空可见性配置
 function handleStatusChange(val: string) {
   formValue.value.status = val
   if (val !== 'private') {
@@ -210,13 +222,15 @@ function handleReset() {
   _handleReset()
 }
 
-// 网盘链接动态表单的增删按钮
 function onCreatePanLink() {
   return { name: '', url: '', code: '' }
 }
 
-// === 封面图上传（R2，folder 用分类，无分类用 'uncategorized'） ===
+// ==================== 封面图：上传 + 媒体库选 ====================
 const coverUploadFileList = ref<UploadFileInfo[]>([])
+const showMediaPicker = ref(false)
+const mediaList = ref<any[]>([])
+const mediaLoading = ref(false)
 
 async function handleCoverSelect({ file }: { file: UploadFileInfo }) {
   const raw = file.file
@@ -225,7 +239,10 @@ async function handleCoverSelect({ file }: { file: UploadFileInfo }) {
     return
   }
   try {
-    const folder = formValue.value.category || 'uncategorized'
+    const cat = categorySelectOptions.value.find(
+      (c) => c.value === formValue.value.categoryId,
+    )
+    const folder = cat?.label || 'uncategorized'
     const note = formValue.value.title
       ? `资源「${formValue.value.title}」封面`
       : '资源封面'
@@ -238,11 +255,38 @@ async function handleCoverSelect({ file }: { file: UploadFileInfo }) {
   coverUploadFileList.value = []
 }
 
+async function openMediaPicker() {
+  showMediaPicker.value = true
+  mediaLoading.value = true
+  try {
+    const res = await getMediaList({ pageSize: 60 })
+    const payload = res.data
+    const all = Array.isArray(payload) ? payload : payload?.list || []
+    // 仅展示图片
+    mediaList.value = all.filter((m: any) => m.mimeType?.startsWith('image/'))
+  } catch (e: any) {
+    message.error(e?.message || '加载媒体库失败')
+  } finally {
+    mediaLoading.value = false
+  }
+}
+
+function pickMedia(m: any) {
+  let url = m.url
+  if (!/^https?:\/\//.test(url)) {
+    const base = import.meta.env.VITE_API_BASE_URL || window.location.origin
+    url = new URL(url, base).toString()
+  }
+  formValue.value.cover = url
+  showMediaPicker.value = false
+  message.success('已从媒体库选取封面')
+}
+
 function handleRemoveCover() {
   formValue.value.cover = ''
 }
 
-// 保存前处理：类型转换 + 可见性配置同步
+// ==================== 保存 ====================
 async function handleSave() {
   try {
     await formRef.value?.validate()
@@ -250,7 +294,6 @@ async function handleSave() {
     return false
   }
   const fv = formValue.value
-  // 过滤掉空的网盘链接（name 或 url 为空）
   fv.panLinks = (fv.panLinks || [])
     .filter((p: PanLink) => p.name?.trim() && p.url?.trim())
     .map((p: PanLink) => ({
@@ -260,10 +303,8 @@ async function handleSave() {
     }))
   fv.sortOrder = Number(fv.sortOrder) || 0
   fv.priceCents = Math.round((Number(fv.priceYuan) || 0) * 100)
-  // priceYuan 仅前端展示用，提交时删除避免后端 DTO 校验报错
   delete (fv as any).priceYuan
 
-  // private 资源同步写可见性（更新场景；新建场景 service 内部已处理）
   if (editingId.value && fv.status === 'private') {
     try {
       await updateResourceVisibility(editingId.value, {
@@ -274,14 +315,16 @@ async function handleSave() {
       message.error(e?.message || '可见性配置失败')
     }
   }
-  return _handleSave()
+  const ret = await _handleSave()
+  // 保存后刷新分类选项（名称可能改过）
+  loadCategoryOptions()
+  return ret
 }
 
 function handlePageChange(p: number) {
   page.value = p
   _handleSearch()
 }
-
 function handlePageSizeChange(s: number) {
   pageSize.value = s
   page.value = 1
@@ -292,7 +335,6 @@ const rules: FormRules = {
   title: [{ required: true, message: '请输入标题', trigger: ['input', 'blur'] }],
 }
 
-// 状态标签映射
 const statusTagType: Record<string, 'default' | 'success' | 'info' | 'warning'> = {
   draft: 'default',
   published: 'success',
@@ -321,9 +363,14 @@ const columns: DataTableColumns<Resource> = [
           })
         : h('span', { style: 'color:#bbb' }, '-'),
   },
-  { title: '标题', key: 'title', width: 200, ellipsis: { tooltip: true } },
-  { title: '副标题', key: 'description', width: 180, ellipsis: { tooltip: true } },
-  { title: '分类', key: 'category', width: 100, ellipsis: { tooltip: true } },
+  { title: '标题', key: 'title', width: 180, ellipsis: { tooltip: true } },
+  { title: '副标题', key: 'description', width: 160, ellipsis: { tooltip: true } },
+  {
+    title: '分类',
+    key: 'category',
+    width: 100,
+    render: (row) => row.category?.name || h('span', { style: 'color:#bbb' }, '-'),
+  },
   {
     title: '状态',
     key: 'status',
@@ -361,11 +408,7 @@ const columns: DataTableColumns<Resource> = [
         ? h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => row.minMemberLevel })
         : h('span', { style: 'color:#bbb' }, '不限'),
   },
-  {
-    title: '排序',
-    key: 'sortOrder',
-    width: 60,
-  },
+  { title: '排序', key: 'sortOrder', width: 60 },
   {
     title: '创建时间',
     key: 'createdAt',
@@ -391,7 +434,7 @@ const columns: DataTableColumns<Resource> = [
                   title: r.title,
                   description: r.description || '',
                   cover: r.cover || '',
-                  category: r.category,
+                  categoryId: r.categoryId,
                   content: r.content || '',
                   panLinks:
                     r.panLinks && r.panLinks.length
@@ -427,86 +470,300 @@ const columns: DataTableColumns<Resource> = [
       }),
   },
 ]
+
+// ==================== Tab 2: 分类管理 ====================
+const catTotal = ref(0)
+const catPage = ref(1)
+const catPageSize = ref(10)
+const catFormRef = ref<FormInst | null>(null)
+
+const catRules: FormRules = {
+  name: [{ required: true, message: '请输入分类名称', trigger: ['input', 'blur'] }],
+}
+
+const {
+  loading: catLoading,
+  list: catList,
+  searchId: catSearchId,
+  searchKeyword: catSearchKeyword,
+  showModal: catShowModal,
+  editingId: catEditingId,
+  saving: catSaving,
+  formValue: catFormValue,
+  handleSearch: _catHandleSearch,
+  handleReset: _catHandleReset,
+  openCreate: _catOpenCreate,
+  openEdit: _catOpenEdit,
+  handleSave: _catHandleSave,
+  handleDelete: catHandleDelete,
+  handleBatchDelete: catHandleBatchDelete,
+  checkedRowKeys: catCheckedRowKeys,
+  selectionColumn: catSelectionColumn,
+} = useCrudList<ResourceCategory>({
+  loadApi: (params) =>
+    getResourceCategories({
+      ...params,
+      page: catPage.value,
+      pageSize: catPageSize.value,
+    }),
+  createApi: (data) => createResourceCategory(data),
+  updateApi: (id, data) => updateResourceCategory(id, data),
+  deleteApi: deleteResourceCategory,
+  batchDeleteApi: batchDeleteResourceCategories,
+  deleteContent: (row) => `确定删除分类「${row.name}」？`,
+  defaultForm: () => ({ name: '', description: '', sortOrder: 0 }),
+  extractList: (res) => {
+    const payload = res.data
+    if (payload?.list) {
+      catTotal.value = payload.total
+      return payload.list
+    }
+    return Array.isArray(payload) ? payload : []
+  },
+})
+
+function catHandleSearch() {
+  catPage.value = 1
+  _catHandleSearch()
+}
+function catHandleReset() {
+  catSearchId.value = ''
+  catSearchKeyword.value = ''
+  catPage.value = 1
+  _catHandleReset()
+}
+function catOpenCreate() {
+  _catOpenCreate()
+}
+function catOpenEdit(row: ResourceCategory) {
+  _catOpenEdit(row, (r) => ({
+    name: r.name,
+    description: r.description || '',
+    sortOrder: r.sortOrder,
+  }))
+}
+async function catHandleSave() {
+  try {
+    await catFormRef.value?.validate()
+  } catch {
+    return false
+  }
+  catFormValue.value.sortOrder = Number(catFormValue.value.sortOrder) || 0
+  const ret = await _catHandleSave()
+  // 分类变动后刷新资源页的下拉选项
+  loadCategoryOptions()
+  return ret
+}
+function catHandlePageChange(p: number) {
+  catPage.value = p
+  _catHandleSearch()
+}
+function catHandlePageSizeChange(s: number) {
+  catPageSize.value = s
+  catPage.value = 1
+  _catHandleSearch()
+}
+
+const catColumns: DataTableColumns<ResourceCategory> = [
+  catSelectionColumn,
+  { title: 'ID', key: 'id', width: 60 },
+  { title: '分类名称', key: 'name', width: 200 },
+  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
+  { title: '排序', key: 'sortOrder', width: 80 },
+  {
+    title: '创建时间',
+    key: 'createdAt',
+    width: 160,
+    render: (row) => new Date(row.createdAt).toLocaleString('zh-CN'),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 120,
+    render: (row) =>
+      h(NSpace, { size: 'small', wrap: false }, {
+        default: () => [
+          h(
+            NButton,
+            {
+              size: 'small',
+              quaternary: true,
+              type: 'primary',
+              onClick: () => catOpenEdit(row),
+            },
+            {
+              default: () => '编辑',
+              icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
+            },
+          ),
+          h(
+            NButton,
+            {
+              size: 'small',
+              quaternary: true,
+              type: 'error',
+              onClick: () => catHandleDelete(row),
+            },
+            {
+              default: () => '删除',
+              icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+            },
+          ),
+        ],
+      }),
+  },
+]
 </script>
 
 <template>
   <div class="page-wrapper">
-    <div class="page-header">
-      <h2 class="page-title">资源管理</h2>
-      <n-button type="primary" @click="openCreate">
-        <template #icon><n-icon><AddOutline /></n-icon></template>
-        新建资源
-      </n-button>
-    </div>
-    <n-space class="search-bar" :size="12" align="center">
-      <n-input
-        v-model:value="searchId"
-        placeholder="ID"
-        clearable
-        style="width: 90px"
-        @keyup.enter="handleSearch"
-      />
-      <n-input
-        v-model:value="searchKeyword"
-        placeholder="搜索标题..."
-        clearable
-        style="width: 200px"
-        @keyup.enter="handleSearch"
-      />
-      <n-select
-        v-model:value="searchCategory"
-        :options="categoryOptions"
-        placeholder="分类"
-        style="width: 140px"
-        clearable
-      />
-      <n-select
-        v-model:value="searchStatus"
-        :options="statusOptions"
-        placeholder="状态"
-        style="width: 130px"
-        clearable
-      />
-      <n-button type="primary" @click="handleSearch">
-        <template #icon><n-icon><SearchOutline /></n-icon></template>
-        搜索
-      </n-button>
-      <n-button @click="handleReset">
-        <template #icon><n-icon><RefreshOutline /></n-icon></template>
-        重置
-      </n-button>
-      <n-button
-        :disabled="checkedRowKeys.length === 0"
-        type="error"
-        @click="handleBatchDelete"
-      >
-        <template #icon><n-icon><TrashOutline /></n-icon></template>
-        批量删除
-      </n-button>
-    </n-space>
-    <div class="table-section">
-      <n-data-table
-        :columns="columns"
-        :data="list"
-        :loading="loading"
-        :bordered="false"
-        :scroll-x="1290"
-        :row-key="(row: any) => row.id"
-        @update:checked-row-keys="(keys: any) => (checkedRowKeys = keys)"
-      />
-      <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination
-          :page="page"
-          :page-size="pageSize"
-          :page-sizes="[10, 20, 50]"
-          :item-count="total"
-          show-size-picker
-          @update:page="handlePageChange"
-          @update:page-size="handlePageSizeChange"
-        />
-      </div>
-    </div>
+    <n-tabs v-model:value="activeTab" type="line" animated>
+      <!-- ============ Tab 1: 资源管理 ============ -->
+      <n-tab-pane name="resources" tab="资源管理">
+        <div class="page-header">
+          <h2 class="page-title">资源列表</h2>
+          <n-button type="primary" @click="openCreate">
+            <template #icon><n-icon><AddOutline /></n-icon></template>
+            新建资源
+          </n-button>
+        </div>
+        <n-space class="search-bar" :size="12" align="center">
+          <n-input
+            v-model:value="searchId"
+            placeholder="ID"
+            clearable
+            style="width: 90px"
+            @keyup.enter="handleSearch"
+          />
+          <n-input
+            v-model:value="searchKeyword"
+            placeholder="搜索标题..."
+            clearable
+            style="width: 200px"
+            @keyup.enter="handleSearch"
+          />
+          <n-select
+            v-model:value="searchCategory"
+            :options="categorySelectOptions"
+            placeholder="分类"
+            style="width: 160px"
+            clearable
+          />
+          <n-select
+            v-model:value="searchStatus"
+            :options="statusOptions"
+            placeholder="状态"
+            style="width: 130px"
+            clearable
+          />
+          <n-button type="primary" @click="handleSearch">
+            <template #icon><n-icon><SearchOutline /></n-icon></template>
+            搜索
+          </n-button>
+          <n-button @click="handleReset">
+            <template #icon><n-icon><RefreshOutline /></n-icon></template>
+            重置
+          </n-button>
+          <n-button
+            :disabled="checkedRowKeys.length === 0"
+            type="error"
+            @click="handleBatchDelete"
+          >
+            <template #icon><n-icon><TrashOutline /></n-icon></template>
+            批量删除
+          </n-button>
+        </n-space>
+        <div class="table-section">
+          <n-data-table
+            :columns="columns"
+            :data="list"
+            :loading="loading"
+            :bordered="false"
+            :scroll-x="1390"
+            :row-key="(row: any) => row.id"
+            @update:checked-row-keys="(keys: any) => (checkedRowKeys = keys)"
+          />
+          <div class="pagination-wrap" v-if="total > 0">
+            <n-pagination
+              :page="page"
+              :page-size="pageSize"
+              :page-sizes="[10, 20, 50]"
+              :item-count="total"
+              show-size-picker
+              @update:page="handlePageChange"
+              @update:page-size="handlePageSizeChange"
+            />
+          </div>
+        </div>
+      </n-tab-pane>
 
+      <!-- ============ Tab 2: 分类管理 ============ -->
+      <n-tab-pane name="categories" tab="分类管理">
+        <div class="page-header">
+          <h2 class="page-title">资源分类</h2>
+          <n-button type="primary" @click="catOpenCreate">
+            <template #icon><n-icon><AddOutline /></n-icon></template>
+            新建分类
+          </n-button>
+        </div>
+        <n-space class="search-bar" :size="12" align="center">
+          <n-input
+            v-model:value="catSearchId"
+            placeholder="ID"
+            clearable
+            style="width: 90px"
+            @keyup.enter="catHandleSearch"
+          />
+          <n-input
+            v-model:value="catSearchKeyword"
+            placeholder="搜索分类名称..."
+            clearable
+            style="width: 200px"
+            @keyup.enter="catHandleSearch"
+          />
+          <n-button type="primary" @click="catHandleSearch">
+            <template #icon><n-icon><SearchOutline /></n-icon></template>
+            搜索
+          </n-button>
+          <n-button @click="catHandleReset">
+            <template #icon><n-icon><RefreshOutline /></n-icon></template>
+            重置
+          </n-button>
+          <n-button
+            :disabled="catCheckedRowKeys.length === 0"
+            type="error"
+            @click="catHandleBatchDelete"
+          >
+            <template #icon><n-icon><TrashOutline /></n-icon></template>
+            批量删除
+          </n-button>
+        </n-space>
+        <div class="table-section">
+          <n-data-table
+            :columns="catColumns"
+            :data="catList"
+            :loading="catLoading"
+            :bordered="false"
+            :scroll-x="660"
+            :row-key="(row: any) => row.id"
+            @update:checked-row-keys="(keys: any) => (catCheckedRowKeys = keys)"
+          />
+          <div class="pagination-wrap" v-if="catTotal > 0">
+            <n-pagination
+              :page="catPage"
+              :page-size="catPageSize"
+              :page-sizes="[10, 20, 50]"
+              :item-count="catTotal"
+              show-size-picker
+              @update:page="catHandlePageChange"
+              @update:page-size="catHandlePageSizeChange"
+            />
+          </div>
+        </div>
+      </n-tab-pane>
+    </n-tabs>
+
+    <!-- ============ 资源编辑弹窗 ============ -->
     <n-modal
       v-model:show="showModal"
       preset="dialog"
@@ -530,18 +787,18 @@ const columns: DataTableColumns<Resource> = [
             <n-input v-model:value="formValue.title" placeholder="资源标题" />
           </n-form-item>
           <n-form-item label="副标题（简介）">
-            <n-input v-model:value="formValue.description" placeholder="一句话副标题/简介" />
+            <n-input v-model:value="formValue.description" placeholder="一句话副标题" />
           </n-form-item>
         </div>
 
         <div class="form-grid form-grid-3">
           <n-form-item label="分类">
             <n-select
-              v-model:value="formValue.category"
-              :options="categoryPresets.map((c) => ({ label: c, value: c }))"
-              placeholder="选择或自定义（上传文件夹名）"
+              v-model:value="formValue.categoryId"
+              :options="categorySelectOptions"
+              placeholder="选择分类"
               filterable
-              tag
+              clearable
             />
           </n-form-item>
           <n-form-item label="状态">
@@ -559,6 +816,32 @@ const columns: DataTableColumns<Resource> = [
             />
           </n-form-item>
         </div>
+
+        <!-- 可见性配置：紧跟状态字段，仅 private 时显示 -->
+        <template v-if="formValue.status === 'private'">
+          <div class="form-grid form-grid-2">
+            <n-form-item label="可见角色">
+              <n-select
+                v-model:value="formValue.allowedRoleIds"
+                :options="roleOptions"
+                placeholder="拥有这些角色的用户可见"
+                multiple
+                clearable
+                filterable
+              />
+            </n-form-item>
+            <n-form-item label="可见用户">
+              <n-select
+                v-model:value="formValue.allowedUserIds"
+                :options="userOptions"
+                placeholder="直接授权的用户"
+                multiple
+                clearable
+                filterable
+              />
+            </n-form-item>
+          </div>
+        </template>
 
         <div class="form-grid form-grid-2">
           <n-form-item label="价格（元）">
@@ -581,7 +864,7 @@ const columns: DataTableColumns<Resource> = [
           </n-form-item>
         </div>
 
-        <!-- 封面图：上传到 R2，folder 用分类 -->
+        <!-- 封面图：上传 + 媒体库选 -->
         <n-form-item label="封面图" class="res-form-item">
           <div class="cover-area">
             <div v-if="formValue.cover" class="cover-preview-frame">
@@ -599,48 +882,26 @@ const columns: DataTableColumns<Resource> = [
                 </n-button>
               </div>
             </div>
-            <n-upload
-              v-else
-              v-model:file-list="coverUploadFileList"
-              :show-file-list="false"
-              accept="image/*"
-              :custom-request="handleCoverSelect"
-              class="cover-upload"
-            >
-              <div class="cover-empty">
-                <n-icon size="28" color="#94A3B8"><CloudUploadOutline /></n-icon>
-                <span class="cover-empty-title">点击上传封面</span>
-                <span class="cover-empty-hint">上传到 R2，按分类归档</span>
-              </div>
-            </n-upload>
+            <div v-else class="cover-actions">
+              <n-upload
+                v-model:file-list="coverUploadFileList"
+                :show-file-list="false"
+                accept="image/*"
+                :custom-request="handleCoverSelect"
+                class="cover-upload"
+              >
+                <div class="cover-empty">
+                  <n-icon size="24" color="#94A3B8"><CloudUploadOutline /></n-icon>
+                  <span class="cover-empty-title">本地上传</span>
+                </div>
+              </n-upload>
+              <n-button quaternary type="primary" @click="openMediaPicker" class="cover-pick-btn">
+                <template #icon><n-icon><ImagesOutline /></n-icon></template>
+                从媒体库选
+              </n-button>
+            </div>
           </div>
         </n-form-item>
-
-        <!-- 可见性配置：private 状态时紧跟状态字段（就近原则） -->
-        <template v-if="formValue.status === 'private'">
-          <div class="form-grid form-grid-2">
-            <n-form-item label="可见角色（拥有这些角色的用户可见）">
-              <n-select
-                v-model:value="formValue.allowedRoleIds"
-                :options="roleOptions"
-                placeholder="选择可见的角色"
-                multiple
-                clearable
-                filterable
-              />
-            </n-form-item>
-            <n-form-item label="可见用户（直接授权单个用户）">
-              <n-select
-                v-model:value="formValue.allowedUserIds"
-                :options="userOptions"
-                placeholder="选择可见的用户"
-                multiple
-                clearable
-                filterable
-              />
-            </n-form-item>
-          </div>
-        </template>
 
         <n-form-item label="详细说明" class="res-form-item">
           <MdEditor
@@ -675,26 +936,81 @@ const columns: DataTableColumns<Resource> = [
         </n-form-item>
       </n-form>
     </n-modal>
+
+    <!-- ============ 媒体库选择弹窗 ============ -->
+    <n-modal
+      v-model:show="showMediaPicker"
+      preset="card"
+      title="从媒体库选取封面"
+      :style="{ width: '720px', maxWidth: '94vw' }"
+    >
+      <div v-if="mediaLoading" style="text-align: center; padding: 40px">加载中...</div>
+      <div v-else-if="mediaList.length === 0" style="text-align: center; padding: 40px; color: #999">
+        媒体库暂无图片
+      </div>
+      <div v-else class="media-grid">
+        <div
+          v-for="m in mediaList"
+          :key="m.id"
+          class="media-item"
+          @click="pickMedia(m)"
+          :title="m.originalName"
+        >
+          <n-image
+            :src="m.url"
+            :preview-disabled="true"
+            object-fit="cover"
+            style="width: 100%; height: 100%; display: block"
+          />
+        </div>
+      </div>
+    </n-modal>
+
+    <!-- ============ 分类编辑弹窗 ============ -->
+    <n-modal
+      v-model:show="catShowModal"
+      preset="dialog"
+      :title="catEditingId ? '编辑分类' : '新建分类'"
+      :positive-text="catSaving ? '提交中...' : '确认'"
+      :negative-text="catSaving ? undefined : '取消'"
+      :loading="catSaving"
+      :style="{ width: '480px', maxWidth: '94vw' }"
+      @positive-click="catHandleSave"
+    >
+      <n-form
+        ref="catFormRef"
+        :model="catFormValue"
+        :rules="catRules"
+        label-placement="top"
+        style="margin-top: 12px"
+      >
+        <n-form-item label="分类名称" path="name">
+          <n-input v-model:value="catFormValue.name" placeholder="如：PPT模板" />
+        </n-form-item>
+        <n-form-item label="描述">
+          <n-input v-model:value="catFormValue.description" type="textarea" placeholder="可选" :rows="2" />
+        </n-form-item>
+        <n-form-item label="排序权重">
+          <n-input-number v-model:value="catFormValue.sortOrder" :min="0" placeholder="越小越靠前" style="width: 100%" />
+        </n-form-item>
+      </n-form>
+    </n-modal>
   </div>
 </template>
 
 <style scoped>
-/* === 表单整体紧凑化：压缩 form-item 默认下边距 === */
+/* === 表单整体紧凑化 === */
 .res-form {
   margin-top: 12px;
 }
 .res-form :deep(.n-form-item) {
   margin-bottom: 14px;
 }
-/* 单列字段（标题/编辑器/网盘）用默认间距即可 */
-.res-form .res-form-item {
-  margin-bottom: 14px;
-}
 
-/* === 多列布局：CSS Grid 等分，替代 n-space+flex === */
+/* === 多列布局 === */
 .form-grid {
   display: grid;
-  gap: 0 16px; /* 列间距 16px，行间距由 form-item 控制 */
+  gap: 0 16px;
 }
 .form-grid-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -702,13 +1018,12 @@ const columns: DataTableColumns<Resource> = [
 .form-grid-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-/* grid 内的 form-item 撑满列宽并消除自身下边距（由容器控制） */
 .form-grid :deep(.n-form-item) {
   width: 100%;
   margin-bottom: 14px;
 }
 
-/* === 网盘链接行：名称(固定) + 链接(自适应) + 提取码(固定) === */
+/* === 网盘链接行 === */
 .pan-link-row {
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr) 130px;
@@ -722,32 +1037,30 @@ const columns: DataTableColumns<Resource> = [
   margin-top: 4px;
 }
 
-/* === MdEditor 在弹窗内的滚动隔离 === */
-.res-form :deep(.md-editor) {
-  border-radius: 6px;
-}
-
-/* === 封面图上传 === */
+/* === 封面图 === */
 .cover-area {
   width: 100%;
 }
+.cover-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .cover-upload {
-  width: 100%;
+  width: auto;
 }
 .cover-upload :deep(.n-upload),
 .cover-upload :deep(.n-upload-trigger) {
-  width: 100%;
   display: block;
 }
 .cover-empty {
-  width: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 20px 16px;
+  gap: 4px;
+  padding: 14px 20px;
   border: 1px dashed rgba(148, 163, 184, 0.4);
   border-radius: 8px;
   color: #94a3b8;
@@ -755,12 +1068,8 @@ const columns: DataTableColumns<Resource> = [
   transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
 }
 .cover-empty-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-}
-.cover-empty-hint {
-  font-size: 11px;
-  color: #b0b7c3;
 }
 .cover-empty:hover {
   border-color: #6366f1;
@@ -798,25 +1107,48 @@ const columns: DataTableColumns<Resource> = [
 .cover-preview-frame:hover .cover-overlay {
   opacity: 1;
 }
+
+/* === 媒体库网格 === */
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+}
+.media-item {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.15s ease;
+}
+.media-item:hover {
+  border-color: #6366f1;
+}
+
+/* === MdEditor === */
+.res-form :deep(.md-editor) {
+  border-radius: 6px;
+}
 </style>
 
-<!-- 非 scoped：modal teleport 到 body，需全局类名精准命中 -->
+<!-- 非 scoped：modal teleport 到 body -->
 <style>
 .res-modal {
-  /* 弹窗整体上下留出视口边距，避免顶边 */
   max-height: calc(100vh - 48px) !important;
   margin: 24px auto !important;
   display: flex !important;
   flex-direction: column !important;
 }
-/* 内容区限高 + 内部滚动，让长表单不再撑破视口 */
 .res-modal .n-dialog__content {
   max-height: calc(100vh - 180px) !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   padding-right: 4px;
 }
-/* 操作按钮区固定在底部，不被内容滚动带走 */
 .res-modal .n-dialog__action {
   flex-shrink: 0 !important;
 }

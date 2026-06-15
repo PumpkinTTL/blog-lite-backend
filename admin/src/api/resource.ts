@@ -11,7 +11,8 @@ export interface Resource {
   title: string
   description: string | null
   cover: string | null
-  category: string | null
+  categoryId: number | null
+  category?: { id: number; name: string } | null
   content: string | null
   panLinks: PanLink[] | null
   priceCents: number
@@ -30,7 +31,7 @@ export function getResources(params?: {
   id?: number
   keyword?: string
   status?: string
-  category?: string
+  categoryId?: number
   page?: number
   pageSize?: number
 }) {
