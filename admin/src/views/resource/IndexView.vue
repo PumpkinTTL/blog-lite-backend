@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, h } from 'vue'
+import { ref, h } from 'vue'
 import {
   NButton,
   NDataTable,
@@ -16,6 +16,8 @@ import {
   NDynamicInput,
 } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import { MdEditor } from 'md-editor-v3'
+import 'md-editor-v3/lib/style.css'
 import {
   AddOutline,
   TrashOutline,
@@ -35,6 +37,7 @@ import {
 } from '../../api/resource'
 import type { Resource, PanLink } from '../../api/resource'
 import { useCrudList } from '../../composables/useCrudList'
+import { isDark } from '../../theme'
 
 const formRef = ref<FormInst | null>(null)
 
@@ -448,7 +451,7 @@ const columns: DataTableColumns<Resource> = [
       :positive-text="saving ? '提交中...' : '确认'"
       :negative-text="saving ? undefined : '取消'"
       :loading="saving"
-      :style="{ width: '680px' }"
+      :style="{ width: '860px', maxWidth: '94vw' }"
       @positive-click="handleSave"
     >
       <n-form
@@ -456,13 +459,13 @@ const columns: DataTableColumns<Resource> = [
         :model="formValue"
         :rules="rules"
         label-placement="top"
-        style="margin-top: 12px"
+        class="res-form"
       >
-        <n-form-item label="标题" path="title">
+        <n-form-item label="标题" path="title" class="res-form-item">
           <n-input v-model:value="formValue.title" placeholder="资源标题" />
         </n-form-item>
 
-        <div class="form-grid form-grid-2">
+        <div class="form-grid form-grid-3">
           <n-form-item label="分类">
             <n-select
               v-model:value="formValue.category"
@@ -473,14 +476,8 @@ const columns: DataTableColumns<Resource> = [
             />
           </n-form-item>
           <n-form-item label="状态">
-            <n-select
-              v-model:value="formValue.status"
-              :options="formStatusOptions"
-            />
+            <n-select v-model:value="formValue.status" :options="formStatusOptions" />
           </n-form-item>
-        </div>
-
-        <div class="form-grid form-grid-3">
           <n-form-item label="最低会员等级">
             <n-select
               v-model:value="formValue.minMemberLevel"
@@ -488,6 +485,9 @@ const columns: DataTableColumns<Resource> = [
               placeholder="不限"
             />
           </n-form-item>
+        </div>
+
+        <div class="form-grid form-grid-2">
           <n-form-item label="价格（元）">
             <n-input-number
               v-model:value="formValue.priceYuan"
@@ -508,29 +508,27 @@ const columns: DataTableColumns<Resource> = [
           </n-form-item>
         </div>
 
-        <n-form-item label="封面图 URL">
-          <n-input v-model:value="formValue.cover" placeholder="https://..." />
-        </n-form-item>
+        <div class="form-grid form-grid-2">
+          <n-form-item label="封面图 URL">
+            <n-input v-model:value="formValue.cover" placeholder="https://..." />
+          </n-form-item>
+          <n-form-item label="简介">
+            <n-input v-model:value="formValue.description" placeholder="一句话介绍" />
+          </n-form-item>
+        </div>
 
-        <n-form-item label="简介">
-          <n-input
-            v-model:value="formValue.description"
-            type="textarea"
-            placeholder="一句话介绍"
-            :rows="2"
+        <n-form-item label="详细说明" class="res-form-item">
+          <MdEditor
+            v-model="formValue.content"
+            :theme="isDark ? 'dark' : 'light'"
+            style="height: 280px"
+            placeholder="资源详细说明（支持 Markdown / 图片拖拽粘贴）"
+            :toolbars-exclude="['github', 'htmlPreview', 'catalog', 'save']"
+            preview-theme="default"
           />
         </n-form-item>
 
-        <n-form-item label="详细说明">
-          <n-input
-            v-model:value="formValue.content"
-            type="textarea"
-            placeholder="资源详细说明（富文本后续支持）"
-            :rows="4"
-          />
-        </n-form-item>
-
-        <n-form-item label="网盘链接">
+        <n-form-item label="网盘链接" class="res-form-item">
           <div style="width: 100%">
             <n-dynamic-input
               v-model:value="formValue.panLinks"
@@ -539,23 +537,13 @@ const columns: DataTableColumns<Resource> = [
             >
               <template #default="{ value }">
                 <div class="pan-link-row">
-                  <n-input
-                    v-model:value="value.name"
-                    placeholder="网盘名称（如 夸克网盘）"
-                  />
-                  <n-input
-                    v-model:value="value.url"
-                    placeholder="分享链接"
-                    class="pan-link-url"
-                  />
-                  <n-input
-                    v-model:value="value.code"
-                    placeholder="提取码（可选）"
-                  />
+                  <n-input v-model:value="value.name" placeholder="网盘名称（如 夸克网盘）" />
+                  <n-input v-model:value="value.url" placeholder="分享链接" class="pan-link-url" />
+                  <n-input v-model:value="value.code" placeholder="提取码（可选）" />
                 </div>
               </template>
             </n-dynamic-input>
-            <div style="font-size: 12px; color: #999; margin-top: 4px">
+            <div class="pan-link-hint">
               可添加多个网盘（夸克/百度/蓝奏云等），提取码可选。链接内容仅对有权限用户展示。
             </div>
           </div>
@@ -584,11 +572,22 @@ const columns: DataTableColumns<Resource> = [
 </template>
 
 <style scoped>
-/* 表单多列布局：用 CSS Grid 替代 n-space+flex:1，宽度均分更稳 */
+/* === 表单整体紧凑化：压缩 form-item 默认下边距 === */
+.res-form {
+  margin-top: 12px;
+}
+.res-form :deep(.n-form-item) {
+  margin-bottom: 14px;
+}
+/* 单列字段（标题/编辑器/网盘）用默认间距即可 */
+.res-form .res-form-item {
+  margin-bottom: 14px;
+}
+
+/* === 多列布局：CSS Grid 等分，替代 n-space+flex === */
 .form-grid {
   display: grid;
-  gap: 0 16px; /* 列间距 16px，行间距由 form-item 自身控制 */
-  margin-bottom: 16px; /* 与下方 form-item 间距对齐 */
+  gap: 0 16px; /* 列间距 16px，行间距由 form-item 控制 */
 }
 .form-grid-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -596,18 +595,28 @@ const columns: DataTableColumns<Resource> = [
 .form-grid-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-/* grid 子项里的 form-item 撑满列宽，并消除默认下边距（由容器统一控制） */
+/* grid 内的 form-item 撑满列宽并消除自身下边距（由容器控制） */
 .form-grid :deep(.n-form-item) {
   width: 100%;
-  margin-bottom: 0;
+  margin-bottom: 14px;
 }
 
-/* 网盘链接行：名称(固定) + 链接(自适应) + 提取码(固定) */
+/* === 网盘链接行：名称(固定) + 链接(自适应) + 提取码(固定) === */
 .pan-link-row {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr) 120px;
+  grid-template-columns: 160px minmax(0, 1fr) 130px;
   gap: 8px;
   width: 100%;
   align-items: center;
+}
+.pan-link-hint {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+/* === MdEditor 在弹窗内的滚动隔离 === */
+.res-form :deep(.md-editor) {
+  border-radius: 6px;
 }
 </style>
