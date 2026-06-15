@@ -496,11 +496,11 @@ const statusText: Record<string, string> = {
 
 const columns: DataTableColumns<Resource> = [
   selectionColumn,
-  { title: 'ID', key: 'id', width: 60 },
+  { title: 'ID', key: 'id', width: 50 },
   {
     title: '封面',
     key: 'cover',
-    width: 70,
+    width: 56,
     render: (row) =>
       row.cover
         ? h('img', {
@@ -509,18 +509,18 @@ const columns: DataTableColumns<Resource> = [
           })
         : h('span', { style: 'color:#bbb' }, '-'),
   },
-  { title: '标题', key: 'title', width: 180, ellipsis: { tooltip: true } },
-  { title: '副标题', key: 'description', width: 160, ellipsis: { tooltip: true } },
+  { title: '标题', key: 'title', width: 160, ellipsis: { tooltip: true } },
+  { title: '副标题', key: 'description', width: 130, ellipsis: { tooltip: true } },
   {
     title: '分类',
     key: 'category',
-    width: 100,
+    width: 90,
     render: (row) => row.category?.name || h('span', { style: 'color:#bbb' }, '-'),
   },
   {
     title: '状态',
     key: 'status',
-    width: 90,
+    width: 80,
     render: (row) =>
       h(
         NTag,
@@ -531,7 +531,7 @@ const columns: DataTableColumns<Resource> = [
   {
     title: '网盘',
     key: 'panLinks',
-    width: 70,
+    width: 64,
     render: (row) =>
       h(
         NTag,
@@ -542,29 +542,29 @@ const columns: DataTableColumns<Resource> = [
   {
     title: '价格',
     key: 'priceCents',
-    width: 80,
+    width: 70,
     render: (row) => (row.priceCents > 0 ? `¥${(row.priceCents / 100).toFixed(2)}` : '免费'),
   },
   {
     title: '最低会员',
     key: 'minMemberLevel',
-    width: 90,
+    width: 84,
     render: (row) =>
       row.minMemberLevel
         ? h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => row.minMemberLevel })
         : h('span', { style: 'color:#bbb' }, '不限'),
   },
-  { title: '排序', key: 'sortOrder', width: 60 },
+  { title: '排序', key: 'sortOrder', width: 56 },
   {
     title: '创建时间',
     key: 'createdAt',
-    width: 150,
+    width: 140,
     render: (row) => new Date(row.createdAt).toLocaleString('zh-CN'),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 120,
+    width: 140,
     fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 'small', wrap: false }, {
@@ -825,7 +825,7 @@ const catColumns: DataTableColumns<ResourceCategory> = [
             :data="list"
             :loading="loading"
             :bordered="false"
-            :scroll-x="1390"
+            :scroll-x="1160"
             :row-key="(row: any) => row.id"
             @update:checked-row-keys="(keys: any) => (checkedRowKeys = keys)"
           />
@@ -1184,6 +1184,18 @@ const catColumns: DataTableColumns<ResourceCategory> = [
 </template>
 
 <style scoped>
+/* === 表格固定列修复：确保表格在 tab 内正确收缩、fixed 列 sticky 生效 === */
+.page-wrapper :deep(.n-tabs) {
+  min-width: 0;
+}
+.page-wrapper :deep(.n-tab-pane) {
+  min-width: 0;
+}
+.table-section {
+  min-width: 0;
+  width: 100%;
+}
+
 /* === 表单整体紧凑化 === */
 .res-form {
   margin-top: 12px;

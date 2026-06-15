@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, h, computed, onMounted } from 'vue'
-import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber, NTabs, NTabPane, NDatePicker } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber, NTabs, NTabPane, NDatePicker, NTooltip } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
-import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, BanOutline, PricetagOutline, PricetagsOutline } from '@vicons/ionicons5'
+import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, BanOutline, PricetagOutline, PricetagsOutline, CopyOutline } from '@vicons/ionicons5'
 import { getCodes, updateCode, deleteCode, batchCreateCodes, batchDisableCodes, batchDeleteCodes, getAllUsageLogs } from '../../api/code'
 import type { Code, CodeUsageLog, CodeDiscount } from '../../api/code'
 import { getPlans } from '../../api/plan'
 import type { Plan } from '../../api/plan'
+import { getResources } from '../../api/resource'
+import type { Resource } from '../../api/resource'
 import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
@@ -28,6 +30,7 @@ const typeOptions = [
   { label: '激活码', value: 'activation' },
   { label: '优惠码', value: 'discount' },
   { label: '会员码', value: 'membership' },
+  { label: '资源访问码', value: 'resource' },
 ]
 
 const statusOptions = [
@@ -38,8 +41,8 @@ const statusOptions = [
   { label: '禁用', value: 'disabled' },
 ]
 
-const typeTagMap: Record<string, string> = { invitation: 'info', activation: 'success', discount: 'warning', membership: 'error' }
-const typeLabelMap: Record<string, string> = { invitation: '邀请码', activation: '激活码', discount: '优惠码', membership: '会员码' }
+const typeTagMap: Record<string, string> = { invitation: 'info', activation: 'success', discount: 'warning', membership: 'error', resource: 'primary' }
+const typeLabelMap: Record<string, string> = { invitation: '邀请码', activation: '激活码', discount: '优惠码', membership: '会员码', resource: '资源访问码' }
 const statusTagMap: Record<string, string> = { active: 'success', used: 'warning', expired: 'default', disabled: 'error' }
 const statusLabelMap: Record<string, string> = { active: '有效', used: '已用', expired: '过期', disabled: '禁用' }
 
@@ -81,7 +84,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     updateApi: updateCode,
     deleteApi: deleteCode,
     deleteContent: (row) => `确定删除激活码「${row.code}」？`,
-    defaultForm: () => ({ type: 'activation', count: 1, maxUses: 1, expiryPreset: '30d' as string, expiresAt: null as number | null, discountType: 'fixed', discountValue: null, discountThreshold: null, planId: null as number | null }),
+    defaultForm: () => ({ type: 'activation', count: 1, maxUses: 1, expiryPreset: '30d' as string, expiresAt: null as number | null, discountType: 'fixed', discountValue: null, discountThreshold: null, planId: null as number | null, resourceId: null as number | null }),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) {
@@ -99,6 +102,7 @@ function openEdit(row: Code) {
   // 回显关联套餐（仅 membership 类型）
   const meta = (row.metadata as any) || {}
   const metaPlanId = (meta.planId as number | undefined) ?? null
+  const metaResourceId = (meta.resourceId as number | undefined) ?? null
   // expiresAt 字符串 → timestamp，NDatePicker 需要 number
   const expiresTs = row.expiresAt ? new Date(row.expiresAt).getTime() : null
   _openEdit(row, (r) => ({
@@ -110,6 +114,7 @@ function openEdit(row: Code) {
     discountValue: displayValue,
     discountThreshold: d?.threshold ?? null,
     planId: r.type === 'membership' ? metaPlanId : null,
+    resourceId: r.type === 'resource' ? metaResourceId : null,
   }))
 }
 
@@ -132,6 +137,34 @@ async function loadPlans() {
     planList.value = Array.isArray(payload) ? payload : (payload?.list || [])
   } catch {
     planList.value = []
+  }
+}
+
+// ==================== 资源下拉（资源访问码用）====================
+const resourceList = ref<Resource[]>([])
+const resourceOptions = computed(() => resourceList.value.map((r) => ({ label: `#${r.id} ${r.title}`, value: r.id })))
+const resourceMap = computed(() => {
+  const m = new Map<number, Resource>()
+  resourceList.value.forEach((r) => m.set(r.id, r))
+  return m
+})
+
+async function loadResources() {
+  try {
+    const res = await getResources({ page: 1, pageSize: 200 })
+    resourceList.value = res.data?.list || []
+  } catch {
+    resourceList.value = []
+  }
+}
+
+/** 复制资源 ID 到剪贴板 */
+async function copyResourceId(id: number) {
+  try {
+    await navigator.clipboard.writeText(String(id))
+    message.success(`已复制资源 ID：${id}`)
+  } catch {
+    message.error('复制失败，请手动选择复制')
   }
 }
 
@@ -204,6 +237,11 @@ async function handleSave() {
     message.warning('会员码必须关联一个套餐')
     return false
   }
+  // 资源访问码必须选资源（仅创建时校验，编辑时 type 不可改）
+  if (!editingId.value && formValue.value.type === 'resource' && !formValue.value.resourceId) {
+    message.warning('资源访问码必须关联一个资源')
+    return false
+  }
 
   saving.value = true
   try {
@@ -220,10 +258,12 @@ async function handleSave() {
       }
     }
     const maxUses = Number(formValue.value.maxUses) || 1
-    // 构造 metadata：会员码只带 planId，时长由套餐决定
+    // 构造 metadata：会员码带 planId，资源访问码带 resourceId
     let metadata: Record<string, unknown> | undefined
     if (formValue.value.type === 'membership' && formValue.value.planId) {
       metadata = { planId: Number(formValue.value.planId) }
+    } else if (formValue.value.type === 'resource' && formValue.value.resourceId) {
+      metadata = { resourceId: Number(formValue.value.resourceId) }
     }
 
     if (editingId.value) {
@@ -318,6 +358,7 @@ const createTypeOptions = [
   { label: '激活码', value: 'activation' },
   { label: '优惠码', value: 'discount' },
   { label: '会员码', value: 'membership' },
+  { label: '资源访问码', value: 'resource' },
 ]
 
 const discountTypeOptions = [
@@ -354,13 +395,39 @@ const codeColumns: DataTableColumns<Code> = [
     render: (row) => row.type === 'discount' ? h('span', null, renderDiscount(row.discount)) : '-',
   },
   {
-    title: '关联套餐', key: 'metadata', width: 140,
+    title: '关联', key: 'metadata', width: 180, ellipsis: { tooltip: true },
     render: (row) => {
-      if (row.type !== 'membership') return '-'
-      const pid = row.metadata?.planId as number | undefined
-      if (!pid) return '-'
-      const p = planMap.value.get(pid)
-      return p ? h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => p.name }) : `#${pid}`
+      if (row.type === 'membership') {
+        const pid = row.metadata?.planId as number | undefined
+        if (!pid) return '-'
+        const p = planMap.value.get(pid)
+        return p ? h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => p.name }) : `套餐#${pid}`
+      }
+      if (row.type === 'resource') {
+        const rid = row.metadata?.resourceId as number | undefined
+        if (!rid) return '-'
+        const r = resourceMap.value.get(rid)
+        // 资源名可能很长：Tag 内省略，hover tooltip 显示完整，附带可复制 ID 的按钮
+        const label = r ? `#${rid} ${r.title}` : `资源#${rid}`
+        const tooltipContent = r ? `#${rid} ${r.title}` : `资源 #${rid}`
+        return h(NSpace, { size: 4, align: 'center', wrap: false, style: 'min-width:0' }, {
+          default: () => [
+            h(NTooltip, { placement: 'top' }, {
+              trigger: () => h(NTag, {
+                size: 'small', type: 'primary', bordered: false,
+                style: 'max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap',
+              }, { default: () => label }),
+              default: () => tooltipContent,
+            }),
+            h(NButton, {
+              size: 'tiny', quaternary: true, type: 'primary',
+              title: '复制资源 ID',
+              onClick: () => copyResourceId(rid),
+            }, { icon: () => h(NIcon, { size: 13 }, { default: () => h(CopyOutline) }) }),
+          ],
+        })
+      }
+      return '-'
     },
   },
   {
@@ -464,6 +531,7 @@ function handleTabChange(tab: string) {
 
 onMounted(() => {
   loadPlans()
+  loadResources()
 })
 </script>
 
@@ -501,7 +569,7 @@ onMounted(() => {
 
         <div class="table-section">
           <n-data-table :columns="codeColumns" :data="list" :loading="loading" :bordered="false"
-        :scroll-x="1320"
+        :scroll-x="1360"
             :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
           <div class="pagination-wrap" v-if="total > 0">
             <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
@@ -568,6 +636,13 @@ onMounted(() => {
         <template v-if="formValue.type === 'membership'">
           <n-form-item label="关联套餐" path="planId">
             <n-select v-model:value="formValue.planId" :options="planOptions" placeholder="选择要开通的套餐" filterable />
+          </n-form-item>
+        </template>
+
+        <!-- 资源访问码专属字段 -->
+        <template v-if="formValue.type === 'resource'">
+          <n-form-item label="关联资源" path="resourceId">
+            <n-select v-model:value="formValue.resourceId" :options="resourceOptions" placeholder="选择可解锁的资源" filterable />
           </n-form-item>
         </template>
 

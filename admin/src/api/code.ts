@@ -9,7 +9,7 @@ export interface CodeDiscount {
 export interface Code {
   id: number
   code: string
-  type: 'invitation' | 'activation' | 'discount' | 'membership'
+  type: 'invitation' | 'activation' | 'discount' | 'membership' | 'resource'
   status: 'active' | 'used' | 'expired' | 'disabled'
   maxUses: number
   usedCount: number
