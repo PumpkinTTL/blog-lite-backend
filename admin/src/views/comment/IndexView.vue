@@ -3,7 +3,7 @@ import { ref, h, onMounted } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NSelect, NPagination, useDialog, useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { CheckmarkOutline, CloseOutline, TrashOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getAdminComments, moderateComment, batchModerateComment, deleteComment } from '../../api/comment'
+import { getAdminComments, moderateComment, batchModerateComment, deleteComment, batchDeleteComments } from '../../api/comment'
 import type { Comment, CommentStatus } from '../../api/comment'
 
 const message = useMessage()
@@ -116,6 +116,28 @@ async function handleBatchModerate(status: 'approved' | 'rejected') {
         loadList()
       } catch (e: any) {
         message.error(e?.message || '批量操作失败')
+      }
+    },
+  })
+}
+
+async function handleBatchDeleteComments() {
+  if (checkedRowKeys.value.length === 0) {
+    message.warning('请先选择要删除的评论')
+    return
+  }
+  dialog.warning({
+    title: '批量删除',
+    content: `确定要删除选中的 ${checkedRowKeys.value.length} 条评论吗？此操作不可恢复！`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await batchDeleteComments(checkedRowKeys.value)
+        message.success('批量删除成功')
+        loadList()
+      } catch (e: any) {
+        message.error(e?.message || '批量删除失败')
       }
     },
   })
@@ -242,6 +264,10 @@ onMounted(() => {
       <n-button :disabled="checkedRowKeys.length === 0" type="warning" @click="handleBatchModerate('rejected')">
         <template #icon><n-icon><CloseOutline /></n-icon></template>
         批量拒绝
+      </n-button>
+      <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDeleteComments">
+        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        批量删除
       </n-button>
     </n-space>
 

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
 import { PlanService } from './plan.service';
-import { CreatePlanDto, UpdatePlanDto } from './plan.dto';
+import { CreatePlanDto, UpdatePlanDto, BatchIdsDto } from './plan.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 
@@ -41,6 +41,12 @@ export class PlanController {
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePlanDto) {
     const plan = await this.planService.update(id, dto);
     return { success: true, data: plan, message: '更新成功' };
+  }
+
+  @Delete('batch')
+  async batchRemove(@Body() dto: BatchIdsDto) {
+    await this.planService.batchRemove(dto.ids);
+    return { success: true, message: '批量删除成功' };
   }
 
   @Delete(':id')

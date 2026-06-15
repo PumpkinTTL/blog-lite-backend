@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { AnnouncementService } from './announcement.service';
-import { CreateAnnouncementDto, UpdateAnnouncementDto } from './announcement.dto';
+import { CreateAnnouncementDto, UpdateAnnouncementDto, BatchIdsDto } from './announcement.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ANNOUNCEMENT_STATUS } from '../../common/constants/status';
@@ -65,6 +65,12 @@ export class AnnouncementController {
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateAnnouncementDto) {
     const data = await this.service.update(id, dto);
     return { success: true, data, message: '更新成功' };
+  }
+
+  @Delete('batch')
+  async batchRemove(@Body() dto: BatchIdsDto) {
+    await this.service.batchRemove(dto.ids);
+    return { success: true, message: '批量删除成功' };
   }
 
   @Delete(':id')

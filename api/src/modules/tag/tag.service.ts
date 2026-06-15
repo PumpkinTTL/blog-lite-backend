@@ -48,6 +48,16 @@ export class TagService {
     await this.tagRepo.delete(id);
   }
 
+  async batchRemove(ids: number[]): Promise<void> {
+    const placeholders = ids.map(() => '?').join(',');
+    const result = await this.dataSource.query(`SELECT COUNT(*) as cnt FROM post_tags WHERE tag_id IN (${placeholders})`, ids);
+    const count = Number(result[0]?.cnt ?? 0);
+    if (count > 0) {
+      throw new BadRequestException(`部分标签下有 ${count} 篇文章，无法删除`);
+    }
+    await this.tagRepo.delete(ids);
+  }
+
   async findPopular(limit = 10) {
     const rows = await this.dataSource.query(
       'SELECT t.*, COUNT(pt.post_id) as postCount FROM tags t LEFT JOIN post_tags pt ON pt.tag_id = t.id GROUP BY t.id ORDER BY postCount DESC LIMIT ?',

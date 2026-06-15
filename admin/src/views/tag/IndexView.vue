@@ -3,7 +3,7 @@ import { ref, h } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NPagination } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getTags, createTag, updateTag, deleteTag } from '../../api/tag'
+import { getTags, createTag, updateTag, deleteTag, batchDeleteTags } from '../../api/tag'
 import type { Tag } from '../../api/tag'
 import { useCrudList } from '../../composables/useCrudList'
 
@@ -15,7 +15,7 @@ const page = ref(1)
 const pageSize = ref(5)
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, message } =
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn, message } =
   useCrudList<Tag>({
     loadApi: (params) => getTags({
       ...params,
@@ -25,6 +25,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     createApi: createTag,
     updateApi: updateTag,
     deleteApi: deleteTag,
+    batchDeleteApi: batchDeleteTags,
     deleteContent: (row) => `确定删除标签「${row.name}」？`,
     defaultForm: () => ({ name: '', slug: '' }),
     extractList: (res) => {
@@ -70,6 +71,7 @@ const rules: FormRules = {
 }
 
 const columns: DataTableColumns<Tag> = [
+  selectionColumn,
   { title: 'ID', key: 'id', width: 70 },
   { title: '名称', key: 'name', width: 200 },
   { title: 'Slug', key: 'slug', width: 200 },
@@ -117,10 +119,15 @@ const columns: DataTableColumns<Tag> = [
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         重置
       </n-button>
+      <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">
+        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        批量删除
+      </n-button>
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1000" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1040"
+        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

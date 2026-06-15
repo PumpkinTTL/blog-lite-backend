@@ -50,6 +50,10 @@ export class DonationService {
     await this.repo.delete(id);
   }
 
+  async batchRemove(ids: number[]): Promise<void> {
+    await this.repo.delete(ids);
+  }
+
   async toggleStatus(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('捐赠记录不存在');

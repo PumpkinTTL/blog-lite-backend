@@ -1,6 +1,6 @@
-import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { PlanEntity } from './plan.entity';
 import { CreatePlanDto, UpdatePlanDto } from './plan.dto';
 
@@ -11,6 +11,7 @@ export class PlanService {
   constructor(
     @InjectRepository(PlanEntity)
     private readonly planRepo: Repository<PlanEntity>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async findAll(onlyActive = false) {
@@ -62,5 +63,22 @@ export class PlanService {
     // （这里不直接查 membership 表避免循环依赖；由调用方保证）
     await this.planRepo.remove(plan);
     this.logger.log(`删除套餐: ${plan.name} (${plan.slug})`);
+  }
+
+  async batchRemove(ids: number[]): Promise<void> {
+    const plans = await this.planRepo.find({ where: { id: In(ids) } });
+    if (plans.length === 0) return;
+
+    const result = await this.dataSource.query(
+      'SELECT COUNT(*) as cnt FROM memberships WHERE plan_id IN (?) AND status = ? AND (expires_at IS NULL OR expires_at >= NOW())',
+      [ids, 'active'],
+    );
+    const count = Number(result[0]?.cnt ?? 0);
+    if (count > 0) {
+      throw new BadRequestException(`部分套餐下有 ${count} 条未过期会员记录，无法删除`);
+    }
+
+    await this.planRepo.delete(ids);
+    this.logger.log(`批量删除套餐: ${plans.map(p => p.name).join(', ')}`);
   }
 }

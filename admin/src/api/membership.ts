@@ -73,6 +73,10 @@ export function deleteMembership(id: number) {
   return request.delete(`/membership/${id}`)
 }
 
+export function batchDeleteMemberships(ids: number[]) {
+  return request.delete('/membership/batch', { data: { ids } })
+}
+
 export function redeemMembership(code: string) {
   return request.post('/membership/redeem', { code })
 }

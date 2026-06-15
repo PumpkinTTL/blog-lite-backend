@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { TagService } from './tag.service';
-import { CreateTagDto, UpdateTagDto } from './tag.dto';
+import { CreateTagDto, UpdateTagDto, BatchIdsDto } from './tag.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 
@@ -46,6 +46,12 @@ export class TagController {
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateTagDto) {
     const data = await this.tagService.update(id, dto);
     return { success: true, data, message: '更新成功' };
+  }
+
+  @Delete('batch')
+  async batchRemove(@Body() dto: BatchIdsDto) {
+    await this.tagService.batchRemove(dto.ids);
+    return { success: true, message: '批量删除成功' };
   }
 
   @Delete(':id')

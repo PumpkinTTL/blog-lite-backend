@@ -29,3 +29,7 @@ export function updateFriendLink(id: number, data: any) {
 export function deleteFriendLink(id: number) {
   return request.delete(`/friend-link/${id}`)
 }
+
+export function batchDeleteFriendLinks(ids: number[]) {
+  return request.delete('/friend-link/batch', { data: { ids } })
+}

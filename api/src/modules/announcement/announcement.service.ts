@@ -59,4 +59,8 @@ export class AnnouncementService {
   async remove(id: number) {
     await this.repo.delete(id);
   }
+
+  async batchRemove(ids: number[]): Promise<void> {
+    await this.repo.delete(ids);
+  }
 }

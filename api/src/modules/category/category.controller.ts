@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { CategoryService } from './category.service';
-import { CreateCategoryDto, UpdateCategoryDto } from './category.dto';
+import { CreateCategoryDto, UpdateCategoryDto, BatchIdsDto } from './category.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 
@@ -46,6 +46,12 @@ export class CategoryController {
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
     const data = await this.categoryService.update(id, dto);
     return { success: true, data, message: '更新成功' };
+  }
+
+  @Delete('batch')
+  async batchRemove(@Body() dto: BatchIdsDto) {
+    await this.categoryService.batchRemove(dto.ids);
+    return { success: true, message: '批量删除成功' };
   }
 
   @Delete(':id')

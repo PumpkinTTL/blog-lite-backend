@@ -59,3 +59,7 @@ export function updatePost(id: number, data: any) {
 export function deletePost(id: number) {
   return request.delete(`/post/${id}`)
 }
+
+export function batchDeletePosts(ids: number[]) {
+  return request.post('/post/batch/delete', { ids })
+}

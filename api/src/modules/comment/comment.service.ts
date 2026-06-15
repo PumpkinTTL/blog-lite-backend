@@ -285,6 +285,50 @@ export class CommentService {
     await this.postRepo.update({ id: entityId }, { commentCount: count });
   }
 
+  /**
+   * 管理端批量删除评论
+   * 删除一级评论时同步删除其所有二级评论，并更新 post.commentCount
+   *
+   * 实现细节：分两步删除以避免外键约束错误
+   *  - 先删所有子评论 (parentId IN topLevelIds)
+   *  - 再删选中的评论本身 (含一级和单独选中的二级)
+   *  MySQL 的 ON DELETE NO ACTION 不允许父先行删除，必须先子后父
+   */
+  async batchRemove(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+
+    const comments = await this.repo.find({
+      where: { id: In(ids) },
+      select: ['id', 'entityType', 'entityId', 'parentId', 'status'],
+    });
+
+    if (comments.length === 0) return;
+
+    // 收集受影响的实体（仅 approved 状态的评论被删除才影响计数）
+    const affectedEntities = new Set<string>();
+    for (const c of comments) {
+      if (c.status === 'approved') {
+        affectedEntities.add(`${c.entityType}:${c.entityId}`);
+      }
+    }
+
+    // Step 1: 找出选中项中的一级评论，先删除其下所有二级回复
+    // （即使这些二级回复没被选中，也要一并清理，避免孤儿评论 + FK 约束）
+    const topLevelIds = comments.filter((c) => c.parentId === null).map((c) => c.id);
+    if (topLevelIds.length > 0) {
+      await this.repo.delete({ parentId: In(topLevelIds) });
+    }
+
+    // Step 2: 删除所有选中的评论（此时父的子已全部清理，FK 不再阻止）
+    await this.repo.delete({ id: In(ids) });
+
+    // 同步 post.commentCount
+    for (const key of affectedEntities) {
+      const [entityType, entityIdStr] = key.split(':');
+      await this.syncPostCommentCount(entityType, Number(entityIdStr));
+    }
+  }
+
   // ===== 内部计数（供 PostService 同步 commentCount）=====
 
   /**

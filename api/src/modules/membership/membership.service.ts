@@ -149,6 +149,10 @@ export class MembershipService implements OnModuleInit {
     await this.memberRepo.remove(m);
   }
 
+  async batchRemove(ids: number[]): Promise<void> {
+    await this.memberRepo.delete(ids);
+  }
+
   /**
    * 获取用户当前的最高会员等级（取所有 active 订阅中等级最高的）
    * 返回 null 表示无会员

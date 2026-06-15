@@ -18,6 +18,7 @@ import {
   CreateCommentDto,
   UpdateCommentDto,
   ModerateCommentDto,
+  BatchIdsDto,
 } from './comment.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -140,6 +141,16 @@ export class CommentController {
       data: comment,
       message: dto.status === 'approved' ? '已通过' : '已拒绝',
     };
+  }
+
+  /**
+   * 批量删除
+   */
+  @Roles('admin')
+  @Delete('admin/batch')
+  async batchRemove(@Body() dto: BatchIdsDto) {
+    await this.service.batchRemove(dto.ids);
+    return { success: true, message: '批量删除成功' };
   }
 
   /**

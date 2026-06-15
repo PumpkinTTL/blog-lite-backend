@@ -3,7 +3,7 @@ import { ref, h } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NPagination } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getRoles, createRole, updateRole, deleteRole } from '../../api/role'
+import { getRoles, createRole, updateRole, deleteRole, batchDeleteRoles } from '../../api/role'
 import type { Role } from '../../api/role'
 import { useCrudList } from '../../composables/useCrudList'
 
@@ -15,7 +15,7 @@ const page = ref(1)
 const pageSize = ref(5)
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave, handleDelete } =
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn } =
   useCrudList<Role>({
     loadApi: (params) => getRoles({
       ...params,
@@ -25,6 +25,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     createApi: createRole,
     updateApi: updateRole,
     deleteApi: deleteRole,
+    batchDeleteApi: batchDeleteRoles,
     deleteContent: (row) => `确定删除角色「${row.displayName}」？`,
     defaultForm: () => ({ name: '', displayName: '', description: '' }),
     extractList: (res) => {
@@ -68,6 +69,7 @@ const rules: FormRules = {
 }
 
 const columns: DataTableColumns<Role> = [
+  selectionColumn,
   { title: 'ID', key: 'id', width: 70 },
   { title: '标识', key: 'name', width: 160 },
   { title: '显示名称', key: 'displayName', width: 160 },
@@ -115,6 +117,10 @@ const columns: DataTableColumns<Role> = [
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         重置
       </n-button>
+      <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">
+        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        批量删除
+      </n-button>
     </n-space>
 
     <div class="table-section">
@@ -123,7 +129,9 @@ const columns: DataTableColumns<Role> = [
         :data="list"
         :loading="loading"
         :bordered="false"
-        :scroll-x="910"
+        :scroll-x="950"
+        :row-key="(row: any) => row.id"
+        @update:checked-row-keys="(keys: any) => checkedRowKeys = keys"
       />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

@@ -57,3 +57,8 @@ export function batchModerateComment(ids: number[], status: 'approved' | 'reject
 export function deleteComment(id: number) {
   return request.delete(`/comment/${id}`)
 }
+
+/** 批量删除 */
+export function batchDeleteComments(ids: number[]) {
+  return request.delete('/comment/admin/batch', { data: { ids } })
+}

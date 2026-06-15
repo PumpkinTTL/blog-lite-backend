@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsIn, IsEnum, Min, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsIn, IsEnum, Min, MaxLength, IsArray, IsInt } from 'class-validator';
 import type { PayMethod, CryptoNetwork, DonationStatus } from './donation.entity';
 
 export class CreateDonationDto {
@@ -73,6 +73,12 @@ export class CreateDonationDto {
   @IsOptional()
   @MaxLength(255)
   remark?: string;
+}
+
+export class BatchIdsDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
 }
 
 export class UpdateDonationDto {

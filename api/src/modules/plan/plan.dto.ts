@@ -50,6 +50,12 @@ export class CreatePlanDto {
   sort?: number;
 }
 
+export class BatchIdsDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
+}
+
 export class UpdatePlanDto {
   @IsString()
   @IsOptional()

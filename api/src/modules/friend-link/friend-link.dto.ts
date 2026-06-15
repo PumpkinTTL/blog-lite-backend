@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsIn, IsUrl } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsIn, IsUrl, IsArray } from 'class-validator';
 
 export class CreateFriendLinkDto {
   @IsString()
@@ -26,6 +26,12 @@ export class CreateFriendLinkDto {
   @IsInt()
   @IsOptional()
   postId?: number | null;
+}
+
+export class BatchIdsDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
 }
 
 export class UpdateFriendLinkDto {

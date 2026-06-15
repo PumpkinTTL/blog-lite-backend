@@ -24,3 +24,7 @@ export function updateCategory(id: number, data: Partial<Category>) {
 export function deleteCategory(id: number) {
   return request.delete(`/category/${id}`)
 }
+
+export function batchDeleteCategories(ids: number[]) {
+  return request.delete('/category/batch', { data: { ids } })
+}

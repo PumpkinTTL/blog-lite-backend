@@ -8,11 +8,11 @@ import {
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, GiftOutline, BanOutline } from '@vicons/ionicons5'
 import {
-  getPlans, createPlan, updatePlan, deletePlan,
+  getPlans, createPlan, updatePlan, deletePlan, batchDeletePlans,
 } from '../../api/plan'
 import type { Plan, PlanLevel } from '../../api/plan'
 import {
-  getMemberships, grantMembership, updateMembership, deleteMembership,
+  getMemberships, grantMembership, updateMembership, deleteMembership, batchDeleteMemberships,
 } from '../../api/membership'
 import type { Membership, MembershipStatus, MembershipSource } from '../../api/membership'
 import { getUsers } from '../../api/user'
@@ -26,6 +26,7 @@ const activeTab = ref('plans')
 // ==================== Tab 1: 套餐管理 ====================
 const planLoading = ref(false)
 const plans = ref<Plan[]>([])
+const planCheckedRowKeys = ref<number[]>([])
 const planModalShow = ref(false)
 const planEditingId = ref<number | null>(null)
 const planSaving = ref(false)
@@ -179,7 +180,31 @@ function handlePlanDelete(plan: Plan) {
   })
 }
 
+function handlePlanBatchDelete() {
+  if (planCheckedRowKeys.value.length === 0) {
+    message.warning('请先选择要删除的套餐')
+    return
+  }
+  dialog.warning({
+    title: '批量删除',
+    content: `确定删除选中的 ${planCheckedRowKeys.value.length} 个套餐?此操作不可恢复!`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await batchDeletePlans(planCheckedRowKeys.value)
+        message.success('批量删除成功')
+        planCheckedRowKeys.value = []
+        loadPlans()
+      } catch (e: any) {
+        message.error(e?.message || '批量删除失败')
+      }
+    },
+  })
+}
+
 const planColumns: DataTableColumns<Plan> = [
+  { type: 'selection', width: 40 },
   { title: 'ID', key: 'id', width: 60 },
   { title: '名称', key: 'name', width: 160, ellipsis: { tooltip: true } },
   { title: 'Slug', key: 'slug', width: 140, ellipsis: { tooltip: true } },
@@ -235,6 +260,7 @@ const memberPageSize = ref(10)
 const memberSearchStatus = ref<MembershipStatus | null>(null)
 const memberSearchSource = ref<MembershipSource | null>(null)
 const memberSearchUserId = ref<string>('')
+const memberCheckedRowKeys = ref<number[]>([])
 
 // Grant 弹窗
 const grantModalShow = ref(false)
@@ -398,6 +424,29 @@ function handleMemberDelete(row: Membership) {
   })
 }
 
+function handleMemberBatchDelete() {
+  if (memberCheckedRowKeys.value.length === 0) {
+    message.warning('请先选择要删除的会员记录')
+    return
+  }
+  dialog.warning({
+    title: '批量删除',
+    content: `确定删除选中的 ${memberCheckedRowKeys.value.length} 条会员记录?此操作不可恢复!`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await batchDeleteMemberships(memberCheckedRowKeys.value)
+        message.success('批量删除成功')
+        memberCheckedRowKeys.value = []
+        loadMembers()
+      } catch (e: any) {
+        message.error(e?.message || '批量删除失败')
+      }
+    },
+  })
+}
+
 function handleMemberSearch() {
   memberPage.value = 1
   loadMembers()
@@ -422,6 +471,7 @@ function handleMemberPageSizeChange(s: number) {
 }
 
 const memberColumns: DataTableColumns<Membership> = [
+  { type: 'selection', width: 40 },
   { title: 'ID', key: 'id', width: 60 },
   {
     title: '用户', key: 'userId', width: 140,
@@ -494,10 +544,16 @@ onMounted(() => {
       <n-tab-pane name="plans" tab="套餐管理">
         <div class="page-header">
           <h2 class="page-title">套餐管理</h2>
-          <n-button type="primary" @click="openPlanCreate">
-            <template #icon><n-icon><AddOutline /></n-icon></template>
-            新建套餐
-          </n-button>
+          <n-space :size="8" align="center">
+            <n-button :disabled="planCheckedRowKeys.length === 0" type="error" @click="handlePlanBatchDelete">
+              <template #icon><n-icon><TrashOutline /></n-icon></template>
+              批量删除
+            </n-button>
+            <n-button type="primary" @click="openPlanCreate">
+              <template #icon><n-icon><AddOutline /></n-icon></template>
+              新建套餐
+            </n-button>
+          </n-space>
         </div>
         <div class="table-section">
           <n-data-table
@@ -505,7 +561,9 @@ onMounted(() => {
             :data="plans"
             :loading="planLoading"
             :bordered="false"
-            :scroll-x="1320"
+            :scroll-x="1360"
+            :row-key="(row: Plan) => row.id"
+            @update:checked-row-keys="(keys: any) => planCheckedRowKeys = keys"
           />
         </div>
       </n-tab-pane>
@@ -514,10 +572,16 @@ onMounted(() => {
       <n-tab-pane name="memberships" tab="会员记录">
         <div class="page-header">
           <h2 class="page-title">会员记录</h2>
-          <n-button type="primary" @click="openGrant">
-            <template #icon><n-icon><GiftOutline /></n-icon></template>
-            手动开通
-          </n-button>
+          <n-space :size="8" align="center">
+            <n-button :disabled="memberCheckedRowKeys.length === 0" type="error" @click="handleMemberBatchDelete">
+              <template #icon><n-icon><TrashOutline /></n-icon></template>
+              批量删除
+            </n-button>
+            <n-button type="primary" @click="openGrant">
+              <template #icon><n-icon><GiftOutline /></n-icon></template>
+              手动开通
+            </n-button>
+          </n-space>
         </div>
 
         <n-space class="search-bar" :size="12" align="center">
@@ -540,7 +604,9 @@ onMounted(() => {
             :data="members"
             :loading="memberLoading"
             :bordered="false"
-            :scroll-x="1340"
+            :scroll-x="1380"
+            :row-key="(row: Membership) => row.id"
+            @update:checked-row-keys="(keys: any) => memberCheckedRowKeys = keys"
           />
           <div class="pagination-wrap" v-if="memberTotal > 0">
             <n-pagination

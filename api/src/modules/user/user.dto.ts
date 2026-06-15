@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsInt, MinLength, IsEmail, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsInt, MinLength, IsEmail, IsIn, ArrayNotEmpty } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -69,6 +69,13 @@ export class UpdateProfileDto {
   @IsString()
   @IsOptional()
   avatar?: string;
+}
+
+export class BatchIdsDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsInt({ each: true })
+  ids: number[];
 }
 
 export class ResetPasswordDto {

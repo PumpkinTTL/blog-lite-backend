@@ -3,7 +3,7 @@ import { ref, onMounted, h, watch } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch, NAvatar, NUpload } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getUsers, createUser, updateUser, deleteUser, toggleUserStatus } from '../../api/user'
+import { getUsers, createUser, updateUser, deleteUser, batchDeleteUsers, toggleUserStatus } from '../../api/user'
 import type { User } from '../../api/user'
 import { getRoles } from '../../api/role'
 import type { Role } from '../../api/role'
@@ -90,7 +90,7 @@ async function handleAvatarChange(data: { file: any; fileList: any[] }) {
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
   handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit: _openEdit,
-  handleSave: _handleSave, handleDelete, message } =
+  handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn, message } =
   useCrudList<User>({
     loadApi: (params) => getUsers({
       ...params,
@@ -106,6 +106,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
       return updateUser(id, payload)
     },
     deleteApi: deleteUser,
+    batchDeleteApi: batchDeleteUsers,
     deleteContent: (row) => `确定删除用户「${row.nickname}」？`,
     defaultForm: () => ({ username: '', password: '', nickname: '', email: '', status: 1, roleIds: [] }),
     extractList: (res) => {
@@ -207,6 +208,7 @@ const rules: FormRules = {
 }
 
 const columns: DataTableColumns<User> = [
+  selectionColumn,
   { title: 'ID', key: 'id', width: 70 },
   { title: '账号', key: 'username', width: 140 },
   { title: '昵称', key: 'nickname', width: 140 },
@@ -282,10 +284,15 @@ const columns: DataTableColumns<User> = [
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         重置
       </n-button>
+      <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">
+        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        批量删除
+      </n-button>
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1260" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1300"
+        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

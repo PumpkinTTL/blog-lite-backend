@@ -3,7 +3,7 @@ import { ref, h } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getFriendLinks, createFriendLink, updateFriendLink, deleteFriendLink } from '../../api/friend-link'
+import { getFriendLinks, createFriendLink, updateFriendLink, deleteFriendLink, batchDeleteFriendLinks } from '../../api/friend-link'
 import type { FriendLink } from '../../api/friend-link'
 import { useCrudList } from '../../composables/useCrudList'
 
@@ -24,7 +24,7 @@ const friendLinkStatusOptions = [
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
   handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit,
-  handleSave: _handleSave, handleDelete, message } =
+  handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn, message } =
   useCrudList<FriendLink>({
     loadApi: (params) => getFriendLinks({
       ...params,
@@ -35,6 +35,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     createApi: (data) => createFriendLink(data),
     updateApi: (id, data) => updateFriendLink(id, data),
     deleteApi: deleteFriendLink,
+    batchDeleteApi: batchDeleteFriendLinks,
     deleteContent: (row) => `确定删除友链「${row.name}」？`,
     defaultForm: () => ({ name: '', url: '', logo: '', description: '', status: 'visible', sortOrder: 0, postId: null }),
     extractList: (res) => {
@@ -91,6 +92,7 @@ const rules: FormRules = {
 }
 
 const columns: DataTableColumns<FriendLink> = [
+  selectionColumn,
   { title: 'ID', key: 'id', width: 70 },
   { title: '名称', key: 'name', width: 200, ellipsis: { tooltip: true } },
   { title: 'URL', key: 'url', ellipsis: { tooltip: true }, width: 200 },
@@ -148,9 +150,14 @@ const columns: DataTableColumns<FriendLink> = [
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         重置
       </n-button>
+      <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">
+        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        批量删除
+      </n-button>
     </n-space>
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1030" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1070"
+        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

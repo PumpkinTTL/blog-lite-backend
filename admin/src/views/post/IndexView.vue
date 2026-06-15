@@ -4,7 +4,7 @@ import { NButton, NDataTable, NSpace, NTag, NInput, NIcon, NSelect, NPagination,
 import type { DataTableColumns } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, ImageOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
-import { getPosts, deletePost } from '../../api/post'
+import { getPosts, deletePost, batchDeletePosts } from '../../api/post'
 import type { Post } from '../../api/post'
 import { getCategories } from '../../api/category'
 
@@ -21,6 +21,7 @@ const searchKeyword = ref('')
 const searchStatus = ref<string | null>(null)
 const searchCategoryId = ref<number | null>(null)
 const categoryOptions = ref<{ label: string; value: number }[]>([])
+const checkedRowKeys = ref<number[]>([])
 
 const statusOptions = [
   { label: '全部', value: null },
@@ -38,6 +39,7 @@ function resolveCoverUrl(url: string | null): string {
 }
 
 const columns: DataTableColumns<Post> = [
+  { type: 'selection', width: 40 },
   { title: 'ID', key: 'id', width: 70 },
   {
     title: '封面',
@@ -201,6 +203,26 @@ function handleDelete(row: Post) {
   })
 }
 
+async function handleBatchDelete() {
+  if (checkedRowKeys.value.length === 0) { message.warning('请先选择要删除的文章'); return }
+  dialog.warning({
+    title: '批量删除',
+    content: `确定要删除选中的 ${checkedRowKeys.value.length} 篇文章吗？此操作不可恢复！`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await batchDeletePosts(checkedRowKeys.value)
+        message.success('批量删除成功')
+        checkedRowKeys.value = []
+        loadPosts()
+      } catch (e: any) {
+        message.error(e.message || '批量删除失败')
+      }
+    },
+  })
+}
+
 onMounted(() => { loadPosts(); loadCategoryOptions() })
 </script>
 
@@ -226,10 +248,15 @@ onMounted(() => { loadPosts(); loadCategoryOptions() })
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         重置
       </n-button>
+      <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">
+        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        批量删除
+      </n-button>
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" :scroll-x="1560" />
+      <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" :scroll-x="1600"
+        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

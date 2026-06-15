@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsArray } from 'class-validator';
 
 export class CreateCategoryDto {
   @IsString()
@@ -18,6 +18,12 @@ export class CreateCategoryDto {
   @IsInt()
   @IsOptional()
   parentId?: number | null;
+}
+
+export class BatchIdsDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
 }
 
 export class UpdateCategoryDto {

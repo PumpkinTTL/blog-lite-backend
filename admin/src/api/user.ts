@@ -65,6 +65,10 @@ export function deleteUser(id: number) {
   return request.delete(`/user/${id}`)
 }
 
+export function batchDeleteUsers(ids: number[]) {
+  return request.delete('/user/batch', { data: { ids } })
+}
+
 export function toggleUserStatus(id: number) {
   return request.put(`/user/${id}/toggle-status`)
 }

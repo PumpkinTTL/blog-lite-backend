@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsInt } from 'class-validator';
 
 export class CreateTagDto {
   @IsString()
@@ -6,6 +6,12 @@ export class CreateTagDto {
 
   @IsString()
   slug: string;
+}
+
+export class BatchIdsDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
 }
 
 export class UpdateTagDto {

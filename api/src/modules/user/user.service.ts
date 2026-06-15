@@ -197,6 +197,26 @@ export class UserService {
     await this.userRepo.delete(id);
   }
 
+  async batchRemove(ids: number[], currentUserId: number): Promise<void> {
+    if (ids.includes(currentUserId)) {
+      throw new BadRequestException('不能删除自己');
+    }
+
+    const users = await this.userRepo.find({
+      where: { id: In(ids) },
+      relations: ['roles'],
+    });
+
+    for (const user of users) {
+      const hasAdmin = user.roles?.some((r) => r.name === 'admin');
+      if (hasAdmin) {
+        throw new BadRequestException(`用户「${user.nickname || user.username}」是管理员，不能删除`);
+      }
+    }
+
+    await this.userRepo.delete(ids);
+  }
+
   /**
    * 切换用户状态（启用/禁用）
    */

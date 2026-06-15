@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsIn, IsArray } from 'class-validator';
 
 export class CreateAnnouncementDto {
   @IsString()
@@ -14,6 +14,12 @@ export class CreateAnnouncementDto {
   @IsInt()
   @IsOptional()
   sortOrder?: number;
+}
+
+export class BatchIdsDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
 }
 
 export class UpdateAnnouncementDto {

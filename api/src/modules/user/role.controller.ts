@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { RoleService } from './role.service';
-import { CreateRoleDto, UpdateRoleDto } from './role.dto';
+import { CreateRoleDto, UpdateRoleDto, BatchIdsDto } from './role.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('role')
@@ -36,6 +36,12 @@ export class RoleController {
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateRoleDto) {
     const data = await this.roleService.update(id, dto);
     return { success: true, data, message: '更新成功' };
+  }
+
+  @Delete('batch')
+  async batchRemove(@Body() dto: BatchIdsDto) {
+    await this.roleService.batchRemove(dto.ids);
+    return { success: true, message: '批量删除成功' };
   }
 
   @Delete(':id')

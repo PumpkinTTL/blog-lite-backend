@@ -3,7 +3,7 @@ import { ref, h } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../../api/announcement'
+import { getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, batchDeleteAnnouncements } from '../../api/announcement'
 import type { Announcement } from '../../api/announcement'
 import { useCrudList } from '../../composables/useCrudList'
 
@@ -23,7 +23,7 @@ const announcementStatusOptions = [
 ]
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, message } =
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn, message } =
   useCrudList<Announcement>({
     loadApi: (params) => getAnnouncements({
       ...params,
@@ -34,6 +34,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     createApi: createAnnouncement,
     updateApi: updateAnnouncement,
     deleteApi: deleteAnnouncement,
+    batchDeleteApi: batchDeleteAnnouncements,
     deleteContent: (row) => `确定删除公告「${row.title}」？`,
     defaultForm: () => ({ title: '', content: '', status: 'visible', sortOrder: 0 }),
     extractList: (res) => {
@@ -80,6 +81,7 @@ const rules: FormRules = {
 }
 
 const columns: DataTableColumns<Announcement> = [
+  selectionColumn,
   { title: 'ID', key: 'id', width: 70 },
   { title: '标题', key: 'title', ellipsis: { tooltip: true }, width: 200 },
   { title: '内容', key: 'content', width: 300, ellipsis: { tooltip: true } },
@@ -129,9 +131,14 @@ const columns: DataTableColumns<Announcement> = [
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         重置
       </n-button>
+      <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">
+        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        批量删除
+      </n-button>
     </n-space>
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1050" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1090"
+        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

@@ -22,3 +22,7 @@ export function updateTag(id: number, data: Partial<Tag>) {
 export function deleteTag(id: number) {
   return request.delete(`/tag/${id}`)
 }
+
+export function batchDeleteTags(ids: number[]) {
+  return request.delete('/tag/batch', { data: { ids } })
+}

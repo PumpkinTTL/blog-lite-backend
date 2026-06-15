@@ -45,3 +45,7 @@ export function updatePlan(id: number, data: Partial<Plan>) {
 export function deletePlan(id: number) {
   return request.delete(`/plan/${id}`)
 }
+
+export function batchDeletePlans(ids: number[]) {
+  return request.delete('/plan/batch', { data: { ids } })
+}

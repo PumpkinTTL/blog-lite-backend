@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { MembershipService } from './membership.service';
-import { GrantMembershipDto, UpdateMembershipDto, RedeemMembershipDto } from './membership.dto';
+import { GrantMembershipDto, UpdateMembershipDto, RedeemMembershipDto, BatchIdsDto } from './membership.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CodeService } from '../code/code.service';
@@ -65,6 +65,13 @@ export class MembershipController {
   async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateMembershipDto) {
     const m = await this.memberService.update(id, dto);
     return { success: true, data: m, message: '更新成功' };
+  }
+
+  @Delete('batch')
+  @Roles('admin')
+  async batchRemove(@Body() dto: BatchIdsDto) {
+    await this.memberService.batchRemove(dto.ids);
+    return { success: true, message: '批量删除成功' };
   }
 
   @Delete(':id')

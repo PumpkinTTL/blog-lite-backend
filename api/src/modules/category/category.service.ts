@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { CategoryEntity } from './category.entity';
 import { PostEntity } from '../post/post.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
@@ -74,6 +74,14 @@ export class CategoryService {
       throw new BadRequestException(`该分类下有 ${count} 篇文章，无法删除`);
     }
     await this.categoryRepo.delete(id);
+  }
+
+  async batchRemove(ids: number[]): Promise<void> {
+    const count = await this.postRepo.count({ where: { categoryId: In(ids) } });
+    if (count > 0) {
+      throw new BadRequestException(`部分分类下有 ${count} 篇文章，无法删除`);
+    }
+    await this.categoryRepo.delete(ids);
   }
 
   async findTree() {

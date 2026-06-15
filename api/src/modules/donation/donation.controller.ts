@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { DonationService } from './donation.service';
-import { CreateDonationDto, UpdateDonationDto } from './donation.dto';
+import { CreateDonationDto, UpdateDonationDto, BatchIdsDto } from './donation.dto';
 import { DonationStatus } from './donation.entity';
 import { Roles } from '../../common/decorators/roles.decorator';
 
@@ -86,6 +86,12 @@ export class DonationController {
   async toggleVisible(@Param('id', ParseIntPipe) id: number) {
     const data = await this.service.toggleVisible(id);
     return { success: true, data, message: '更新成功' };
+  }
+
+  @Delete('batch')
+  async batchRemove(@Body() dto: BatchIdsDto) {
+    await this.service.batchRemove(dto.ids);
+    return { success: true, message: '批量删除成功' };
   }
 
   @Delete(':id')

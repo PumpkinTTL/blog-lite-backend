@@ -25,3 +25,7 @@ export function updateAnnouncement(id: number, data: any) {
 export function deleteAnnouncement(id: number) {
   return request.delete(`/announcement/${id}`)
 }
+
+export function batchDeleteAnnouncements(ids: number[]) {
+  return request.delete('/announcement/batch', { data: { ids } })
+}

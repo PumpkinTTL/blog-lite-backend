@@ -6,6 +6,7 @@ import {
   IsDateString,
   MaxLength,
   Min,
+  IsArray,
 } from 'class-validator';
 
 export class GrantMembershipDto {
@@ -46,6 +47,12 @@ export class GrantMembershipDto {
 export class RedeemMembershipDto {
   @IsString()
   code: string;
+}
+
+export class BatchIdsDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
 }
 
 export class UpdateMembershipDto {

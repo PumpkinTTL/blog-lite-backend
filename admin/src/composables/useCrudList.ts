@@ -26,6 +26,12 @@ export interface UseCrudListOptions<T> {
   defaultForm: () => Record<string, any>
   /** 搜索字段名列表（用于 handleReset 清空） */
   searchFields?: string[]
+  /** 批量删除 API（启用批量删除能力） */
+  batchDeleteApi?: (ids: number[]) => Promise<any>
+  /** 批量删除确认文案，默认「确定删除选中的 N 项?此操作不可恢复!」 */
+  batchDeleteContent?: (count: number) => string
+  /** 批量删除成功提示，默认「批量删除成功」 */
+  batchDeleteSuccessMessage?: string
 }
 
 export function useCrudList<T extends { id: number }>(options: UseCrudListOptions<T>) {
@@ -40,6 +46,10 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
   const editingId = ref<number | null>(null)
   const saving = ref(false)
   const formValue = ref(options.defaultForm())
+  const checkedRowKeys = ref<number[]>([])
+
+  /** 可直接用作 DataTableColumns 首项 */
+  const selectionColumn = { type: 'selection' as const, width: 40 }
 
   async function loadList(extraParams?: Record<string, any>) {
     loading.value = true
@@ -129,6 +139,30 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
     })
   }
 
+  async function handleBatchDelete() {
+    if (!options.batchDeleteApi) return
+    if (checkedRowKeys.value.length === 0) {
+      message.warning('请先选择要删除的项')
+      return
+    }
+    dialog.warning({
+      title: '批量删除',
+      content: (options.batchDeleteContent || ((n) => `确定删除选中的 ${n} 项?此操作不可恢复!`))(checkedRowKeys.value.length),
+      positiveText: '删除',
+      negativeText: '取消',
+      onPositiveClick: async () => {
+        try {
+          await options.batchDeleteApi!(checkedRowKeys.value)
+          message.success(options.batchDeleteSuccessMessage || '批量删除成功')
+          checkedRowKeys.value = []
+          loadList()
+        } catch (e: any) {
+          message.error(e?.message || '批量删除失败')
+        }
+      },
+    })
+  }
+
   onMounted(() => loadList())
 
   return {
@@ -140,6 +174,8 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
     editingId,
     saving,
     formValue,
+    checkedRowKeys,
+    selectionColumn,
     loadList,
     handleSearch,
     handleReset,
@@ -147,6 +183,7 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
     openEdit,
     handleSave,
     handleDelete,
+    handleBatchDelete,
     message,
     dialog,
   }

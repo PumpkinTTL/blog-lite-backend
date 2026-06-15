@@ -14,7 +14,7 @@ import {
 } from '@vicons/ionicons5'
 import {
   getDonationList, getDonationStats, createDonation, updateDonation,
-  deleteDonation, toggleDonationStatus, toggleDonationVisible,
+  deleteDonation, batchDeleteDonations, toggleDonationStatus, toggleDonationVisible,
   exportDonations,
 } from '../../api/donation'
 import type { Donation, CreateDonationData, DonationStats, PayMethod, CryptoNetwork, DonationStatus } from '../../api/donation'
@@ -64,6 +64,7 @@ const searchId = ref('')
 const searchKeyword = ref('')
 const filterStatus = ref<number | null>(null)
 const filterPayMethod = ref<string | null>(null)
+const checkedRowKeys = ref<number[]>([])
 
 // ── 统计状态 ──
 const stats = ref<DonationStats | null>(null)
@@ -203,8 +204,29 @@ function handleDelete(row: Donation) {
   })
 }
 
+function handleBatchDelete() {
+  if (checkedRowKeys.value.length === 0) {
+    message.warning('请先选择要删除的记录')
+    return
+  }
+  dialog.warning({
+    title: '批量删除',
+    content: `确定删除选中的 ${checkedRowKeys.value.length} 条捐赠记录?此操作不可恢复!`,
+    positiveText: '删除', negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await batchDeleteDonations(checkedRowKeys.value)
+        message.success('批量删除成功')
+        checkedRowKeys.value = []
+        loadList(); loadStats()
+      } catch (e: any) { message.error(e?.message || '批量删除失败') }
+    },
+  })
+}
+
 // ── 表格列 ──
 const columns: DataTableColumns<Donation> = [
+  { type: 'selection', width: 40 },
   { title: 'ID', key: 'id', width: 55, align: 'center' },
   { title: '捐赠者', key: 'donorName', width: 110, ellipsis: { tooltip: true } },
   {
@@ -354,13 +376,18 @@ onMounted(() => { loadList(); loadStats() })
           <template #icon><n-icon><DownloadOutline /></n-icon></template>
           导出CSV
         </n-button>
+        <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">
+          <template #icon><n-icon><TrashOutline /></n-icon></template>
+          批量删除
+        </n-button>
       </n-space>
     </n-card>
 
     <!-- 表格 -->
     <div class="table-section">
       <n-data-table :columns="columns" :data="donationList" :loading="loading" :bordered="false"
-        :row-key="(row: Donation) => row.id" :scroll-x="1230" />
+        :row-key="(row: Donation) => row.id" :scroll-x="1270"
+        @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 50]" :item-count="total"
           show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

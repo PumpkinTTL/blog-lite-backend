@@ -99,6 +99,10 @@ export function deleteDonation(id: number) {
   return request.delete<any, { success: boolean; message: string }>(`/donation/${id}`)
 }
 
+export function batchDeleteDonations(ids: number[]) {
+  return request.delete<any, { success: boolean; message: string }>('/donation/batch', { data: { ids } })
+}
+
 export function exportDonations() {
   const token = localStorage.getItem('accessToken')
   const base = import.meta.env.VITE_API_BASE_URL || ''

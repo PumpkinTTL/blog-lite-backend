@@ -3,7 +3,7 @@ import { ref, h } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NPagination } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getCategories, createCategory, updateCategory, deleteCategory } from '../../api/category'
+import { getCategories, createCategory, updateCategory, deleteCategory, batchDeleteCategories } from '../../api/category'
 import type { Category } from '../../api/category'
 import { useCrudList } from '../../composables/useCrudList'
 
@@ -15,7 +15,7 @@ const page = ref(1)
 const pageSize = ref(5)
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, message } =
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn, message } =
   useCrudList<Category>({
     loadApi: (params) => getCategories({
       ...params,
@@ -25,6 +25,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     createApi: createCategory,
     updateApi: updateCategory,
     deleteApi: deleteCategory,
+    batchDeleteApi: batchDeleteCategories,
     deleteContent: (row) => `确定删除分类「${row.name}」？`,
     defaultForm: () => ({ name: '', slug: '', description: '' }),
     extractList: (res) => {
@@ -70,6 +71,7 @@ const rules: FormRules = {
 }
 
 const columns: DataTableColumns<Category> = [
+  selectionColumn,
   { title: 'ID', key: 'id', width: 70 },
   { title: '名称', key: 'name', width: 180 },
   { title: 'Slug', key: 'slug', width: 180 },
@@ -117,6 +119,10 @@ const columns: DataTableColumns<Category> = [
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         重置
       </n-button>
+      <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">
+        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        批量删除
+      </n-button>
     </n-space>
 
     <div class="table-section">
@@ -125,7 +131,9 @@ const columns: DataTableColumns<Category> = [
         :data="list"
         :loading="loading"
         :bordered="false"
-        :scroll-x="950"
+        :scroll-x="990"
+        :row-key="(row: any) => row.id"
+        @update:checked-row-keys="(keys: any) => checkedRowKeys = keys"
       />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

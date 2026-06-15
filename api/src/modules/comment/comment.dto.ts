@@ -5,6 +5,8 @@ import {
   Min,
   IsOptional,
   Length,
+  IsArray,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -49,6 +51,13 @@ export class UpdateCommentDto {
   @IsString()
   @Length(1, 2000)
   content: string;
+}
+
+export class BatchIdsDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsInt({ each: true })
+  ids: number[];
 }
 
 /**

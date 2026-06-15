@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { UserService } from './user.service';
 import { LoginDto } from './login.dto';
 import { RefreshTokenDto } from './login.dto';
-import { CreateUserDto, UpdateUserDto, UpdateProfileDto, ResetPasswordDto, SendResetCodeDto, ResetPasswordByCodeDto } from './user.dto';
+import { CreateUserDto, UpdateUserDto, UpdateProfileDto, ResetPasswordDto, SendResetCodeDto, ResetPasswordByCodeDto, BatchIdsDto } from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -153,6 +153,14 @@ export class UserController {
     const op = (req as any).user;
     const data = await this.userService.update(id, dto, op ? { id: Number(op.sub), nickname: op.nickname || op.sub } : undefined);
     return { success: true, data, message: '更新成功' };
+  }
+
+  @Roles('admin')
+  @Delete('batch')
+  async batchRemove(@Body() dto: BatchIdsDto, @Req() req: Request) {
+    const currentUserId = Number((req as any).user?.sub);
+    await this.userService.batchRemove(dto.ids, currentUserId);
+    return { success: true, message: '批量删除成功' };
   }
 
   @Roles('admin')
