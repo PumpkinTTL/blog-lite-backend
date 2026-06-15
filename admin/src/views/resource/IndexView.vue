@@ -14,8 +14,9 @@ import {
   NSelect,
   NPagination,
   NDynamicInput,
+  NUpload,
 } from 'naive-ui'
-import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, UploadFileInfo } from 'naive-ui'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import {
@@ -24,8 +25,7 @@ import {
   CreateOutline,
   SearchOutline,
   RefreshOutline,
-  AddCircleOutline,
-  RemoveCircleOutline,
+  CloudUploadOutline,
 } from '@vicons/ionicons5'
 import {
   getResources,
@@ -36,6 +36,9 @@ import {
   updateResourceVisibility,
 } from '../../api/resource'
 import type { Resource, PanLink } from '../../api/resource'
+import { getUsers } from '../../api/user'
+import { getRoles } from '../../api/role'
+import { uploadToR2 } from '../../api/r2-storage'
 import { useCrudList } from '../../composables/useCrudList'
 import { isDark } from '../../theme'
 
@@ -49,6 +52,10 @@ const pageSize = ref(10)
 // 搜索条件
 const searchStatus = ref<string | null>(null)
 const searchCategory = ref<string | null>(null)
+
+// 可见性多选选项（弹窗打开时加载）
+const userOptions = ref<{ label: string; value: number }[]>([])
+const roleOptions = ref<{ label: string; value: number }[]>([])
 
 const statusOptions = [
   { label: '全部', value: null },
@@ -97,8 +104,8 @@ const {
   formValue,
   handleSearch: _handleSearch,
   handleReset: _handleReset,
-  openCreate,
-  openEdit,
+  openCreate: _openCreate,
+  openEdit: _openEdit,
   handleSave: _handleSave,
   handleDelete,
   handleBatchDelete,
@@ -128,7 +135,7 @@ const {
     category: null,
     content: '',
     panLinks: [{ name: '', url: '', code: '' }] as PanLink[],
-    priceCents: 0,
+    priceYuan: 0,
     status: 'draft',
     minMemberLevel: null,
     sortOrder: 0,
@@ -144,6 +151,50 @@ const {
     return Array.isArray(payload) ? payload : []
   },
 })
+
+// 弹窗打开时加载用户/角色选项
+async function loadVisibilityOptions() {
+  if (userOptions.value.length > 0) return
+  try {
+    const [userRes, roleRes] = await Promise.all([
+      getUsers({ pageSize: 1000 }),
+      getRoles({ pageSize: 1000 }),
+    ])
+    const userPayload = userRes.data
+    const users = Array.isArray(userPayload) ? userPayload : (userPayload?.list || [])
+    userOptions.value = users.map((u: any) => ({
+      label: `${u.nickname || u.username} (#${u.id})`,
+      value: u.id,
+    }))
+    const rolePayload = roleRes.data
+    const roles = Array.isArray(rolePayload) ? rolePayload : (rolePayload?.list || [])
+    roleOptions.value = roles.map((r: any) => ({
+      label: `${r.displayName || r.name} (#${r.id})`,
+      value: r.id,
+    }))
+  } catch (e: any) {
+    message.error(e?.message || '加载可见性选项失败')
+  }
+}
+
+// 状态联动：切换为非 private 时清空可见性配置
+function handleStatusChange(val: string) {
+  formValue.value.status = val
+  if (val !== 'private') {
+    formValue.value.allowedUserIds = []
+    formValue.value.allowedRoleIds = []
+  }
+}
+
+function openCreate() {
+  _openCreate()
+  loadVisibilityOptions()
+}
+
+function openEdit(row: Resource, mapper: (r: Resource) => Record<string, any>) {
+  _openEdit(row, mapper)
+  loadVisibilityOptions()
+}
 
 function handleSearch() {
   page.value = 1
@@ -164,6 +215,33 @@ function onCreatePanLink() {
   return { name: '', url: '', code: '' }
 }
 
+// === 封面图上传（R2，folder 用分类，无分类用 'uncategorized'） ===
+const coverUploadFileList = ref<UploadFileInfo[]>([])
+
+async function handleCoverSelect({ file }: { file: UploadFileInfo }) {
+  const raw = file.file
+  if (!raw || !raw.type.startsWith('image/')) {
+    message.error('请选择图片文件')
+    return
+  }
+  try {
+    const folder = formValue.value.category || 'uncategorized'
+    const note = formValue.value.title
+      ? `资源「${formValue.value.title}」封面`
+      : '资源封面'
+    const res = await uploadToR2(raw, { note, app: 'resource', folder })
+    formValue.value.cover = res.data.url
+    message.success('封面上传成功')
+  } catch (e: any) {
+    message.error(e?.message || '封面上传失败')
+  }
+  coverUploadFileList.value = []
+}
+
+function handleRemoveCover() {
+  formValue.value.cover = ''
+}
+
 // 保存前处理：类型转换 + 可见性配置同步
 async function handleSave() {
   try {
@@ -173,44 +251,30 @@ async function handleSave() {
   }
   const fv = formValue.value
   // 过滤掉空的网盘链接（name 或 url 为空）
-  const cleanedLinks = (fv.panLinks || [])
+  fv.panLinks = (fv.panLinks || [])
     .filter((p: PanLink) => p.name?.trim() && p.url?.trim())
     .map((p: PanLink) => ({
       name: p.name.trim(),
       url: p.url.trim(),
       code: p.code?.trim() || null,
     }))
-  fv.panLinks = cleanedLinks
   fv.sortOrder = Number(fv.sortOrder) || 0
-  // 价格分（表单输入元，提交分）
   fv.priceCents = Math.round((Number(fv.priceYuan) || 0) * 100)
-  // allowedUserIds/allowedRoleIds 字符串转数字数组
-  fv.allowedUserIds = parseIdList(fv.allowedUserIdsInput)
-  fv.allowedRoleIds = parseIdList(fv.allowedRoleIdsInput)
+  // priceYuan 仅前端展示用，提交时删除避免后端 DTO 校验报错
+  delete (fv as any).priceYuan
 
   // private 资源同步写可见性（更新场景；新建场景 service 内部已处理）
   if (editingId.value && fv.status === 'private') {
     try {
       await updateResourceVisibility(editingId.value, {
-        allowedUserIds: fv.allowedUserIds,
-        allowedRoleIds: fv.allowedRoleIds,
+        allowedUserIds: fv.allowedUserIds || [],
+        allowedRoleIds: fv.allowedRoleIds || [],
       })
     } catch (e: any) {
       message.error(e?.message || '可见性配置失败')
     }
   }
   return _handleSave()
-}
-
-function parseIdList(raw: any): number[] {
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw.map((n) => Number(n)).filter((n) => !isNaN(n))
-  return String(raw)
-    .split(/[,，\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => Number(s))
-    .filter((n) => !isNaN(n))
 }
 
 function handlePageChange(p: number) {
@@ -258,6 +322,7 @@ const columns: DataTableColumns<Resource> = [
         : h('span', { style: 'color:#bbb' }, '-'),
   },
   { title: '标题', key: 'title', width: 200, ellipsis: { tooltip: true } },
+  { title: '副标题', key: 'description', width: 180, ellipsis: { tooltip: true } },
   { title: '分类', key: 'category', width: 100, ellipsis: { tooltip: true } },
   {
     title: '状态',
@@ -336,10 +401,8 @@ const columns: DataTableColumns<Resource> = [
                   status: r.status,
                   minMemberLevel: r.minMemberLevel,
                   sortOrder: r.sortOrder,
-                  allowedUserIdsInput:
-                    r.allowedUserIds?.join(', ') || '',
-                  allowedRoleIdsInput:
-                    r.allowedRoleIds?.join(', ') || '',
+                  allowedUserIds: r.allowedUserIds || [],
+                  allowedRoleIds: r.allowedRoleIds || [],
                 })),
             },
             {
@@ -451,6 +514,7 @@ const columns: DataTableColumns<Resource> = [
       :positive-text="saving ? '提交中...' : '确认'"
       :negative-text="saving ? undefined : '取消'"
       :loading="saving"
+      :class="'res-modal'"
       :style="{ width: '860px', maxWidth: '94vw' }"
       @positive-click="handleSave"
     >
@@ -461,22 +525,31 @@ const columns: DataTableColumns<Resource> = [
         label-placement="top"
         class="res-form"
       >
-        <n-form-item label="标题" path="title" class="res-form-item">
-          <n-input v-model:value="formValue.title" placeholder="资源标题" />
-        </n-form-item>
+        <div class="form-grid form-grid-2">
+          <n-form-item label="标题" path="title">
+            <n-input v-model:value="formValue.title" placeholder="资源标题" />
+          </n-form-item>
+          <n-form-item label="副标题（简介）">
+            <n-input v-model:value="formValue.description" placeholder="一句话副标题/简介" />
+          </n-form-item>
+        </div>
 
         <div class="form-grid form-grid-3">
           <n-form-item label="分类">
             <n-select
               v-model:value="formValue.category"
               :options="categoryPresets.map((c) => ({ label: c, value: c }))"
-              placeholder="选择或自定义"
+              placeholder="选择或自定义（上传文件夹名）"
               filterable
               tag
             />
           </n-form-item>
           <n-form-item label="状态">
-            <n-select v-model:value="formValue.status" :options="formStatusOptions" />
+            <n-select
+              :value="formValue.status"
+              :options="formStatusOptions"
+              @update:value="handleStatusChange"
+            />
           </n-form-item>
           <n-form-item label="最低会员等级">
             <n-select
@@ -508,14 +581,66 @@ const columns: DataTableColumns<Resource> = [
           </n-form-item>
         </div>
 
-        <div class="form-grid form-grid-2">
-          <n-form-item label="封面图 URL">
-            <n-input v-model:value="formValue.cover" placeholder="https://..." />
-          </n-form-item>
-          <n-form-item label="简介">
-            <n-input v-model:value="formValue.description" placeholder="一句话介绍" />
-          </n-form-item>
-        </div>
+        <!-- 封面图：上传到 R2，folder 用分类 -->
+        <n-form-item label="封面图" class="res-form-item">
+          <div class="cover-area">
+            <div v-if="formValue.cover" class="cover-preview-frame">
+              <img :src="formValue.cover" class="cover-img" alt="封面" />
+              <div class="cover-overlay">
+                <n-button
+                  circle
+                  size="small"
+                  type="error"
+                  :focusable="false"
+                  @click.stop="handleRemoveCover"
+                  title="移除封面"
+                >
+                  <template #icon><n-icon><TrashOutline /></n-icon></template>
+                </n-button>
+              </div>
+            </div>
+            <n-upload
+              v-else
+              v-model:file-list="coverUploadFileList"
+              :show-file-list="false"
+              accept="image/*"
+              :custom-request="handleCoverSelect"
+              class="cover-upload"
+            >
+              <div class="cover-empty">
+                <n-icon size="28" color="#94A3B8"><CloudUploadOutline /></n-icon>
+                <span class="cover-empty-title">点击上传封面</span>
+                <span class="cover-empty-hint">上传到 R2，按分类归档</span>
+              </div>
+            </n-upload>
+          </div>
+        </n-form-item>
+
+        <!-- 可见性配置：private 状态时紧跟状态字段（就近原则） -->
+        <template v-if="formValue.status === 'private'">
+          <div class="form-grid form-grid-2">
+            <n-form-item label="可见角色（拥有这些角色的用户可见）">
+              <n-select
+                v-model:value="formValue.allowedRoleIds"
+                :options="roleOptions"
+                placeholder="选择可见的角色"
+                multiple
+                clearable
+                filterable
+              />
+            </n-form-item>
+            <n-form-item label="可见用户（直接授权单个用户）">
+              <n-select
+                v-model:value="formValue.allowedUserIds"
+                :options="userOptions"
+                placeholder="选择可见的用户"
+                multiple
+                clearable
+                filterable
+              />
+            </n-form-item>
+          </div>
+        </template>
 
         <n-form-item label="详细说明" class="res-form-item">
           <MdEditor
@@ -548,24 +673,6 @@ const columns: DataTableColumns<Resource> = [
             </div>
           </div>
         </n-form-item>
-
-        <!-- 指定可见配置：仅 private 状态展开 -->
-        <template v-if="formValue.status === 'private'">
-          <div class="form-grid form-grid-2">
-            <n-form-item label="可见性 - 指定用户 ID">
-              <n-input
-                v-model:value="formValue.allowedUserIdsInput"
-                placeholder="逗号分隔，如 1, 23, 45"
-              />
-            </n-form-item>
-            <n-form-item label="可见性 - 指定角色 ID">
-              <n-input
-                v-model:value="formValue.allowedRoleIdsInput"
-                placeholder="逗号分隔的角色 ID"
-              />
-            </n-form-item>
-          </div>
-        </template>
       </n-form>
     </n-modal>
   </div>
@@ -618,5 +725,99 @@ const columns: DataTableColumns<Resource> = [
 /* === MdEditor 在弹窗内的滚动隔离 === */
 .res-form :deep(.md-editor) {
   border-radius: 6px;
+}
+
+/* === 封面图上传 === */
+.cover-area {
+  width: 100%;
+}
+.cover-upload {
+  width: 100%;
+}
+.cover-upload :deep(.n-upload),
+.cover-upload :deep(.n-upload-trigger) {
+  width: 100%;
+  display: block;
+}
+.cover-empty {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 16px;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+}
+.cover-empty-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+.cover-empty-hint {
+  font-size: 11px;
+  color: #b0b7c3;
+}
+.cover-empty:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.08);
+}
+.cover-preview-frame {
+  position: relative;
+  width: 160px;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+.cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  pointer-events: none;
+}
+.cover-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 6px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, transparent 30%);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.cover-preview-frame:hover .cover-overlay {
+  opacity: 1;
+}
+</style>
+
+<!-- 非 scoped：modal teleport 到 body，需全局类名精准命中 -->
+<style>
+.res-modal {
+  /* 弹窗整体上下留出视口边距，避免顶边 */
+  max-height: calc(100vh - 48px) !important;
+  margin: 24px auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+/* 内容区限高 + 内部滚动，让长表单不再撑破视口 */
+.res-modal .n-dialog__content {
+  max-height: calc(100vh - 180px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-right: 4px;
+}
+/* 操作按钮区固定在底部，不被内容滚动带走 */
+.res-modal .n-dialog__action {
+  flex-shrink: 0 !important;
 }
 </style>
