@@ -156,11 +156,12 @@ async function handleUpload({ file }: { file: UploadFileInfo }) {
   uploading.value = true
   try {
     if (storageChannel.value === 'r2') {
-      await uploadToR2(file.file)
+      await uploadToR2(file.file, { app: 'vibehub', folder: 'media', note: file.file.name })
     } else {
       await uploadMedia(file.file, {
         storageType: storageChannel.value === 'oss' ? 'oss' : 'local',
         ossPlatform: storageChannel.value === 'oss' ? uploadOssPlatform.value : null,
+        app: 'vibehub', folder: 'media', note: file.file.name,
       })
     }
     message.success('上传成功')

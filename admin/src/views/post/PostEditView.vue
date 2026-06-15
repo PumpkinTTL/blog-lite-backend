@@ -194,15 +194,15 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 /** 按当前存储方式上传单个文件，返回 URL */
-async function uploadOne(file: File, note: string): Promise<string> {
+async function uploadOne(file: File, note: string, app?: string, folder?: string): Promise<string> {
   if (storageChannel.value === 'r2') {
-    const r = await uploadToR2(file, { note })
+    const r = await uploadToR2(file, { note, app, folder })
     return r.data.url
   }
   const r = await uploadMedia(file, {
     storageType: storageChannel.value === 'oss' ? 'oss' : 'local',
     ossPlatform: storageChannel.value === 'oss' ? ossPlatform.value : null,
-    note,
+    note, app, folder,
   })
   return r.data.url
 }
@@ -215,7 +215,7 @@ async function uploadCoverIfNeeded(): Promise<string> {
   const note = formValue.value.title
     ? `文章「${formValue.value.title}」封面`
     : '文章封面'
-  return uploadOne(file, note)
+  return uploadOne(file, note, 'vibehub', 'cover')
 }
 
 /**
@@ -241,7 +241,7 @@ async function uploadContentImages(content: string): Promise<string> {
     const dataUrl = dataUrlMatch[0].slice(1, -1) // 去掉首尾括号
     try {
       const file = base64ToFile(dataUrl, `content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
-      const realUrl = await uploadOne(file, note)
+      const realUrl = await uploadOne(file, note, 'vibehub', 'article')
       result = result.replace(full, `![${alt}](${realUrl})`)
     } catch (e) {
       console.error('正文图片上传失败:', e)

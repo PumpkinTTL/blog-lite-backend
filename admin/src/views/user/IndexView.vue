@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
+import { ref, onMounted, h, watch } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch, NAvatar, NUpload } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
@@ -8,7 +8,7 @@ import type { User } from '../../api/user'
 import { getRoles } from '../../api/role'
 import type { Role } from '../../api/role'
 import type { PlanLevel } from '../../api/plan'
-import { uploadToR2 } from '../../api/r2-storage'
+import { uploadToR2, getR2MediaList } from '../../api/r2-storage'
 import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
@@ -52,14 +52,35 @@ const roleOptions = ref<{ label: string; value: number }[]>([])
 
 const avatarUrl = ref<string | null>(null)
 const avatarUploading = ref(false)
+const r2PickerShow = ref(false)
+const r2Images = ref<any[]>([])
+const r2Loading = ref(false)
+
+async function openR2Picker() {
+  r2PickerShow.value = true
+  r2Loading.value = true
+  try {
+    const res: any = await getR2MediaList({ pageSize: 50, mimeType: 'image' })
+    r2Images.value = res.data?.list || []
+  } catch { r2Images.value = [] }
+  finally { r2Loading.value = false }
+}
+
+function pickR2Image(url: string) {
+  avatarUrl.value = url
+  r2PickerShow.value = false
+}
 
 async function handleAvatarChange(data: { file: any; fileList: any[] }) {
   const rawFile = data.file?.file
   if (!rawFile) return
   avatarUploading.value = true
   try {
-    const res: any = await uploadToR2(rawFile, { app: 'vibehub', folder: 'avatar' })
+    const name = formValue.value.nickname || formValue.value.username || '未知'
+    const uid = editingId.value ? `#${editingId.value} ` : ''
+    const res: any = await uploadToR2(rawFile, { app: 'vibehub', folder: 'avatar', note: `${uid}${name} 头像` })
     avatarUrl.value = res.data?.url || res.url || ''
+    message.success('头像上传成功')
   } catch (e: any) {
     message.error(e?.message || '头像上传失败')
   } finally {
@@ -96,6 +117,9 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
       return []
     },
   })
+
+// 弹窗关闭时重置头像（取消的情况）
+watch(showModal, (v) => { if (!v) avatarUrl.value = null })
 
 function openEdit(row: User) {
   avatarUrl.value = row.avatar || null
@@ -285,18 +309,18 @@ const columns: DataTableColumns<User> = [
           <n-input v-model:value="formValue.password" type="password" :placeholder="editingId ? '留空不修改' : '至少6位'" show-password-on="click" />
         </n-form-item>
         <n-form-item label="头像">
-          <div class="av-row">
-            <n-avatar v-if="avatarUrl" :src="avatarUrl" :size="64" round />
-            <n-avatar v-else :size="64" round :color="'#E2E8F0'">{{ formValue.nickname?.charAt(0)?.toUpperCase() || '?' }}</n-avatar>
-            <n-upload
-              :show-file-list="false"
-              accept="image/*"
-              :disabled="avatarUploading"
-              :default-upload="false"
-              @change="handleAvatarChange"
-            >
-              <n-button size="small" :loading="avatarUploading">上传头像</n-button>
-            </n-upload>
+          <div class="av-wrap">
+            <div class="av-preview">
+              <n-avatar v-if="avatarUrl" :src="avatarUrl" :size="96" />
+              <n-avatar v-else :size="96" color="#2563EB" style="font-size:32px;font-weight:600">{{ formValue.nickname?.charAt(0)?.toUpperCase() || '?' }}</n-avatar>
+            </div>
+            <n-space>
+              <n-button size="small" @click="openR2Picker">从R2选择</n-button>
+              <n-upload :show-file-list="false" accept="image/*" :disabled="avatarUploading" :default-upload="false" @change="handleAvatarChange">
+                <n-button size="small" :loading="avatarUploading">本地上传</n-button>
+              </n-upload>
+              <n-button v-if="avatarUrl" size="small" tertiary type="error" @click="avatarUrl = null">移除</n-button>
+            </n-space>
           </div>
         </n-form-item>
         <n-form-item label="昵称" path="nickname">
@@ -310,9 +334,23 @@ const columns: DataTableColumns<User> = [
         </n-form-item>
       </n-form>
     </n-modal>
+
+    <n-modal v-model:show="r2PickerShow" preset="dialog" title="从R2选择头像" style="width:640px">
+      <div v-if="r2Loading" style="text-align:center;padding:40px">加载中...</div>
+      <div v-else class="r2-grid">
+        <div v-for="img in r2Images" :key="img.id" class="r2-item" @click="pickR2Image(img.url)">
+          <img :src="img.url" class="r2-thumb" />
+        </div>
+      </div>
+    </n-modal>
   </div>
 </template>
 
 <style scoped>
-.av-row { display: flex; align-items: center; gap: 16px; }
+.av-wrap { display: flex; align-items: center; gap: 20px; }
+.av-preview { flex-shrink: 0; }
+.r2-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-height: 400px; overflow-y: auto; }
+.r2-item { cursor: pointer; border-radius: 8px; overflow: hidden; border: 2px solid transparent; }
+.r2-item:hover { border-color: var(--n-primary-color, #2563EB); }
+.r2-thumb { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
 </style>
