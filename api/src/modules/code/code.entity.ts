@@ -6,7 +6,12 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type CodeType = 'invitation' | 'activation' | 'discount' | 'membership';
+export type CodeType =
+  | 'invitation'
+  | 'activation'
+  | 'discount'
+  | 'membership'
+  | 'resource';
 export type CodeStatus = 'active' | 'used' | 'expired' | 'disabled';
 
 @Entity('codes')
@@ -19,7 +24,13 @@ export class CodeEntity {
 
   @Column({
     type: 'enum',
-    enum: ['invitation', 'activation', 'discount', 'membership'],
+    enum: [
+      'invitation',
+      'activation',
+      'discount',
+      'membership',
+      'resource',
+    ],
     comment: '类型',
   })
   type: CodeType;

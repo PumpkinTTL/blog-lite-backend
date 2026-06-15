@@ -22,6 +22,7 @@ import { MembershipModule } from './modules/membership/membership.module';
 import { InteractionModule } from './modules/interaction/interaction.module';
 import { CommentModule } from './modules/comment/comment.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
+import { ResourceModule } from './modules/resource/resource.module';
 
 @Module({
   providers: [
@@ -99,6 +100,7 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
     InteractionModule,
     CommentModule,
     AuditLogModule,
+    ResourceModule,
   ],
 })
 export class AppModule {}

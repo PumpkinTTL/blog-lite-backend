@@ -74,3 +74,18 @@ export const INTERACTION_ENTITY = {
   POST: 'post', // 文章
   COMMENT: 'comment', // 评论
 } as const;
+
+// ── 资源可见性（同 POST_STATUS 四档语义） ──
+export const RESOURCE_STATUS = {
+  DRAFT: 'draft', // 草稿（仅 admin 可见）
+  PUBLISHED: 'published', // 公开（任何人可见）
+  LOGIN: 'login', // 登录可见
+  PRIVATE: 'private', // 指定用户/角色可见（需 entity_visibility 授权）
+} as const;
+
+// ── 资源解锁来源 ──
+export const RESOURCE_UNLOCK_SOURCE = {
+  ADMIN: 'admin', // 管理员直接授权（entity_visibility）
+  CODE: 'code', // 兑换码兑换
+  PAYMENT: 'payment', // 单次购买（支付未实现，预留）
+} as const;

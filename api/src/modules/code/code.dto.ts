@@ -33,8 +33,13 @@ export class DiscountDto {
 
 export class CreateCodeDto {
   @IsString()
-  @IsEnum(['invitation', 'activation', 'discount', 'membership'])
-  type: 'invitation' | 'activation' | 'discount' | 'membership';
+  @IsEnum(['invitation', 'activation', 'discount', 'membership', 'resource'])
+  type:
+    | 'invitation'
+    | 'activation'
+    | 'discount'
+    | 'membership'
+    | 'resource';
 
   @IsInt()
   @Min(0)
@@ -90,13 +95,23 @@ export class VerifyCodeDto {
 
   @IsString()
   @IsOptional()
-  type?: 'invitation' | 'activation' | 'discount' | 'membership';
+  type?:
+    | 'invitation'
+    | 'activation'
+    | 'discount'
+    | 'membership'
+    | 'resource';
 }
 
 export class BatchCreateCodeDto {
   @IsString()
-  @IsEnum(['invitation', 'activation', 'discount', 'membership'])
-  type: 'invitation' | 'activation' | 'discount' | 'membership';
+  @IsEnum(['invitation', 'activation', 'discount', 'membership', 'resource'])
+  type:
+    | 'invitation'
+    | 'activation'
+    | 'discount'
+    | 'membership'
+    | 'resource';
 
   @IsInt()
   @Min(1)
