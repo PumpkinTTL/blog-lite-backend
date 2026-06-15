@@ -10,7 +10,9 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 const bootstrapLogger = new NestLogger('Bootstrap');
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 5100);
 
@@ -26,7 +28,10 @@ async function bootstrap() {
   );
   app.enableCors({
     origin: configService
-      .get<string>('CORS_ORIGINS', 'http://localhost:5173,http://localhost:5174')
+      .get<string>(
+        'CORS_ORIGINS',
+        'http://localhost:5173,http://localhost:5174',
+      )
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),

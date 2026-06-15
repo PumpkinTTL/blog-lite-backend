@@ -27,25 +27,58 @@ export class UserEntity {
   @Column({ length: 50, comment: '显示昵称' })
   nickname: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true, comment: '邮箱' })
+  @Index('uq_user_email', { unique: true })
+  @Column({
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+    comment: '邮箱（唯一，可为空）',
+  })
   email: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true, comment: '头像 URL' })
   avatar: string | null;
 
-  @Column({ type: 'varchar', length: 20, default: 'active', comment: '状态 active=正常 disabled=禁用' })
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: 'active',
+    comment: '状态 active=正常 disabled=禁用',
+  })
   status: string;
 
-  @Column({ type: 'int', nullable: true, name: 'register_code_id', comment: '注册时使用的邀请码ID' })
+  @Column({
+    type: 'int',
+    nullable: true,
+    name: 'register_code_id',
+    comment: '注册时使用的邀请码ID',
+  })
   registerCodeId: number | null;
 
-  @Column({ type: 'varchar', length: 45, nullable: true, name: 'register_ip', comment: '注册IP' })
+  @Column({
+    type: 'varchar',
+    length: 45,
+    nullable: true,
+    name: 'register_ip',
+    comment: '注册IP',
+  })
   registerIp: string | null;
 
-  @Column({ type: 'varchar', length: 50, nullable: true, name: 'register_source', comment: '注册来源' })
+  @Column({
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+    name: 'register_source',
+    comment: '注册来源',
+  })
   registerSource: string | null;
 
-  @Column({ type: 'datetime', nullable: true, name: 'last_login_at', comment: '最后登录时间' })
+  @Column({
+    type: 'datetime',
+    nullable: true,
+    name: 'last_login_at',
+    comment: '最后登录时间',
+  })
   lastLoginAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })

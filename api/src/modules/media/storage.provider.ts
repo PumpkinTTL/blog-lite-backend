@@ -62,7 +62,11 @@
  * ```
  */
 
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 
@@ -86,7 +90,10 @@ export interface StorageConfig {
 }
 
 /** 各平台 endpoint 自动推断规则 */
-const PROVIDER_ENDPOINT_RULES: Record<string, (region: string) => string | null> = {
+const PROVIDER_ENDPOINT_RULES: Record<
+  string,
+  (region: string) => string | null
+> = {
   aliyun: (region) => `https://oss-${region}.aliyuncs.com`,
   tencent: (region) => `https://cos.${region}.myqcloud.com`,
   cloudflare: () => null, // R2 必须由用户提供 endpoint
@@ -116,7 +123,11 @@ export class StorageProvider {
    * @param contentType MIME 类型（可选）
    * @returns 可访问的完整 URL
    */
-  async upload(file: Buffer, key: string, contentType?: string): Promise<string> {
+  async upload(
+    file: Buffer,
+    key: string,
+    contentType?: string,
+  ): Promise<string> {
     if (this.config.provider === 'local') {
       return this.uploadLocal(file, key);
     }
@@ -155,7 +166,8 @@ export class StorageProvider {
   // ──────────────── 私有：S3 初始化 ────────────────
 
   private initS3Client(): void {
-    const { provider, region, endpoint, accessKeyId, secretAccessKey } = this.config;
+    const { provider, region, endpoint, accessKeyId, secretAccessKey } =
+      this.config;
 
     // 自动推断 endpoint
     let resolvedEndpoint = (endpoint || '').trim();
@@ -175,7 +187,7 @@ export class StorageProvider {
       };
       throw new Error(
         `[StorageProvider] ${provider} 需要提供 endpoint，` +
-        `格式参考：${hints[provider] ?? 'https://...'}`,
+          `格式参考：${hints[provider] ?? 'https://...'}`,
       );
     }
 
@@ -229,7 +241,11 @@ export class StorageProvider {
 
   // ──────────────── 私有：S3 实现 ────────────────
 
-  private async uploadS3(file: Buffer, key: string, contentType?: string): Promise<string> {
+  private async uploadS3(
+    file: Buffer,
+    key: string,
+    contentType?: string,
+  ): Promise<string> {
     const client = this.getClient();
 
     const command = new PutObjectCommand({
@@ -244,9 +260,9 @@ export class StorageProvider {
     } catch (err) {
       throw new Error(
         `[StorageProvider] S3 上传失败: ${key}` +
-        ` — bucket: ${this.config.bucket}` +
-        `, endpoint: ${this.resolvedEndpoint}` +
-        `, 错误: ${(err as Error).message}`,
+          ` — bucket: ${this.config.bucket}` +
+          `, endpoint: ${this.resolvedEndpoint}` +
+          `, 错误: ${(err as Error).message}`,
       );
     }
 
@@ -266,8 +282,8 @@ export class StorageProvider {
     } catch (err) {
       throw new Error(
         `[StorageProvider] S3 删除失败: ${key}` +
-        ` — bucket: ${this.config.bucket}` +
-        `, 错误: ${(err as Error).message}`,
+          ` — bucket: ${this.config.bucket}` +
+          `, 错误: ${(err as Error).message}`,
       );
     }
   }

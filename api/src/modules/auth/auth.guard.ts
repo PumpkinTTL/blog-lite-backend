@@ -42,7 +42,9 @@ export class AuthGuard implements CanActivate {
 
     try {
       const payload = await this.authService.verifyToken(authHeader.slice(7));
-      const { roleNames, roleIds } = await this.getUserRoles(Number(payload.sub));
+      const { roleNames, roleIds } = await this.getUserRoles(
+        Number(payload.sub),
+      );
       request.user = { ...payload, roles: roleNames, roleIds };
       return true;
     } catch (error) {
@@ -58,7 +60,9 @@ export class AuthGuard implements CanActivate {
   /**
    * 查询用户角色，同时返回 roleNames（用于 @Roles 装饰器）和 roleIds（用于可见性校验）
    */
-  private async getUserRoles(userId: number): Promise<{ roleNames: string[]; roleIds: number[] }> {
+  private async getUserRoles(
+    userId: number,
+  ): Promise<{ roleNames: string[]; roleIds: number[] }> {
     const rows = await this.dataSource.query(
       `SELECT r.id, r.name FROM roles r
        INNER JOIN user_roles ur ON r.id = ur.role_id

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { RoleEntity } from './role.entity';
@@ -34,6 +38,8 @@ export class RoleService {
   async update(id: number, data: Partial<RoleEntity>) {
     // 排除关联字段，只更新纯字段
     const { users, ...updateData } = data as any;
+    const existing = await this.roleRepo.findOne({ where: { id } });
+    if (!existing) throw new NotFoundException('角色不存在');
     await this.roleRepo.update(id, updateData);
     return this.findById(id);
   }
@@ -69,7 +75,9 @@ export class RoleService {
 
     for (const role of roles) {
       if (role.name === 'admin' || role.name === 'user') {
-        throw new BadRequestException(`默认角色「${role.displayName}」不可删除`);
+        throw new BadRequestException(
+          `默认角色「${role.displayName}」不可删除`,
+        );
       }
       if (role.users && role.users.length > 0) {
         throw new BadRequestException(

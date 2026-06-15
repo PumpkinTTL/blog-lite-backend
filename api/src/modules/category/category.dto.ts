@@ -1,14 +1,23 @@
-import { IsString, IsOptional, IsInt, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  IsArray,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateCategoryDto {
   @IsString()
+  @MaxLength(50)
   name: string;
 
   @IsString()
+  @MaxLength(50)
   slug: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(255)
   description?: string;
 
   @IsInt()
@@ -29,14 +38,17 @@ export class BatchIdsDto {
 export class UpdateCategoryDto {
   @IsString()
   @IsOptional()
+  @MaxLength(50)
   name?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(50)
   slug?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(255)
   description?: string;
 
   @IsInt()

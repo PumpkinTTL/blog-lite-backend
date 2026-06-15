@@ -1,4 +1,15 @@
-import { IsString, IsEnum, IsInt, IsOptional, IsDateString, IsObject, IsArray, IsNumber, Min, ValidateIf } from 'class-validator';
+import {
+  IsString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsDateString,
+  IsObject,
+  IsArray,
+  IsNumber,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 
 /**
  * 优惠信息
@@ -44,7 +55,11 @@ export class CreateCodeDto {
 
   @ValidateIf((o) => o.type === 'discount')
   @IsObject()
-  discount?: { type: 'percentage' | 'threshold' | 'fixed'; value: number; threshold?: number };
+  discount?: {
+    type: 'percentage' | 'threshold' | 'fixed';
+    value: number;
+    threshold?: number;
+  };
 }
 
 export class UpdateCodeDto {
@@ -62,7 +77,11 @@ export class UpdateCodeDto {
 
   @IsObject()
   @IsOptional()
-  discount?: { type: 'percentage' | 'threshold' | 'fixed'; value: number; threshold?: number };
+  discount?: {
+    type: 'percentage' | 'threshold' | 'fixed';
+    value: number;
+    threshold?: number;
+  };
 }
 
 export class VerifyCodeDto {
@@ -98,7 +117,11 @@ export class BatchCreateCodeDto {
 
   @ValidateIf((o) => o.type === 'discount')
   @IsObject()
-  discount?: { type: 'percentage' | 'threshold' | 'fixed'; value: number; threshold?: number };
+  discount?: {
+    type: 'percentage' | 'threshold' | 'fixed';
+    value: number;
+    threshold?: number;
+  };
 }
 
 export class BatchIdsDto {

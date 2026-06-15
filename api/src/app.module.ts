@@ -46,7 +46,9 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
 
         return {
           pinoHttp: {
-            level: configService.get('LOG_LEVEL') ?? (isProduction ? 'info' : 'debug'),
+            level:
+              configService.get('LOG_LEVEL') ??
+              (isProduction ? 'info' : 'debug'),
             transport: isProduction
               ? undefined
               : {

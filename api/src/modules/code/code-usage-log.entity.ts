@@ -17,7 +17,12 @@ export class CodeUsageLogEntity {
   @Column({ name: 'code_id', comment: '关联的码ID' })
   codeId: number;
 
-  @Column({ type: 'int', name: 'user_id', nullable: true, comment: '使用用户ID（未登录可能为null）' })
+  @Column({
+    type: 'int',
+    name: 'user_id',
+    nullable: true,
+    comment: '使用用户ID（未登录可能为null）',
+  })
   userId: number | null;
 
   @Column({ type: 'datetime', name: 'used_at', comment: '使用时间' })

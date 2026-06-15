@@ -6,9 +6,13 @@ import {
   ManyToOne,
   OneToMany,
   JoinColumn,
+  Index,
 } from 'typeorm';
 
 @Entity('categories')
+@Index('uq_category_name', ['name'], { unique: true })
+@Index('idx_category_parent', ['parentId'])
+@Index('idx_category_sort', ['sortOrder'])
 export class CategoryEntity {
   @PrimaryGeneratedColumn({ comment: '分类 ID' })
   id: number;
@@ -25,11 +29,18 @@ export class CategoryEntity {
   @Column({ type: 'int', default: 0, name: 'sort_order', comment: '排序权重' })
   sortOrder: number;
 
-  @ManyToOne(() => CategoryEntity, (cat) => cat.children)
+  @ManyToOne(() => CategoryEntity, (cat) => cat.children, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'parent_id' })
   parent: CategoryEntity | null;
 
-  @Column({ type: 'int', nullable: true, name: 'parent_id', comment: '父分类 ID' })
+  @Column({
+    type: 'int',
+    nullable: true,
+    name: 'parent_id',
+    comment: '父分类 ID',
+  })
   parentId: number | null;
 
   @OneToMany(() => CategoryEntity, (cat) => cat.parent)

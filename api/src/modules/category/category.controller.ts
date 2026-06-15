@@ -1,6 +1,20 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  Query,
+} from '@nestjs/common';
 import { CategoryService } from './category.service';
-import { CreateCategoryDto, UpdateCategoryDto, BatchIdsDto } from './category.dto';
+import {
+  CreateCategoryDto,
+  UpdateCategoryDto,
+  BatchIdsDto,
+} from './category.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 
@@ -11,10 +25,7 @@ export class CategoryController {
 
   @Public()
   @Get()
-  async list(
-    @Query('id') id?: string,
-    @Query('keyword') keyword?: string,
-  ) {
+  async list(@Query('id') id?: string, @Query('keyword') keyword?: string) {
     const data = await this.categoryService.findAll({
       id: id !== undefined ? parseInt(id) : undefined,
       keyword,
@@ -43,7 +54,10 @@ export class CategoryController {
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateCategoryDto,
+  ) {
     const data = await this.categoryService.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }

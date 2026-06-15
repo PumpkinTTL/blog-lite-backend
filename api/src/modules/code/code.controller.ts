@@ -1,9 +1,27 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, Req } from '@nestjs/common';
+﻿import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  ParseIntPipe,
+  Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { CodeService } from './code.service';
-import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto, BatchCreateCodeDto, BatchIdsDto } from './code.dto';
+import {
+  CreateCodeDto,
+  UpdateCodeDto,
+  VerifyCodeDto,
+  BatchCreateCodeDto,
+  BatchIdsDto,
+} from './code.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 
 @Controller('code')
 @Roles('admin')
@@ -36,8 +54,8 @@ export class CodeController {
     @Query('keyword') keyword?: string,
   ) {
     const data = await this.codeService.findAll(
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100),
+      parsePage(page),
+      parsePageSize(pageSize),
       {
         type: type as any,
         status: status as any,
@@ -57,8 +75,8 @@ export class CodeController {
     @Query('keyword') keyword?: string,
   ) {
     const data = await this.codeService.findAllUsageLogs(
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100),
+      parsePage(page),
+      parsePageSize(pageSize),
       keyword,
     );
     return { success: true, data, message: 'ok' };
@@ -115,7 +133,10 @@ export class CodeController {
    * 更新码
    */
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCodeDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateCodeDto,
+  ) {
     const data = await this.codeService.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }
@@ -140,8 +161,8 @@ export class CodeController {
   ) {
     const data = await this.codeService.findUsageLogs(
       id,
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100),
+      parsePage(page),
+      parsePageSize(pageSize),
     );
     return { success: true, data, message: 'ok' };
   }

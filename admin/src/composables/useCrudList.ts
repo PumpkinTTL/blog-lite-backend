@@ -95,6 +95,8 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
   }
 
   async function handleSave(validateFn?: () => Promise<void>) {
+    // 防止双击重入，导致重复创建/更新
+    if (saving.value) return false
     if (validateFn) {
       try {
         await validateFn()

@@ -25,9 +25,12 @@ export function useAuth() {
     accessToken.value = ''
     refreshToken.value = ''
     deviceId.value = ''
-    localStorage.removeItem('accessToken')
-    localStorage.removeItem('refreshToken')
-    localStorage.removeItem('deviceId')
+    // LoginView 根据是否「记住登录」将 token 写入 localStorage 或 sessionStorage，
+    // 登出时必须同时清两种 storage，否则未勾选记住的用户 token 仍残留。
+    ;['accessToken', 'refreshToken', 'deviceId'].forEach((key) => {
+      localStorage.removeItem(key)
+      sessionStorage.removeItem(key)
+    })
   }
 
   async function logout() {

@@ -1,10 +1,18 @@
-import { IsString, IsOptional, IsArray, IsInt } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsInt,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateTagDto {
   @IsString()
+  @MaxLength(30)
   name: string;
 
   @IsString()
+  @MaxLength(30)
   slug: string;
 }
 
@@ -17,9 +25,11 @@ export class BatchIdsDto {
 export class UpdateTagDto {
   @IsString()
   @IsOptional()
+  @MaxLength(30)
   name?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(30)
   slug?: string;
 }

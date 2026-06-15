@@ -36,18 +36,26 @@ export class EmailCodeService {
     // 冷却检查
     const lastSent = this.lastSentAt.get(email) || 0;
     if (Date.now() - lastSent < this.SEND_COOLDOWN) {
-      const remaining = Math.ceil((this.SEND_COOLDOWN - (Date.now() - lastSent)) / 1000);
+      const remaining = Math.ceil(
+        (this.SEND_COOLDOWN - (Date.now() - lastSent)) / 1000,
+      );
       throw new BadRequestException(`操作过于频繁，请 ${remaining} 秒后再试`);
     }
 
     // 生成 6 位数字验证码
-    const code = Array.from({ length: 6 }, () => Math.floor(Math.random() * 10)).join('');
+    const code = Array.from({ length: 6 }, () =>
+      Math.floor(Math.random() * 10),
+    ).join('');
 
     // 发送邮件
     const expireMinutes = this.CODE_TTL / 60000;
     let sent: boolean;
     try {
-      sent = await this.mailerService.sendVerifyCode(email, code, expireMinutes);
+      sent = await this.mailerService.sendVerifyCode(
+        email,
+        code,
+        expireMinutes,
+      );
     } catch (err) {
       throw new BadRequestException(`邮件发送失败: ${err.message}`);
     }
@@ -89,7 +97,9 @@ export class EmailCodeService {
     }
 
     if (record.code !== code) {
-      throw new BadRequestException(`验证码错误，还剩 ${this.MAX_ATTEMPTS - record.attempts} 次机会`);
+      throw new BadRequestException(
+        `验证码错误，还剩 ${this.MAX_ATTEMPTS - record.attempts} 次机会`,
+      );
     }
 
     // 验证成功，删除记录

@@ -1,7 +1,15 @@
-import { IsString, IsOptional, IsInt, IsIn, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  IsIn,
+  IsArray,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateAnnouncementDto {
   @IsString()
+  @MaxLength(200)
   title: string;
 
   @IsString()
@@ -25,6 +33,7 @@ export class BatchIdsDto {
 export class UpdateAnnouncementDto {
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   title?: string;
 
   @IsString()

@@ -1,6 +1,19 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+} from '@nestjs/common';
 import { SettingService } from './setting.service';
-import { CreateSettingDto, UpdateSettingDto, BatchUpdateSettingDto } from './setting.dto';
+import {
+  CreateSettingDto,
+  UpdateSettingDto,
+  BatchUpdateSettingDto,
+} from './setting.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('setting')
@@ -21,7 +34,10 @@ export class SettingController {
   }
 
   @Put('group/:group')
-  async batchUpdateByGroup(@Param('group') group: string, @Body() dto: BatchUpdateSettingDto) {
+  async batchUpdateByGroup(
+    @Param('group') group: string,
+    @Body() dto: BatchUpdateSettingDto,
+  ) {
     const data = await this.service.batchUpdateByGroup(group, dto.items);
     return { success: true, data, message: '更新成功' };
   }
@@ -45,7 +61,10 @@ export class SettingController {
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateSettingDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateSettingDto,
+  ) {
     const data = await this.service.updateById(id, dto);
     return { success: true, data, message: '更新成功' };
   }

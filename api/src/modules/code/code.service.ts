@@ -1,9 +1,15 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
 import { CodeEntity, CodeType, CodeStatus } from './code.entity';
 import { CodeUsageLogEntity } from './code-usage-log.entity';
-import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto, BatchCreateCodeDto, BatchIdsDto } from './code.dto';
+import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto, BatchCreateCodeDto } from './code.dto';
 
 @Injectable()
 export class CodeService {
@@ -20,18 +26,27 @@ export class CodeService {
   /**
    * 生成邀请码/激活码
    */
-  async createCode(dto: CreateCodeDto, creatorId?: number): Promise<CodeEntity> {
+  async createCode(
+    dto: CreateCodeDto,
+    creatorId?: number,
+  ): Promise<CodeEntity> {
     // 校验 discount
-    this.validateDiscount(dto.type, dto.discount as any);
+    this.validateDiscount(dto.type, dto.discount);
 
     // 生成 AAAA-BBBB-CCCC-DDDD 格式码（4 组各 4 个大写字母）
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    const generateSegment = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-    const code = `${generateSegment()}-${generateSegment()}-${generateSegment()}-${generateSegment()}`
-    const codeWithPrefix = dto.type === 'invitation' ? `INV-${code}` : code
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const generateSegment = () =>
+      Array.from(
+        { length: 4 },
+        () => chars[Math.floor(Math.random() * chars.length)],
+      ).join('');
+    const code = `${generateSegment()}-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
+    const codeWithPrefix = dto.type === 'invitation' ? `INV-${code}` : code;
 
     // 检查是否已存在
-    const existing = await this.codeRepo.findOne({ where: { code: codeWithPrefix } });
+    const existing = await this.codeRepo.findOne({
+      where: { code: codeWithPrefix },
+    });
     if (existing) {
       throw new ConflictException('码已存在，请重新生成');
     }
@@ -44,8 +59,8 @@ export class CodeService {
       usedCount: 0,
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       creatorId,
-      metadata: dto.metadata as any,
-      discount: dto.type === 'discount' ? (dto.discount as any) : null,
+      metadata: dto.metadata,
+      discount: dto.type === 'discount' ? dto.discount : null,
     });
 
     await this.codeRepo.save(codeEntity);
@@ -56,8 +71,12 @@ export class CodeService {
   /**
    * 验证码是否可用
    */
-  async verifyCode(dto: VerifyCodeDto): Promise<{ valid: boolean; code?: CodeEntity; message?: string }> {
-    const codeEntity = await this.codeRepo.findOne({ where: { code: dto.code } });
+  async verifyCode(
+    dto: VerifyCodeDto,
+  ): Promise<{ valid: boolean; code?: CodeEntity; message?: string }> {
+    const codeEntity = await this.codeRepo.findOne({
+      where: { code: dto.code },
+    });
 
     if (!codeEntity) {
       return { valid: false, message: '码不存在' };
@@ -68,7 +87,10 @@ export class CodeService {
     }
 
     if (codeEntity.status !== 'active') {
-      return { valid: false, message: `码状态为 ${codeEntity.status}，不可使用` };
+      return {
+        valid: false,
+        message: `码状态为 ${codeEntity.status}，不可使用`,
+      };
     }
 
     if (codeEntity.expiresAt && codeEntity.expiresAt < new Date()) {
@@ -92,21 +114,28 @@ export class CodeService {
     metadata?: Record<string, unknown>,
   ): Promise<{ success: boolean; message?: string }> {
     return this.dataSource.transaction(async (manager) => {
-      const codeEntity = await manager.findOne(CodeEntity, { where: { code: codeValue } });
+      const codeEntity = await manager.findOne(CodeEntity, {
+        where: { code: codeValue },
+      });
 
       if (!codeEntity) {
         throw new NotFoundException('码不存在');
       }
 
       if (codeEntity.status !== 'active') {
-        throw new BadRequestException(`码状态为 ${codeEntity.status}，不可使用`);
+        throw new BadRequestException(
+          `码状态为 ${codeEntity.status}，不可使用`,
+        );
       }
 
       if (codeEntity.expiresAt && codeEntity.expiresAt < new Date()) {
         throw new BadRequestException('码已过期');
       }
 
-      if (codeEntity.maxUses > 0 && codeEntity.usedCount >= codeEntity.maxUses) {
+      if (
+        codeEntity.maxUses > 0 &&
+        codeEntity.usedCount >= codeEntity.maxUses
+      ) {
         throw new BadRequestException('码已用完');
       }
 
@@ -121,19 +150,30 @@ export class CodeService {
       });
 
       // 原子更新 usedCount
-      const updated = await manager.increment(CodeEntity, { id: codeEntity.id }, 'usedCount', 1);
+      await manager.increment(CodeEntity, { id: codeEntity.id }, 'usedCount', 1);
 
       // 检查是否用完，更新状态
-      if (codeEntity.maxUses > 0 && codeEntity.usedCount + 1 >= codeEntity.maxUses) {
-        await manager.update(CodeEntity, { id: codeEntity.id }, {
-          status: 'used',
-          usedAt: new Date(),
-        });
+      if (
+        codeEntity.maxUses > 0 &&
+        codeEntity.usedCount + 1 >= codeEntity.maxUses
+      ) {
+        await manager.update(
+          CodeEntity,
+          { id: codeEntity.id },
+          {
+            status: 'used',
+            usedAt: new Date(),
+          },
+        );
         this.logger.log(`码 ${codeValue} 已用完`);
       } else {
-        await manager.update(CodeEntity, { id: codeEntity.id }, {
-          usedAt: new Date(),
-        });
+        await manager.update(
+          CodeEntity,
+          { id: codeEntity.id },
+          {
+            usedAt: new Date(),
+          },
+        );
       }
 
       this.logger.log(`用户 ${userId} 使用码 ${codeValue}`);
@@ -144,12 +184,18 @@ export class CodeService {
   /**
    * 获取码列表
    */
-  async findAll(page = 1, pageSize = 20, filters?: { type?: CodeType; status?: CodeStatus; keyword?: string }) {
+  async findAll(
+    page = 1,
+    pageSize = 20,
+    filters?: { type?: CodeType; status?: CodeStatus; keyword?: string },
+  ) {
     const qb = this.codeRepo.createQueryBuilder('c');
 
     if (filters?.type) qb.andWhere('c.type = :type', { type: filters.type });
-    if (filters?.status) qb.andWhere('c.status = :status', { status: filters.status });
-    if (filters?.keyword) qb.andWhere('c.code LIKE :keyword', { keyword: `%${filters.keyword}%` });
+    if (filters?.status)
+      qb.andWhere('c.status = :status', { status: filters.status });
+    if (filters?.keyword)
+      qb.andWhere('c.code LIKE :keyword', { keyword: `%${filters.keyword}%` });
 
     qb.orderBy('c.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
@@ -183,8 +229,8 @@ export class CodeService {
     }
     if (dto.metadata) code.metadata = dto.metadata;
     if (dto.discount !== undefined) {
-      this.validateDiscount(code.type, dto.discount as any);
-      code.discount = dto.discount as any;
+      this.validateDiscount(code.type, dto.discount);
+      code.discount = dto.discount;
     }
 
     return this.codeRepo.save(code);
@@ -199,7 +245,11 @@ export class CodeService {
   ) {
     if (type !== 'discount' || !discount) return;
 
-    if (typeof discount.value !== 'number' || isNaN(discount.value) || discount.value <= 0) {
+    if (
+      typeof discount.value !== 'number' ||
+      isNaN(discount.value) ||
+      discount.value <= 0
+    ) {
       throw new BadRequestException('优惠金额/比例必须为正数');
     }
 
@@ -208,7 +258,11 @@ export class CodeService {
     }
 
     if (discount.type === 'threshold') {
-      if (typeof discount.threshold !== 'number' || isNaN(discount.threshold) || discount.threshold <= 0) {
+      if (
+        typeof discount.threshold !== 'number' ||
+        isNaN(discount.threshold) ||
+        discount.threshold <= 0
+      ) {
         throw new BadRequestException('满减门槛必须为正数');
       }
       if (discount.value >= discount.threshold) {
@@ -227,7 +281,10 @@ export class CodeService {
   /**
    * 批量生成码
    */
-  async batchCreate(dto: BatchCreateCodeDto, creatorId?: number): Promise<CodeEntity[]> {
+  async batchCreate(
+    dto: BatchCreateCodeDto,
+    creatorId?: number,
+  ): Promise<CodeEntity[]> {
     const promises = Array.from({ length: dto.count }, () =>
       this.createCode(
         {
@@ -261,7 +318,8 @@ export class CodeService {
    * 获取所有使用日志（分页，支持关联码信息）
    */
   async findAllUsageLogs(page = 1, pageSize = 20, keyword?: string) {
-    const qb = this.usageLogRepo.createQueryBuilder('log')
+    const qb = this.usageLogRepo
+      .createQueryBuilder('log')
       .leftJoinAndSelect('log.code', 'c')
       .orderBy('log.usedAt', 'DESC')
       .skip((page - 1) * pageSize)
@@ -279,7 +337,8 @@ export class CodeService {
    * 获取码的使用记录
    */
   async findUsageLogs(codeId: number, page = 1, pageSize = 20) {
-    const qb = this.usageLogRepo.createQueryBuilder('log')
+    const qb = this.usageLogRepo
+      .createQueryBuilder('log')
       .where('log.codeId = :codeId', { codeId })
       .orderBy('log.usedAt', 'DESC')
       .skip((page - 1) * pageSize)

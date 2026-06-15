@@ -22,6 +22,7 @@ import {
 } from './comment.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 
 @Controller('comment')
 export class CommentController {
@@ -46,8 +47,8 @@ export class CommentController {
     const { list, total } = await this.service.listTopLevel(
       entityType,
       Number(entityId),
-      Number(page),
-      Number(pageSize),
+      parsePage(page),
+      parsePageSize(pageSize),
     );
     return { success: true, data: { list, total }, message: 'ok' };
   }
@@ -120,8 +121,8 @@ export class CommentController {
       entityId: entityId ? Number(entityId) : undefined,
       status,
       keyword,
-      page: Number(page),
-      pageSize: Number(pageSize),
+      page: parsePage(page),
+      pageSize: parsePageSize(pageSize),
     });
     return { success: true, data: result, message: 'ok' };
   }

@@ -350,7 +350,7 @@ async function loadUserOptions() {
     const list = Array.isArray(payload) ? payload : (payload?.list || [])
     userOptions.value = list.map((u: any) => ({ label: `${u.nickname}（${u.username}）`, value: u.id }))
   } catch (e: any) {
-    console.error('加载用户选项失败:', e)
+    message.error(e?.message || '加载用户选项失败')
   }
 }
 

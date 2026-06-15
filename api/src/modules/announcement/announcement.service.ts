@@ -12,20 +12,28 @@ export class AnnouncementService {
     private readonly repo: Repository<AnnouncementEntity>,
   ) {}
 
-  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: string }) {
+  async findAll(
+    page = 1,
+    pageSize = 20,
+    filters?: { id?: number; keyword?: string; status?: string },
+  ) {
     const qb = this.repo.createQueryBuilder('e');
     applyFilters(qb, {
       exact: { 'e.id': filters?.id, 'e.status': filters?.status },
       like: { keyword: filters?.keyword, fields: ['e.title'] },
     });
-    qb.orderBy('e.sortOrder', 'ASC').addOrderBy('e.createdAt', 'DESC')
-      .skip((page - 1) * pageSize).take(pageSize);
+    qb.orderBy('e.sortOrder', 'ASC')
+      .addOrderBy('e.createdAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
     const [list, total] = await qb.getManyAndCount();
     return { list, total, page, pageSize };
   }
 
   async findById(id: number) {
-    return this.repo.findOne({ where: { id } });
+    const entity = await this.repo.findOne({ where: { id } });
+    if (!entity) throw new NotFoundException('公告不存在');
+    return entity;
   }
 
   async create(data: Partial<AnnouncementEntity>) {
@@ -34,14 +42,19 @@ export class AnnouncementService {
   }
 
   async update(id: number, data: Partial<AnnouncementEntity>) {
+    const existing = await this.repo.findOne({ where: { id } });
+    if (!existing) throw new NotFoundException('公告不存在');
     await this.repo.update(id, data);
-    return this.findById(id);
+    return this.repo.findOne({ where: { id } });
   }
 
   async toggleStatus(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('公告不存在');
-    entity.status = entity.status === ANNOUNCEMENT_STATUS.VISIBLE ? ANNOUNCEMENT_STATUS.HIDDEN : ANNOUNCEMENT_STATUS.VISIBLE;
+    entity.status =
+      entity.status === ANNOUNCEMENT_STATUS.VISIBLE
+        ? ANNOUNCEMENT_STATUS.HIDDEN
+        : ANNOUNCEMENT_STATUS.VISIBLE;
     return this.repo.save(entity);
   }
 

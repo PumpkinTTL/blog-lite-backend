@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID, createHash } from 'node:crypto';
@@ -18,15 +23,22 @@ export class MediaService {
     private readonly configService: ConfigService,
   ) {}
 
-  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; mimeType?: string }) {
-    const qb = this.mediaRepo.createQueryBuilder('e')
+  async findAll(
+    page = 1,
+    pageSize = 20,
+    filters?: { id?: number; keyword?: string; mimeType?: string },
+  ) {
+    const qb = this.mediaRepo
+      .createQueryBuilder('e')
       .leftJoinAndSelect('e.uploader', 'u');
     applyFilters(qb, {
       exact: { 'e.id': filters?.id },
       like: { keyword: filters?.keyword, fields: ['e.originalName'] },
     });
     if (filters?.mimeType) {
-      qb.andWhere('e.mimeType LIKE :mimeType', { mimeType: `${filters.mimeType}%` });
+      qb.andWhere('e.mimeType LIKE :mimeType', {
+        mimeType: `${filters.mimeType}%`,
+      });
     }
     qb.orderBy('e.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
@@ -45,10 +57,17 @@ export class MediaService {
   async upload(
     file: Express.Multer.File,
     uploaderId: number,
-    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null>; note?: string; app?: string; folder?: string },
+    options?: {
+      storageType?: StorageType;
+      ossPlatform?: Exclude<OssPlatform, null>;
+      note?: string;
+      app?: string;
+      folder?: string;
+    },
   ) {
     const storageType = options?.storageType ?? 'local';
-    const ossPlatform: OssPlatform = storageType === 'oss' ? (options?.ossPlatform ?? null) : null;
+    const ossPlatform: OssPlatform =
+      storageType === 'oss' ? (options?.ossPlatform ?? null) : null;
     const note = options?.note?.trim() || null;
     const app = options?.app?.trim() || null;
     const folder = options?.folder?.trim() || null;
@@ -57,7 +76,8 @@ export class MediaService {
     const hash = this.computeHash(file.buffer);
 
     // 2. 秒传：同存储通道下相同哈希直接返回已有记录（本地/OSS/R2 通用）
-    const qb = this.mediaRepo.createQueryBuilder('m')
+    const qb = this.mediaRepo
+      .createQueryBuilder('m')
       .where('m.hash = :hash', { hash })
       .andWhere('m.storage_type = :storageType', { storageType });
     if (storageType === 'oss' && ossPlatform) {
@@ -70,7 +90,9 @@ export class MediaService {
         existing.note = note;
         return this.mediaRepo.save(existing);
       }
-      this.logger.log(`秒传命中: ${file.originalname} -> ${existing.id} (${storageType}${ossPlatform ? '/' + ossPlatform : ''}, hash: ${hash})`);
+      this.logger.log(
+        `秒传命中: ${file.originalname} -> ${existing.id} (${storageType}${ossPlatform ? '/' + ossPlatform : ''}, hash: ${hash})`,
+      );
       return existing;
     }
 
@@ -99,7 +121,13 @@ export class MediaService {
   async uploadMany(
     files: Express.Multer.File[],
     uploaderId: number,
-    options?: { storageType?: StorageType; ossPlatform?: Exclude<OssPlatform, null>; note?: string; app?: string; folder?: string },
+    options?: {
+      storageType?: StorageType;
+      ossPlatform?: Exclude<OssPlatform, null>;
+      note?: string;
+      app?: string;
+      folder?: string;
+    },
   ) {
     const result: MediaEntity[] = [];
     for (const file of files) {
@@ -118,11 +146,16 @@ export class MediaService {
     const media = await this.mediaRepo.findOne({ where: { id } });
     if (!media) return;
 
-    await this.createStorageProvider(media.storageType, media.ossPlatform).delete(media.filename);
+    await this.createStorageProvider(
+      media.storageType,
+      media.ossPlatform,
+    ).delete(media.filename);
     await this.mediaRepo.delete(id);
   }
 
   async update(id: number, data: { originalName?: string; note?: string }) {
+    const existing = await this.mediaRepo.findOne({ where: { id } });
+    if (!existing) throw new NotFoundException('素材不存在');
     await this.mediaRepo.update(id, data);
     return this.findById(id);
   }
@@ -130,7 +163,10 @@ export class MediaService {
   async batchRemove(ids: number[]) {
     const mediaList = await this.mediaRepo.find({ where: { id: In(ids) } });
     for (const media of mediaList) {
-      await this.createStorageProvider(media.storageType, media.ossPlatform).delete(media.filename);
+      await this.createStorageProvider(
+        media.storageType,
+        media.ossPlatform,
+      ).delete(media.filename);
     }
     await this.mediaRepo.delete(ids);
   }
@@ -146,7 +182,11 @@ export class MediaService {
     return name;
   }
 
-  private generateFilename(originalName: string, app?: string | null, folder?: string | null): string {
+  private generateFilename(
+    originalName: string,
+    app?: string | null,
+    folder?: string | null,
+  ): string {
     const ext = extname(originalName) || '';
     const parts: string[] = [];
     if (app) parts.push(app);
@@ -159,7 +199,10 @@ export class MediaService {
     return createHash('sha256').update(buffer).digest('hex');
   }
 
-  private createStorageProvider(storageType: StorageType, ossPlatform: OssPlatform): StorageProvider {
+  private createStorageProvider(
+    storageType: StorageType,
+    ossPlatform: OssPlatform,
+  ): StorageProvider {
     if (storageType === 'local') {
       return new StorageProvider({ provider: 'local' });
     }
@@ -183,7 +226,9 @@ export class MediaService {
     };
 
     if (!config.bucket || !config.accessKeyId || !config.secretAccessKey) {
-      throw new BadRequestException('OSS 未配置：请设置 OSS_BUCKET / OSS_ACCESS_KEY_ID / OSS_SECRET_ACCESS_KEY');
+      throw new BadRequestException(
+        'OSS 未配置：请设置 OSS_BUCKET / OSS_ACCESS_KEY_ID / OSS_SECRET_ACCESS_KEY',
+      );
     }
 
     return new StorageProvider(config);
@@ -195,12 +240,16 @@ export class MediaService {
   private createR2Provider(): StorageProvider {
     const accountId = this.configService.get<string>('R2_ACCOUNT_ID');
     const accessKeyId = this.configService.get<string>('R2_ACCESS_KEY_ID');
-    const secretAccessKey = this.configService.get<string>('R2_SECRET_ACCESS_KEY');
+    const secretAccessKey = this.configService.get<string>(
+      'R2_SECRET_ACCESS_KEY',
+    );
     const bucket = this.configService.get<string>('R2_BUCKET');
     const publicDomain = this.configService.get<string>('R2_PUBLIC_DOMAIN');
 
     if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
-      throw new BadRequestException('R2 未配置：请设置 R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET');
+      throw new BadRequestException(
+        'R2 未配置：请设置 R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET',
+      );
     }
 
     return new StorageProvider({

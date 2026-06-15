@@ -1,4 +1,10 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  NotFoundException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { PostEntity } from './post.entity';
@@ -11,6 +17,7 @@ const POST_ENTITY_TYPE = 'post';
 
 @Injectable()
 export class PostService implements OnModuleInit {
+  private readonly logger = new Logger(PostService.name);
   constructor(
     @InjectRepository(PostEntity)
     private readonly postRepo: Repository<PostEntity>,
@@ -27,7 +34,8 @@ export class PostService implements OnModuleInit {
    */
   async onModuleInit() {
     try {
-      const migrated = await this.visibilityService.getVisibilityCount?.(POST_ENTITY_TYPE);
+      const migrated =
+        await this.visibilityService.getVisibilityCount?.(POST_ENTITY_TYPE);
       if (migrated && migrated > 0) return;
 
       // 旧表还存在的话查询迁移（raw query 兼容 synchronize 旧表残留）
@@ -39,12 +47,16 @@ export class PostService implements OnModuleInit {
       await rawRepo.query(
         `INSERT IGNORE INTO entity_visibility (entity_type, entity_id, subject_type, subject_id, created_at)
          VALUES ${rows.map(() => '(?, ?, ?, ?, NOW())').join(', ')}`,
-        rows.flatMap((r) => [POST_ENTITY_TYPE, r.entityId, 'user', r.subjectId]),
+        rows.flatMap((r) => [
+          POST_ENTITY_TYPE,
+          r.entityId,
+          'user',
+          r.subjectId,
+        ]),
       );
       // 迁移完成清空旧表
       await rawRepo.query('TRUNCATE TABLE post_allowed_users');
-      // eslint-disable-next-line no-console
-      console.log(`[PostService] 迁移完成：${rows.length} 条 post_allowed_users → entity_visibility`);
+      this.logger.log(`迁移完成：${rows.length} 条 post_allowed_users → entity_visibility`);
     } catch (e) {
       // 旧表可能已不存在，忽略
     }
@@ -53,12 +65,19 @@ export class PostService implements OnModuleInit {
   async findAll(
     page = 1,
     pageSize = 20,
-    filters?: { id?: number; keyword?: string; status?: string; categoryId?: number; tagId?: number },
+    filters?: {
+      id?: number;
+      keyword?: string;
+      status?: string;
+      categoryId?: number;
+      tagId?: number;
+    },
     publicOnly = false,
     withVisibility = false,
     isLoggedIn = false,
   ) {
-    const qb = this.postRepo.createQueryBuilder('p')
+    const qb = this.postRepo
+      .createQueryBuilder('p')
       .leftJoinAndSelect('p.author', 'author')
       .leftJoinAndSelect('p.category', 'category')
       .leftJoinAndSelect('p.tags', 'tags');
@@ -70,7 +89,9 @@ export class PostService implements OnModuleInit {
           visible: [POST_STATUS.PUBLISHED, POST_STATUS.LOGIN],
         });
       } else {
-        qb.andWhere('p.status = :published', { published: POST_STATUS.PUBLISHED });
+        qb.andWhere('p.status = :published', {
+          published: POST_STATUS.PUBLISHED,
+        });
       }
     } else if (filters?.status !== undefined) {
       qb.andWhere('p.status = :status', { status: filters.status });
@@ -82,11 +103,15 @@ export class PostService implements OnModuleInit {
       qb.andWhere('p.title LIKE :keyword', { keyword: `%${filters.keyword}%` });
     }
     if (filters?.categoryId !== undefined) {
-      qb.andWhere('p.categoryId = :categoryId', { categoryId: filters.categoryId });
+      qb.andWhere('p.categoryId = :categoryId', {
+        categoryId: filters.categoryId,
+      });
     }
     if (filters?.tagId !== undefined) {
-      qb.innerJoin('post_tags', 'pt', 'pt.post_id = p.id')
-        .andWhere('pt.tag_id = :tagId', { tagId: filters.tagId });
+      qb.innerJoin('post_tags', 'pt', 'pt.post_id = p.id').andWhere(
+        'pt.tag_id = :tagId',
+        { tagId: filters.tagId },
+      );
     }
 
     qb.andWhere('p.deletedAt IS NULL')
@@ -99,7 +124,9 @@ export class PostService implements OnModuleInit {
 
     // admin 列表：仅为 private 行注入可见性配置（避免 N+1，已用批量查询）
     if (withVisibility && list.length) {
-      const privateIds = list.filter((p) => p.status === POST_STATUS.PRIVATE).map((p) => p.id);
+      const privateIds = list
+        .filter((p) => p.status === POST_STATUS.PRIVATE)
+        .map((p) => p.id);
       if (privateIds.length) {
         const visMap = await this.getVisibilityMap(privateIds);
         for (const p of list) {
@@ -120,11 +147,32 @@ export class PostService implements OnModuleInit {
     if (publicOnly) {
       where.status = POST_STATUS.PUBLISHED;
     }
-    return this.postRepo.findOne({ where, relations: ['author', 'category', 'tags'] });
+    return this.postRepo.findOne({
+      where,
+      relations: ['author', 'category', 'tags'],
+    });
   }
 
-  async create(data: Partial<PostEntity> & { tagIds?: number[]; allowedUserIds?: number[]; allowedRoleIds?: number[] }) {
+  async create(
+    data: Partial<PostEntity> & {
+      tagIds?: number[];
+      allowedUserIds?: number[];
+      allowedRoleIds?: number[];
+    },
+  ) {
     const { tagIds, allowedUserIds, allowedRoleIds, ...postData } = data;
+
+    // UNIQUE 预检：slug
+    if (postData.slug) {
+      const exist = await this.postRepo.findOne({
+        where: { slug: postData.slug },
+        select: ['id', 'deletedAt'],
+      });
+      if (exist && exist.deletedAt === null) {
+        throw new ConflictException(`slug「${postData.slug}」已存在`);
+      }
+    }
+
     const post = this.postRepo.create(postData);
 
     if (tagIds?.length) {
@@ -137,7 +185,15 @@ export class PostService implements OnModuleInit {
       post.publishedAt = null;
     }
 
-    const saved = await this.postRepo.save(post);
+    let saved: PostEntity;
+    try {
+      saved = await this.postRepo.save(post);
+    } catch (e: any) {
+      if (e?.code === 'ER_DUP_ENTRY') {
+        throw new ConflictException('slug 已存在');
+      }
+      throw e;
+    }
 
     // 写入可见性配置（即使是 private 状态，也允许配置空的可见性）
     await this.visibilityService.setVisibility(
@@ -150,16 +206,39 @@ export class PostService implements OnModuleInit {
     return saved;
   }
 
-  async update(id: number, data: Partial<PostEntity> & { tagIds?: number[]; allowedUserIds?: number[]; allowedRoleIds?: number[] }) {
+  async update(
+    id: number,
+    data: Partial<PostEntity> & {
+      tagIds?: number[];
+      allowedUserIds?: number[];
+      allowedRoleIds?: number[];
+    },
+  ) {
     const { tagIds, allowedUserIds, allowedRoleIds, ...postData } = data;
 
-    const post = await this.postRepo.findOne({ where: { id }, relations: ['tags'] });
-    if (!post) return null;
+    const post = await this.postRepo.findOne({
+      where: { id },
+      relations: ['tags'],
+    });
+    if (!post) throw new NotFoundException('文章不存在');
+
+    // 更新时 slug 冲突预检
+    if (postData.slug && postData.slug !== post.slug) {
+      const dup = await this.postRepo.findOne({
+        where: { slug: postData.slug },
+        select: ['id', 'deletedAt'],
+      });
+      if (dup && dup.id !== id && dup.deletedAt === null) {
+        throw new ConflictException(`slug「${postData.slug}」已存在`);
+      }
+    }
 
     Object.assign(post, postData);
 
     if (tagIds !== undefined) {
-      post.tags = tagIds.length ? await this.tagRepo.findBy({ id: In(tagIds) }) : [];
+      post.tags = tagIds.length
+        ? await this.tagRepo.findBy({ id: In(tagIds) })
+        : [];
     }
 
     if (postData.status === POST_STATUS.PUBLISHED && !post.publishedAt) {
@@ -198,10 +277,19 @@ export class PostService implements OnModuleInit {
   async getVisibilityMap(postIds: number[]) {
     if (postIds.length === 0) return new Map();
     // 利用 service 的批量查询能力
-    const result = new Map<number, { allowedUserIds: number[]; allowedRoleIds: number[] }>();
+    const result = new Map<
+      number,
+      { allowedUserIds: number[]; allowedRoleIds: number[] }
+    >();
     // 简单实现：并行查（postIds 通常一页最多 50 个）
     const items = await Promise.all(
-      postIds.map(async (id) => [id, await this.visibilityService.getVisibility(POST_ENTITY_TYPE, id)] as const),
+      postIds.map(
+        async (id) =>
+          [
+            id,
+            await this.visibilityService.getVisibility(POST_ENTITY_TYPE, id),
+          ] as const,
+      ),
     );
     for (const [id, vis] of items) {
       result.set(id, vis);
@@ -213,8 +301,17 @@ export class PostService implements OnModuleInit {
    * 判定用户能否访问 private 文章
    * 直接授权 OR 用户角色命中
    */
-  async canAccess(postId: number, userId: number, userRoleIds: number[] = []): Promise<boolean> {
-    return this.visibilityService.canAccess(POST_ENTITY_TYPE, postId, userId, userRoleIds);
+  async canAccess(
+    postId: number,
+    userId: number,
+    userRoleIds: number[] = [],
+  ): Promise<boolean> {
+    return this.visibilityService.canAccess(
+      POST_ENTITY_TYPE,
+      postId,
+      userId,
+      userRoleIds,
+    );
   }
 
   async remove(id: number) {
@@ -227,7 +324,8 @@ export class PostService implements OnModuleInit {
   }
 
   async findTrashed(page = 1, pageSize = 20) {
-    const qb = this.postRepo.createQueryBuilder('p')
+    const qb = this.postRepo
+      .createQueryBuilder('p')
       .leftJoinAndSelect('p.author', 'author')
       .leftJoinAndSelect('p.category', 'category')
       .leftJoinAndSelect('p.tags', 'tags')
@@ -249,7 +347,7 @@ export class PostService implements OnModuleInit {
       } else if (status === POST_STATUS.DRAFT) {
         update.publishedAt = null;
       }
-      await this.postRepo.update(post.id, update as any);
+      await this.postRepo.update(post.id, update);
     }
   }
 
@@ -267,7 +365,12 @@ export class PostService implements OnModuleInit {
   /**
    * 记录文章阅读：同一 IP 同一文章 24h 内只算一次
    */
-  async recordView(postId: number, ip: string, userAgent?: string, userId?: number) {
+  async recordView(
+    postId: number,
+    ip: string,
+    userAgent?: string,
+    userId?: number,
+  ) {
     const post = await this.postRepo.findOne({ where: { id: postId } });
     if (!post) return;
 

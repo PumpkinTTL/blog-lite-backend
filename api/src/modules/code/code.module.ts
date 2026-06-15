@@ -7,7 +7,9 @@ import { CodeService } from './code.service';
 import { CodeController } from './code.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([CodeEntity, CodeUsageLogEntity, UserEntity])],
+  imports: [
+    TypeOrmModule.forFeature([CodeEntity, CodeUsageLogEntity, UserEntity]),
+  ],
   controllers: [CodeController],
   providers: [CodeService],
   exports: [CodeService],

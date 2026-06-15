@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SettingEntity } from './setting.entity';
@@ -31,11 +31,15 @@ export class SettingService {
   }
 
   async updateByKey(key: string, value: string) {
+    const existing = await this.repo.findOne({ where: { key } });
+    if (!existing) throw new NotFoundException(`配置项「${key}」不存在`);
     await this.repo.update({ key }, { value });
     return this.findByKey(key);
   }
 
   async updateById(id: number, data: Partial<SettingEntity>) {
+    const existing = await this.repo.findOne({ where: { id } });
+    if (!existing) throw new NotFoundException('配置项不存在');
     await this.repo.update(id, data);
     return this.repo.findOne({ where: { id } });
   }

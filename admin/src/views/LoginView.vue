@@ -22,8 +22,8 @@ onMounted(async () => {
     const fp = await FpJS.load()
     const result = await fp.get()
     visitorId.value = result.visitorId
-  } catch (e) {
-    console.warn('指纹加载失败:', e)
+  } catch {
+    // 指纹加载失败（如浏览器扩展阻止），静默降级
     visitorId.value = ''
   }
 })

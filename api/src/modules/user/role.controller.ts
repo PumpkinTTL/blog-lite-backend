@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  Query,
+} from '@nestjs/common';
 import { RoleService } from './role.service';
 import { CreateRoleDto, UpdateRoleDto, BatchIdsDto } from './role.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -9,10 +19,7 @@ export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
   @Get()
-  async list(
-    @Query('id') id?: string,
-    @Query('keyword') keyword?: string,
-  ) {
+  async list(@Query('id') id?: string, @Query('keyword') keyword?: string) {
     const data = await this.roleService.findAll({
       id: id !== undefined ? parseInt(id) : undefined,
       keyword,
@@ -33,7 +40,10 @@ export class RoleController {
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateRoleDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateRoleDto,
+  ) {
     const data = await this.roleService.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }

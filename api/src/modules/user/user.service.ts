@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Logger, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -14,7 +14,7 @@ import { AuthService } from '../auth/auth.service';
 import { CodeService } from '../code/code.service';
 import { CodeEntity } from '../code/code.entity';
 import { CodeUsageLogEntity } from '../code/code-usage-log.entity';
-import { MembershipService, MembershipSummary } from '../membership/membership.service';
+import { MembershipService } from '../membership/membership.service';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { AuditLogService } from '../audit-log/audit-log.service';
 
@@ -48,7 +48,11 @@ export class UserService {
    * 2. 校验密码
    * 3. 调用鉴权中心 POST /auth/token 签发双 Token
    */
-  async login(dto: LoginDto, clientFingerprint: string, clientIp: string): Promise<TokenPayload> {
+  async login(
+    dto: LoginDto,
+    clientFingerprint: string,
+    clientIp: string,
+  ): Promise<TokenPayload> {
     const user = await this.userRepo
       .createQueryBuilder('u')
       .leftJoinAndSelect('u.roles', 'r')
@@ -75,7 +79,10 @@ export class UserService {
     const roles = user.roles.map((r) => r.name);
 
     const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 900);
-    const refreshTtl = this.configService.get<number>('REFRESH_TOKEN_TTL', 604800);
+    const refreshTtl = this.configService.get<number>(
+      'REFRESH_TOKEN_TTL',
+      604800,
+    );
 
     const tokenData = await this.authService.issueToken(
       user.id,
@@ -86,7 +93,9 @@ export class UserService {
       refreshTtl,
     );
 
-    this.logger.log(`用户 ${user.username} 登录成功，角色: [${roles.join(', ')}]`);
+    this.logger.log(
+      `用户 ${user.username} 登录成功，角色: [${roles.join(', ')}]`,
+    );
 
     return {
       accessToken: tokenData.accessToken,
@@ -119,8 +128,13 @@ export class UserService {
 
   // ===== CRUD =====
 
-  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: number }) {
-    const qb = this.userRepo.createQueryBuilder('u')
+  async findAll(
+    page = 1,
+    pageSize = 20,
+    filters?: { id?: number; keyword?: string; status?: number },
+  ) {
+    const qb = this.userRepo
+      .createQueryBuilder('u')
       .leftJoinAndSelect('u.roles', 'roles');
     applyFilters(qb, {
       exact: { 'u.id': filters?.id, 'u.status': filters?.status },
@@ -134,7 +148,8 @@ export class UserService {
 
     // 批量查会员等级（避免 N+1）
     const userIds = list.map((u) => u.id);
-    const membershipMap = await this.membershipService.getHighestActiveBatch(userIds);
+    const membershipMap =
+      await this.membershipService.getHighestActiveBatch(userIds);
     const enrichedList = list.map((u) => ({
       ...u,
       membership: membershipMap.get(u.id) || null,
@@ -144,7 +159,12 @@ export class UserService {
   }
 
   async findById(id: number) {
-    return this.userRepo.findOne({ where: { id }, relations: ['roles'] });
+    const user = await this.userRepo.findOne({
+      where: { id },
+      relations: ['roles'],
+    });
+    if (!user) throw new NotFoundException('用户不存在');
+    return user;
   }
 
   async create(data: Partial<UserEntity> & { roleIds?: number[] }) {
@@ -162,23 +182,80 @@ export class UserService {
     return this.userRepo.save(user);
   }
 
-  async update(id: number, data: Partial<UserEntity> & { roleIds?: number[]; password?: string }, operator?: { id: number; nickname: string }) {
+  async update(
+    id: number,
+    data: Partial<UserEntity> & { roleIds?: number[]; password?: string },
+    operator?: { id: number; nickname: string },
+  ) {
     const { roleIds, password, ...userData } = data;
 
-    const user = await this.userRepo.findOne({ where: { id }, relations: ['roles'] });
-    if (!user) return null;
+    const user = await this.userRepo.findOne({
+      where: { id },
+      relations: ['roles'],
+    });
+    if (!user) throw new NotFoundException('用户不存在');
 
     // 变更审计
     const targetName = `${user.nickname || user.username}(#${id})`;
-    const entries = AuditLogService.diff('user', id, {
-      avatar: user.avatar, nickname: user.nickname, email: user.email, status: user.status,
-    }, {
-      avatar: userData.avatar, nickname: userData.nickname, email: userData.email, status: userData.status,
-    }, ['avatar', 'nickname', 'email', 'status'], {
-      operatorId: operator?.id, operatorName: operator?.nickname, targetName,
-    });
-    if (password) entries.push({ targetType: 'user', targetId: id, field: 'password', note: '密码已修改', targetName, operatorId: operator?.id, operatorName: operator?.nickname });
-    this.auditLog.logMany(entries).catch(e => this.logger.warn('审计日志写入失败', e));
+    const oldRoleIds =
+      user.roles
+        ?.map((r) => r.id)
+        .sort((a, b) => a - b)
+        .join(',') || '';
+    const newRoleIds =
+      roleIds !== undefined
+        ? [...roleIds].sort((a, b) => a - b).join(',')
+        : null;
+
+    const entries = AuditLogService.diff(
+      'user',
+      id,
+      {
+        avatar: user.avatar,
+        nickname: user.nickname,
+        email: user.email,
+        status: user.status,
+      },
+      {
+        avatar: userData.avatar,
+        nickname: userData.nickname,
+        email: userData.email,
+        status: userData.status,
+      },
+      ['avatar', 'nickname', 'email', 'status'],
+      {
+        operatorId: operator?.id,
+        operatorName: operator?.nickname,
+        targetName,
+      },
+    );
+    if (password)
+      entries.push({
+        targetType: 'user',
+        targetId: id,
+        field: 'password',
+        note: '密码已修改',
+        targetName,
+        operatorId: operator?.id,
+        operatorName: operator?.nickname,
+      });
+    // 角色变更单独审计（避免静默提权）
+    if (newRoleIds !== null && newRoleIds !== oldRoleIds) {
+      entries.push({
+        targetType: 'user',
+        targetId: id,
+        field: 'roleIds',
+        oldValue: oldRoleIds,
+        newValue: newRoleIds,
+        note: `角色变更：${oldRoleIds || '空'} → ${newRoleIds || '空'}`,
+        targetName,
+        operatorId: operator?.id,
+        operatorName: operator?.nickname,
+      });
+    }
+    this.auditLog
+      .logMany(entries)
+      .catch((e) => this.logger.warn('审计日志写入失败', e));
 
     Object.assign(user, userData);
 
@@ -187,13 +264,36 @@ export class UserService {
     }
 
     if (roleIds !== undefined) {
-      user.roles = roleIds.length ? await this.roleRepo.findBy({ id: In(roleIds) }) : [];
+      user.roles = roleIds.length
+        ? await this.roleRepo.findBy({ id: In(roleIds) })
+        : [];
     }
 
     return this.userRepo.save(user);
   }
 
-  async remove(id: number) {
+  async remove(id: number, currentUserId?: number) {
+    // 不能删除自己
+    if (currentUserId !== undefined && id === currentUserId) {
+      throw new BadRequestException('不能删除自己');
+    }
+
+    const user = await this.userRepo.findOne({
+      where: { id },
+      relations: ['roles'],
+    });
+    if (!user) {
+      throw new NotFoundException('用户不存在');
+    }
+
+    // 不能删除管理员
+    const hasAdmin = user.roles?.some((r) => r.name === 'admin');
+    if (hasAdmin) {
+      throw new BadRequestException(
+        `用户「${user.nickname || user.username}」是管理员，不能删除`,
+      );
+    }
+
     await this.userRepo.delete(id);
   }
 
@@ -210,7 +310,9 @@ export class UserService {
     for (const user of users) {
       const hasAdmin = user.roles?.some((r) => r.name === 'admin');
       if (hasAdmin) {
-        throw new BadRequestException(`用户「${user.nickname || user.username}」是管理员，不能删除`);
+        throw new BadRequestException(
+          `用户「${user.nickname || user.username}」是管理员，不能删除`,
+        );
       }
     }
 
@@ -225,7 +327,10 @@ export class UserService {
     if (!user) {
       throw new NotFoundException('用户不存在');
     }
-    user.status = user.status === USER_STATUS.ACTIVE ? USER_STATUS.DISABLED : USER_STATUS.ACTIVE;
+    user.status =
+      user.status === USER_STATUS.ACTIVE
+        ? USER_STATUS.DISABLED
+        : USER_STATUS.ACTIVE;
     return this.userRepo.save(user);
   }
 
@@ -239,15 +344,24 @@ export class UserService {
    * 6. 签发 Token
    * 7. 更新最后登录时间
    */
-  async register(dto: RegisterDto, clientFingerprint: string, clientIp: string): Promise<TokenPayload> {
+  async register(
+    dto: RegisterDto,
+    clientFingerprint: string,
+    clientIp: string,
+  ): Promise<TokenPayload> {
     // 1. 检查用户名是否已存在
-    const existingUser = await this.userRepo.findOne({ where: { username: dto.username } });
+    const existingUser = await this.userRepo.findOne({
+      where: { username: dto.username },
+    });
     if (existingUser) {
       throw new BadRequestException('用户名已存在');
     }
 
     // 2. 检查邀请码是否有效
-    const verifyResult = await this.codeService.verifyCode({ code: dto.invitationCode, type: 'invitation' });
+    const verifyResult = await this.codeService.verifyCode({
+      code: dto.invitationCode,
+      type: 'invitation',
+    });
     if (!verifyResult.valid) {
       throw new BadRequestException(verifyResult.message || '邀请码无效');
     }
@@ -257,7 +371,9 @@ export class UserService {
     // 3. 使用注册（事务）
     return this.dataSource.transaction(async (manager) => {
       // 查询默认角色（user）
-      const userRole = await manager.findOne(RoleEntity, { where: { name: 'user' } });
+      const userRole = await manager.findOne(RoleEntity, {
+        where: { name: 'user' },
+      });
       if (!userRole) {
         throw new NotFoundException('默认角色 user 不存在');
       }
@@ -276,7 +392,7 @@ export class UserService {
         lastLoginAt: new Date(),
       });
       user.roles = [userRole];
-      
+
       await manager.save(user);
 
       // 使用邀请码（通过直接调用 CodeService 的 useCode 方法）
@@ -292,10 +408,18 @@ export class UserService {
       });
 
       // 更新 usedCount
-      await manager.increment(CodeEntity, { id: codeEntity.id }, 'usedCount', 1);
+      await manager.increment(
+        CodeEntity,
+        { id: codeEntity.id },
+        'usedCount',
+        1,
+      );
 
       // 检查是否用完，更新状态
-      if (codeEntity.maxUses > 0 && codeEntity.usedCount + 1 >= codeEntity.maxUses) {
+      if (
+        codeEntity.maxUses > 0 &&
+        codeEntity.usedCount + 1 >= codeEntity.maxUses
+      ) {
         await manager.update(CodeEntity, codeEntity.id, {
           status: 'used',
           usedAt: new Date(),
@@ -314,7 +438,10 @@ export class UserService {
 
       const roles = user.roles.map((r) => r.name);
       const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 900);
-      const refreshTtl = this.configService.get<number>('REFRESH_TOKEN_TTL', 604800);
+      const refreshTtl = this.configService.get<number>(
+        'REFRESH_TOKEN_TTL',
+        604800,
+      );
 
       const tokenData = await this.authService.issueToken(
         user.id,
@@ -325,7 +452,9 @@ export class UserService {
         refreshTtl,
       );
 
-      this.logger.log(`用户 ${user.username} 注册成功，角色: [${roles.join(', ')}]`);
+      this.logger.log(
+        `用户 ${user.username} 注册成功，角色: [${roles.join(', ')}]`,
+      );
 
       return {
         accessToken: tokenData.accessToken,
@@ -339,7 +468,11 @@ export class UserService {
   /**
    * 用户端登录（复用管理端登录逻辑）
    */
-  async clientLogin(dto: ClientLoginDto, clientFingerprint: string, clientIp: string): Promise<TokenPayload> {
+  async clientLogin(
+    dto: ClientLoginDto,
+    clientFingerprint: string,
+    clientIp: string,
+  ): Promise<TokenPayload> {
     // 复用现有的 login 方法
     return this.login(
       { username: dto.username, password: dto.password },
@@ -360,8 +493,14 @@ export class UserService {
   /**
    * 刷新 Token：调用鉴权中心刷新双 Token
    */
-  async refreshToken(refreshToken: string, deviceId: string): Promise<TokenPayload> {
-    const tokenData = await this.authService.refreshToken(refreshToken, deviceId);
+  async refreshToken(
+    refreshToken: string,
+    deviceId: string,
+  ): Promise<TokenPayload> {
+    const tokenData = await this.authService.refreshToken(
+      refreshToken,
+      deviceId,
+    );
     return {
       accessToken: tokenData.accessToken,
       refreshToken: tokenData.refreshToken,
@@ -371,7 +510,10 @@ export class UserService {
   }
 
   async getProfile(userId: number) {
-    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['roles'] });
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['roles'],
+    });
     if (!user) throw new NotFoundException('用户不存在');
     return user;
   }

@@ -1,10 +1,26 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  Query,
+  Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { AnnouncementService } from './announcement.service';
-import { CreateAnnouncementDto, UpdateAnnouncementDto, BatchIdsDto } from './announcement.dto';
+import {
+  CreateAnnouncementDto,
+  UpdateAnnouncementDto,
+  BatchIdsDto,
+} from './announcement.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ANNOUNCEMENT_STATUS } from '../../common/constants/status';
+import { parsePagination } from '../../common/utils/parse-pagination';
 
 @Controller('announcement')
 @Roles('admin')
@@ -25,15 +41,12 @@ export class AnnouncementController {
     const user = (req as any)?.user;
     const isAdmin = user?.roles?.includes('admin') ?? false;
     const finalStatus = !isAdmin ? ANNOUNCEMENT_STATUS.VISIBLE : status;
-    const data = await this.service.findAll(
-      page ? parseInt(page) : 1,
-      pageSize ? parseInt(pageSize) : 20,
-      {
-        id: id !== undefined ? parseInt(id) : undefined,
-        keyword,
-        status: finalStatus,
-      },
-    );
+    const { page: p, pageSize: ps } = parsePagination({ page, pageSize });
+    const data = await this.service.findAll(p, ps, {
+      id: id !== undefined ? parseInt(id) : undefined,
+      keyword,
+      status: finalStatus,
+    });
     return { success: true, data, message: 'ok' };
   }
 
@@ -62,7 +75,10 @@ export class AnnouncementController {
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateAnnouncementDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateAnnouncementDto,
+  ) {
     const data = await this.service.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }

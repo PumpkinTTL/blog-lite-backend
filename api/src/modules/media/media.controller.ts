@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Get,
   Post,
@@ -18,8 +18,14 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { extname } from 'path';
 import { MediaService } from './media.service';
-import { CreateMediaDto, UpdateMediaDto, BatchIdsDto, UploadStorageDto } from './media.dto';
+import {
+  CreateMediaDto,
+  UpdateMediaDto,
+  BatchIdsDto,
+  UploadStorageDto,
+} from './media.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import type { Request } from 'express';
 
 @Controller('media')
@@ -36,8 +42,8 @@ export class MediaController {
     @Query('mimeType') mimeType?: string,
   ) {
     const data = await this.mediaService.findAll(
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100),
+      parsePage(page),
+      parsePageSize(pageSize),
       {
         id: id !== undefined ? parseInt(id) : undefined,
         keyword,
@@ -53,7 +59,8 @@ export class MediaController {
       storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
       fileFilter: (_req, file, cb) => {
-        const allowed = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
+        const allowed =
+          /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
         if (!allowed.test(extname(file.originalname).toLowerCase())) {
           cb(new BadRequestException('不支持的文件类型'), false);
           return;
@@ -62,13 +69,23 @@ export class MediaController {
       },
     }),
   )
-  async uploadMany(@UploadedFiles() files: Express.Multer.File[], @Req() req: Request, @Body() dto: UploadStorageDto) {
+  async uploadMany(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req: Request,
+    @Body() dto: UploadStorageDto,
+  ) {
     if (!files?.length) {
       throw new BadRequestException('请选择文件');
     }
     const payload = req as { user?: { sub?: string } };
     const uploaderId = parseInt(payload.user?.sub ?? '1', 10);
-    const data = await this.mediaService.uploadMany(files, uploaderId, { storageType: dto.storageType, ossPlatform: dto.ossPlatform, note: dto.note, app: dto.app, folder: dto.folder });
+    const data = await this.mediaService.uploadMany(files, uploaderId, {
+      storageType: dto.storageType,
+      ossPlatform: dto.ossPlatform,
+      note: dto.note,
+      app: dto.app,
+      folder: dto.folder,
+    });
     return { success: true, data, message: '上传成功' };
   }
 
@@ -84,7 +101,8 @@ export class MediaController {
       storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
       fileFilter: (_req, file, cb) => {
-        const allowed = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
+        const allowed =
+          /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
         if (!allowed.test(extname(file.originalname).toLowerCase())) {
           cb(new BadRequestException('不支持的文件类型'), false);
           return;
@@ -93,13 +111,23 @@ export class MediaController {
       },
     }),
   )
-  async upload(@UploadedFile() file: Express.Multer.File, @Req() req: Request, @Body() dto: UploadStorageDto) {
+  async upload(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+    @Body() dto: UploadStorageDto,
+  ) {
     if (!file) {
       throw new BadRequestException('请选择文件');
     }
     const payload = req as { user?: { sub?: string } };
     const uploaderId = parseInt(payload.user?.sub ?? '1', 10);
-    const data = await this.mediaService.upload(file, uploaderId, { storageType: dto.storageType, ossPlatform: dto.ossPlatform, note: dto.note, app: dto.app, folder: dto.folder });
+    const data = await this.mediaService.upload(file, uploaderId, {
+      storageType: dto.storageType,
+      ossPlatform: dto.ossPlatform,
+      note: dto.note,
+      app: dto.app,
+      folder: dto.folder,
+    });
     return { success: true, data, message: '上传成功' };
   }
 
@@ -110,7 +138,10 @@ export class MediaController {
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateMediaDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateMediaDto,
+  ) {
     const data = await this.mediaService.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }

@@ -11,7 +11,12 @@ import { EmailCodeModule } from '../email-code/email-code.module';
 import { MembershipModule } from '../membership/membership.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity, RoleEntity]), CodeModule, EmailCodeModule, MembershipModule],
+  imports: [
+    TypeOrmModule.forFeature([UserEntity, RoleEntity]),
+    CodeModule,
+    EmailCodeModule,
+    MembershipModule,
+  ],
   controllers: [UserController, RoleController],
   providers: [UserService, RoleService],
   exports: [UserService, RoleService],

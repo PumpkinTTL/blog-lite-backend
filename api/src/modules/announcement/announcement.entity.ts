@@ -4,9 +4,13 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 @Entity('announcements')
+@Index('idx_ann_status', ['status'])
+@Index('idx_ann_sort', ['sortOrder'])
+@Index('idx_ann_created', ['createdAt'])
 export class AnnouncementEntity {
   @PrimaryGeneratedColumn({ comment: '公告 ID' })
   id: number;
@@ -17,7 +21,12 @@ export class AnnouncementEntity {
   @Column({ type: 'text', comment: '内容' })
   content: string;
 
-  @Column({ type: 'varchar', length: 20, default: 'visible', comment: '状态 visible=显示 hidden=隐藏' })
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: 'visible',
+    comment: '状态 visible=显示 hidden=隐藏',
+  })
   status: string;
 
   @Column({ type: 'int', default: 0, name: 'sort_order', comment: '排序权重' })

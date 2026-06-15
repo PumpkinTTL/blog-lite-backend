@@ -15,15 +15,31 @@ export class DonationService {
   async findAll(
     page = 1,
     pageSize = 20,
-    filters?: { id?: number; keyword?: string; status?: DonationStatus; payMethod?: string; cryptoNetwork?: string },
+    filters?: {
+      id?: number;
+      keyword?: string;
+      status?: DonationStatus;
+      payMethod?: string;
+      cryptoNetwork?: string;
+    },
   ) {
     const qb = this.repo.createQueryBuilder('e');
     applyFilters(qb, {
-      exact: { 'e.id': filters?.id, 'e.status': filters?.status, 'e.payMethod': filters?.payMethod, 'e.cryptoNetwork': filters?.cryptoNetwork },
-      like: { keyword: filters?.keyword, fields: ['e.donorName', 'e.message', 'e.tradeNo', 'e.cryptoTxHash'] },
+      exact: {
+        'e.id': filters?.id,
+        'e.status': filters?.status,
+        'e.payMethod': filters?.payMethod,
+        'e.cryptoNetwork': filters?.cryptoNetwork,
+      },
+      like: {
+        keyword: filters?.keyword,
+        fields: ['e.donorName', 'e.message', 'e.tradeNo', 'e.cryptoTxHash'],
+      },
     });
-    qb.orderBy('e.sortOrder', 'ASC').addOrderBy('e.createdAt', 'DESC')
-      .skip((page - 1) * pageSize).take(pageSize);
+    qb.orderBy('e.sortOrder', 'ASC')
+      .addOrderBy('e.createdAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
     const [list, total] = await qb.getManyAndCount();
     return { list, total, page, pageSize };
   }
@@ -57,7 +73,10 @@ export class DonationService {
   async toggleStatus(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('捐赠记录不存在');
-    entity.status = entity.status === DONATION_STATUS.CONFIRMED ? DONATION_STATUS.PENDING : DONATION_STATUS.CONFIRMED;
+    entity.status =
+      entity.status === DONATION_STATUS.CONFIRMED
+        ? DONATION_STATUS.PENDING
+        : DONATION_STATUS.CONFIRMED;
     return this.repo.save(entity);
   }
 
@@ -75,8 +94,14 @@ export class DonationService {
       this.repo
         .createQueryBuilder('e')
         .select('COUNT(*)', 'total')
-        .addSelect(`SUM(CASE WHEN e.status = ${DONATION_STATUS.CONFIRMED} THEN 1 ELSE 0 END)`, 'confirmed')
-        .addSelect(`SUM(CASE WHEN e.status = ${DONATION_STATUS.PENDING} THEN 1 ELSE 0 END)`, 'pending')
+        .addSelect(
+          `SUM(CASE WHEN e.status = ${DONATION_STATUS.CONFIRMED} THEN 1 ELSE 0 END)`,
+          'confirmed',
+        )
+        .addSelect(
+          `SUM(CASE WHEN e.status = ${DONATION_STATUS.PENDING} THEN 1 ELSE 0 END)`,
+          'pending',
+        )
         .getRawOne(),
       this.repo
         .createQueryBuilder('e')
@@ -91,14 +116,20 @@ export class DonationService {
         .select('e.cryptoNetwork', 'cryptoNetwork')
         .addSelect('COUNT(*)', 'count')
         .addSelect('COALESCE(SUM(e.amount), 0)', 'totalAmount')
-        .where('e.payMethod = :pm AND e.status = :status', { pm: 'crypto', status: 1 })
+        .where('e.payMethod = :pm AND e.status = :status', {
+          pm: 'crypto',
+          status: 1,
+        })
         .andWhere('e.cryptoNetwork IS NOT NULL')
         .groupBy('e.cryptoNetwork')
         .getRawMany(),
     ]);
 
     const parse = (v: string) => parseFloat(v || '0');
-    const totalAmount = confirmedMethods.reduce((s, r) => s + parse(r.totalAmount), 0);
+    const totalAmount = confirmedMethods.reduce(
+      (s, r) => s + parse(r.totalAmount),
+      0,
+    );
 
     return {
       total: parseInt(totalResult?.total || '0'),
@@ -126,7 +157,8 @@ export class DonationService {
       take: 10000,
     });
 
-    const header = 'ID,捐赠者,金额,币种,支付方式,加密网络,交易哈希,留言,状态,展示,排序,备注,创建时间\n';
+    const header =
+      'ID,捐赠者,金额,币种,支付方式,加密网络,交易哈希,留言,状态,展示,排序,备注,创建时间\n';
     const rows = list.map((d) =>
       [
         d.id,
@@ -137,7 +169,11 @@ export class DonationService {
         d.cryptoNetwork || '',
         d.cryptoTxHash || '',
         `"${(d.message || '').replace(/"/g, '""')}"`,
-        d.status === DONATION_STATUS.CONFIRMED ? '已确认' : d.status === DONATION_STATUS.PENDING ? '待确认' : '已退款',
+        d.status === DONATION_STATUS.CONFIRMED
+          ? '已确认'
+          : d.status === DONATION_STATUS.PENDING
+            ? '待确认'
+            : '已退款',
         d.isVisible ? '是' : '否',
         d.sortOrder,
         `"${(d.remark || '').replace(/"/g, '""')}"`,

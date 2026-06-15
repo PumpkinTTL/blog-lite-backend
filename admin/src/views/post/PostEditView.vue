@@ -107,8 +107,8 @@ async function loadOptions() {
     const rolePayload = roleRes.data
     const roles = Array.isArray(rolePayload) ? rolePayload : (rolePayload?.list || [])
     roleOptions.value = roles.map((r: any) => ({ label: `${r.displayName} (${r.name})`, value: r.id }))
-  } catch (e) {
-    console.error('加载选项失败:', e)
+  } catch (e: any) {
+    message.error(e?.message || '加载选项失败')
   }
 }
 
@@ -243,8 +243,8 @@ async function uploadContentImages(content: string): Promise<string> {
       const file = base64ToFile(dataUrl, `content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
       const realUrl = await uploadOne(file, note, 'vibehub', 'article')
       result = result.replace(full, `![${alt}](${realUrl})`)
-    } catch (e) {
-      console.error('正文图片上传失败:', e)
+    } catch (e: any) {
+      message.error(e?.message || '正文图片上传失败')
     }
   }
   return result
@@ -263,8 +263,8 @@ async function onEditorUploadImg(
     if (!f.type.startsWith('image/')) continue
     try {
       urls.push(await fileToBase64(f))
-    } catch (e) {
-      console.error('图片读取失败:', e)
+    } catch {
+      // 单张图片读取失败时跳过，不打断其他图片
     }
   }
   callback(urls)
@@ -286,8 +286,8 @@ async function onEditorDrop(event: DragEvent) {
         targetValue: `\n![](${dataUrl})\n`,
         select: false,
       }))
-    } catch (e) {
-      console.error('拖拽图片插入失败:', e)
+    } catch {
+      // 拖拽图片处理失败时静默不打断
     }
   }
 }

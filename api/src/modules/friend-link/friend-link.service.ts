@@ -12,21 +12,33 @@ export class FriendLinkService {
     private readonly repo: Repository<FriendLinkEntity>,
   ) {}
 
-  async findAll(page = 1, pageSize = 20, filters?: { id?: number; keyword?: string; status?: string }) {
-    const qb = this.repo.createQueryBuilder('e')
+  async findAll(
+    page = 1,
+    pageSize = 20,
+    filters?: { id?: number; keyword?: string; status?: string },
+  ) {
+    const qb = this.repo
+      .createQueryBuilder('e')
       .leftJoinAndSelect('e.post', 'post');
     applyFilters(qb, {
       exact: { 'e.id': filters?.id, 'e.status': filters?.status },
       like: { keyword: filters?.keyword, fields: ['e.name'] },
     });
-    qb.orderBy('e.sortOrder', 'ASC').addOrderBy('e.createdAt', 'DESC')
-      .skip((page - 1) * pageSize).take(pageSize);
+    qb.orderBy('e.sortOrder', 'ASC')
+      .addOrderBy('e.createdAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
     const [list, total] = await qb.getManyAndCount();
     return { list, total, page, pageSize };
   }
 
   async findById(id: number) {
-    return this.repo.findOne({ where: { id }, relations: ['post'] });
+    const entity = await this.repo.findOne({
+      where: { id },
+      relations: ['post'],
+    });
+    if (!entity) throw new NotFoundException('友链不存在');
+    return entity;
   }
 
   async create(data: Partial<FriendLinkEntity>) {
@@ -35,16 +47,21 @@ export class FriendLinkService {
   }
 
   async update(id: number, data: Partial<FriendLinkEntity>) {
+    const existing = await this.repo.findOne({ where: { id } });
+    if (!existing) throw new NotFoundException('友链不存在');
     // 排除关联字段，只更新纯字段
     const { post, ...updateData } = data as any;
     await this.repo.update(id, updateData);
-    return this.findById(id);
+    return this.repo.findOne({ where: { id }, relations: ['post'] });
   }
 
   async toggleStatus(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('友链不存在');
-    entity.status = entity.status === FRIEND_LINK_STATUS.VISIBLE ? FRIEND_LINK_STATUS.HIDDEN : FRIEND_LINK_STATUS.VISIBLE;
+    entity.status =
+      entity.status === FRIEND_LINK_STATUS.VISIBLE
+        ? FRIEND_LINK_STATUS.HIDDEN
+        : FRIEND_LINK_STATUS.VISIBLE;
     return this.repo.save(entity);
   }
 

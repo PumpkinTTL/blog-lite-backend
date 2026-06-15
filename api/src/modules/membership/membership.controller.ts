@@ -1,9 +1,26 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, Req } from '@nestjs/common';
+﻿import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  ParseIntPipe,
+  Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { MembershipService } from './membership.service';
-import { GrantMembershipDto, UpdateMembershipDto, RedeemMembershipDto, BatchIdsDto } from './membership.dto';
+import {
+  GrantMembershipDto,
+  UpdateMembershipDto,
+  RedeemMembershipDto,
+  BatchIdsDto,
+} from './membership.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import { CodeService } from '../code/code.service';
 import { PlanService } from '../plan/plan.service';
 
@@ -28,8 +45,8 @@ export class MembershipController {
     @Query('source') source?: string,
   ) {
     const data = await this.memberService.findAll(
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100),
+      parsePage(page),
+      parsePageSize(pageSize),
       {
         userId: userId ? parseInt(userId) : undefined,
         planId: planId ? parseInt(planId) : undefined,
@@ -62,7 +79,10 @@ export class MembershipController {
 
   @Put(':id')
   @Roles('admin')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateMembershipDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateMembershipDto,
+  ) {
     const m = await this.memberService.update(id, dto);
     return { success: true, data: m, message: '更新成功' };
   }
@@ -95,12 +115,20 @@ export class MembershipController {
       return { success: false, message: '请先登录', data: null };
     }
 
-    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
 
     // 1. 验证码（限定 type=membership）
-    const verify = await this.codeService.verifyCode({ code: dto.code, type: 'membership' as any });
+    const verify = await this.codeService.verifyCode({
+      code: dto.code,
+      type: 'membership',
+    });
     if (!verify.valid) {
-      return { success: false, message: verify.message || '兑换码无效', data: null };
+      return {
+        success: false,
+        message: verify.message || '兑换码无效',
+        data: null,
+      };
     }
 
     const code = verify.code!;
@@ -112,14 +140,25 @@ export class MembershipController {
     // 2. 校验套餐存在且上架
     const plan = await this.planService.findById(planId);
     if (!plan.isActive) {
-      return { success: false, message: `套餐「${plan.name}」已下架`, data: null };
+      return {
+        success: false,
+        message: `套餐「${plan.name}」已下架`,
+        data: null,
+      };
     }
 
     // 3. 使用码（事务扣减 usedCount，插日志）
     try {
-      await this.codeService.useCode(dto.code, userId, ip, { action: 'redeem_membership', planId });
+      await this.codeService.useCode(dto.code, userId, ip, {
+        action: 'redeem_membership',
+        planId,
+      });
     } catch (e: any) {
-      return { success: false, message: e.message || '兑换码使用失败', data: null };
+      return {
+        success: false,
+        message: e.message || '兑换码使用失败',
+        data: null,
+      };
     }
 
     // 4. 开通会员 —— 时长由套餐 plan.durationDays 决定
@@ -131,7 +170,11 @@ export class MembershipController {
       note: `兑换码 ${code.code}`,
     });
 
-    return { success: true, data: membership, message: `已开通「${plan.name}」` };
+    return {
+      success: true,
+      data: membership,
+      message: `已开通「${plan.name}」`,
+    };
   }
 
   // ===== 用户端：查自己的会员状态 =====
@@ -145,7 +188,11 @@ export class MembershipController {
     const user = (req as any)?.user;
     const userId: number | null = user?.sub ? Number(user.sub) : null;
     if (!userId) {
-      return { success: true, data: { level: null, memberships: [] }, message: 'ok' };
+      return {
+        success: true,
+        data: { level: null, memberships: [] },
+        message: 'ok',
+      };
     }
     const [level, memberships] = await Promise.all([
       this.memberService.getActiveLevel(userId),

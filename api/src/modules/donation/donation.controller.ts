@@ -12,9 +12,14 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { DonationService } from './donation.service';
-import { CreateDonationDto, UpdateDonationDto, BatchIdsDto } from './donation.dto';
+import {
+  CreateDonationDto,
+  UpdateDonationDto,
+  BatchIdsDto,
+} from './donation.dto';
 import { DonationStatus } from './donation.entity';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 
 @Controller('donation')
 @Roles('admin')
@@ -32,7 +37,10 @@ export class DonationController {
     const csv = await this.service.exportCsv();
     const filename = `donations_${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(filename)}"`,
+    );
     res.send('\uFEFF' + csv);
   }
 
@@ -46,10 +54,10 @@ export class DonationController {
     @Query('payMethod') payMethod?: string,
     @Query('cryptoNetwork') cryptoNetwork?: string,
   ) {
-    const p = Math.max(Number(page) || 1, 1);
-    const ps = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
+    const p = parsePage(page);
+    const ps = parsePageSize(pageSize);
     const data = await this.service.findAll(p, ps, {
-      id: id ? (Number(id) || undefined) : undefined,
+      id: id ? Number(id) || undefined : undefined,
       keyword: keyword || undefined,
       status: (status as DonationStatus) || undefined,
       payMethod: payMethod || undefined,
@@ -71,7 +79,10 @@ export class DonationController {
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDonationDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateDonationDto,
+  ) {
     const data = await this.service.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }

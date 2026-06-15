@@ -1,12 +1,32 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, Req } from '@nestjs/common';
+﻿import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  ParseIntPipe,
+  Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { UserService } from './user.service';
 import { LoginDto } from './login.dto';
 import { RefreshTokenDto } from './login.dto';
-import { CreateUserDto, UpdateUserDto, UpdateProfileDto, ResetPasswordDto, SendResetCodeDto, ResetPasswordByCodeDto, BatchIdsDto } from './user.dto';
+import {
+  CreateUserDto,
+  UpdateUserDto,
+  UpdateProfileDto,
+  ResetPasswordDto,
+  SendResetCodeDto,
+  ResetPasswordByCodeDto,
+  BatchIdsDto,
+} from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import { EmailCodeService } from '../email-code/email-code.service';
 import { USER_STATUS } from '../../common/constants/status';
 
@@ -23,7 +43,8 @@ export class UserController {
   @Post('login')
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     const fingerprint = req.body.fingerprint || '';
-    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
     const tokenPayload = await this.userService.login(dto, fingerprint, ip);
 
     return {
@@ -39,7 +60,10 @@ export class UserController {
   @Public()
   @Post('refresh')
   async refresh(@Body() dto: RefreshTokenDto) {
-    const tokenData = await this.userService.refreshToken(dto.refreshToken, dto.deviceId);
+    const tokenData = await this.userService.refreshToken(
+      dto.refreshToken,
+      dto.deviceId,
+    );
     return {
       success: true,
       data: { ...tokenData, tokenType: 'Bearer' },
@@ -53,7 +77,8 @@ export class UserController {
   @Post('register')
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const fingerprint = req.body.fingerprint || '';
-    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
     const tokenPayload = await this.userService.register(dto, fingerprint, ip);
 
     return {
@@ -72,8 +97,13 @@ export class UserController {
   @Post('client-login')
   async clientLogin(@Body() dto: ClientLoginDto, @Req() req: Request) {
     const fingerprint = dto.fingerprint || req.body.fingerprint || '';
-    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
-    const tokenPayload = await this.userService.clientLogin(dto, fingerprint, ip);
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const tokenPayload = await this.userService.clientLogin(
+      dto,
+      fingerprint,
+      ip,
+    );
 
     return {
       success: true,
@@ -122,8 +152,8 @@ export class UserController {
     @Query('status') status?: string,
   ) {
     const data = await this.userService.findAll(
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100),
+      parsePage(page),
+      parsePageSize(pageSize),
       {
         id: id !== undefined ? parseInt(id) : undefined,
         keyword,
@@ -149,9 +179,17 @@ export class UserController {
 
   @Roles('admin')
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUserDto, @Req() req: Request) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateUserDto,
+    @Req() req: Request,
+  ) {
     const op = (req as any).user;
-    const data = await this.userService.update(id, dto, op ? { id: Number(op.sub), nickname: op.nickname || op.sub } : undefined);
+    const data = await this.userService.update(
+      id,
+      dto,
+      op ? { id: Number(op.sub), nickname: op.nickname || op.sub } : undefined,
+    );
     return { success: true, data, message: '更新成功' };
   }
 
@@ -165,26 +203,50 @@ export class UserController {
 
   @Roles('admin')
   @Delete(':id')
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    await this.userService.remove(id);
+  async remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const currentUserId = Number((req as any).user?.sub);
+    await this.userService.remove(id, currentUserId);
     return { success: true, message: '删除成功' };
   }
 
   @Roles('admin')
   @Put(':id/toggle-status')
-  async toggleStatus(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+  async toggleStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request,
+  ) {
     const currentUserId = parseInt((req as any).user?.sub, 10);
     if (currentUserId === id) {
       return { success: false, message: '不能禁用自己' };
     }
     const data = await this.userService.toggleStatus(id);
-    return { success: true, data, message: data.status === USER_STATUS.ACTIVE ? '已启用' : '已禁用' };
+    return {
+      success: true,
+      data,
+      message: data.status === USER_STATUS.ACTIVE ? '已启用' : '已禁用',
+    };
   }
 
   @Roles('admin')
   @Put(':id/reset-password')
-  async resetPassword(@Param('id', ParseIntPipe) id: number, @Body() dto: ResetPasswordDto) {
-    const data = await this.userService.resetPassword(id, dto.newPassword);
+  async resetPassword(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ResetPasswordDto,
+    @Req() req: Request,
+  ) {
+    const op = (req as any).user;
+    const operatorId = op ? Number(op.sub) : undefined;
+
+    // 禁止管理员重置其他管理员的密码（防止接管超管）
+    const targetUser = await this.userService.findById(id);
+    const targetIsAdmin = targetUser.roles?.some(
+      (r: any) => r.name === 'admin',
+    );
+    if (targetIsAdmin && operatorId !== id) {
+      return { success: false, message: '不能重置其他管理员的密码' };
+    }
+
+    await this.userService.resetPassword(id, dto.newPassword);
     return { success: true, message: '密码重置成功' };
   }
 
@@ -193,13 +255,12 @@ export class UserController {
   @Public()
   @Post('send-reset-code')
   async sendResetCode(@Body() dto: SendResetCodeDto) {
-    // 检查邮箱是否已注册
+    // 统一消息，防止邮箱枚举
     const user = await this.userService.findByEmail(dto.email);
-    if (!user) {
-      return { success: false, message: '该邮箱未注册' };
+    if (user) {
+      await this.emailCodeService.sendCode(dto.email);
     }
-    await this.emailCodeService.sendCode(dto.email);
-    return { success: true, message: '验证码已发送' };
+    return { success: true, message: '如果该邮箱已注册，验证码已发送' };
   }
 
   // ===== 忘记密码：验证码重置密码 =====
@@ -213,7 +274,8 @@ export class UserController {
     // 查找用户并重置密码
     const user = await this.userService.findByEmail(dto.email);
     if (!user) {
-      return { success: false, message: '该邮箱未注册' };
+      // 统一消息，防止邮箱枚举
+      return { success: false, message: '验证码无效或已过期' };
     }
 
     await this.userService.resetPassword(user.id, dto.newPassword);

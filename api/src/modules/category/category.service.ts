@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { CategoryEntity } from './category.entity';
@@ -36,7 +41,9 @@ export class CategoryService {
       .groupBy('p.categoryId')
       .getRawMany<{ categoryId: number; count: string }>();
 
-    const countMap = new Map(counts.map((c) => [c.categoryId, parseInt(c.count)]));
+    const countMap = new Map(
+      counts.map((c) => [c.categoryId, parseInt(c.count)]),
+    );
 
     function attachCounts(
       list: CategoryEntity[],
@@ -55,17 +62,58 @@ export class CategoryService {
   }
 
   async findById(id: number) {
-    return this.categoryRepo.findOne({ where: { id } });
+    const category = await this.categoryRepo.findOne({ where: { id } });
+    if (!category) throw new NotFoundException('分类不存在');
+    return category;
   }
 
   async create(data: Partial<CategoryEntity>) {
+    // UNIQUE 预检
+    if (data.slug) {
+      const exist = await this.categoryRepo.findOne({
+        where: { slug: data.slug },
+      });
+      if (exist) throw new ConflictException(`slug「${data.slug}」已存在`);
+    }
+    if (data.name) {
+      const exist = await this.categoryRepo.findOne({
+        where: { name: data.name },
+      });
+      if (exist) throw new ConflictException(`分类名「${data.name}」已存在`);
+    }
     const category = this.categoryRepo.create(data);
-    return this.categoryRepo.save(category);
+    try {
+      return await this.categoryRepo.save(category);
+    } catch (e: any) {
+      // 兜底：并发场景下的 DB 层约束
+      if (e?.code === 'ER_DUP_ENTRY') {
+        throw new ConflictException('分类名或 slug 已存在');
+      }
+      throw e;
+    }
   }
 
   async update(id: number, data: Partial<CategoryEntity>) {
+    // 预检存在
+    const existing = await this.categoryRepo.findOne({ where: { id } });
+    if (!existing) throw new NotFoundException('分类不存在');
+
+    // 更新时的 UNIQUE 冲突预检（仅当字段被显式传入）
+    if (data.slug && data.slug !== existing.slug) {
+      const dup = await this.categoryRepo.findOne({
+        where: { slug: data.slug },
+      });
+      if (dup) throw new ConflictException(`slug「${data.slug}」已存在`);
+    }
+    if (data.name && data.name !== existing.name) {
+      const dup = await this.categoryRepo.findOne({
+        where: { name: data.name },
+      });
+      if (dup) throw new ConflictException(`分类名「${data.name}」已存在`);
+    }
+
     await this.categoryRepo.update(id, data);
-    return this.findById(id);
+    return this.categoryRepo.findOne({ where: { id } });
   }
 
   async remove(id: number) {
@@ -85,7 +133,9 @@ export class CategoryService {
   }
 
   async findTree() {
-    const allCats = await this.categoryRepo.find({ order: { sortOrder: 'ASC' } });
+    const allCats = await this.categoryRepo.find({
+      order: { sortOrder: 'ASC' },
+    });
 
     const counts = await this.postRepo
       .createQueryBuilder('p')
@@ -95,13 +145,23 @@ export class CategoryService {
       .groupBy('p.categoryId')
       .getRawMany<{ categoryId: number; count: string }>();
 
-    const countMap = new Map(counts.map((c) => [c.categoryId, parseInt(c.count)]));
+    const countMap = new Map(
+      counts.map((c) => [c.categoryId, parseInt(c.count)]),
+    );
 
-    const nodeMap = new Map<number, CategoryEntity & { postCount: number; children: any[] }>();
-    const roots: (CategoryEntity & { postCount: number; children: any[] })[] = [];
+    const nodeMap = new Map<
+      number,
+      CategoryEntity & { postCount: number; children: any[] }
+    >();
+    const roots: (CategoryEntity & { postCount: number; children: any[] })[] =
+      [];
 
     for (const cat of allCats) {
-      nodeMap.set(cat.id, { ...cat, postCount: countMap.get(cat.id) ?? 0, children: [] });
+      nodeMap.set(cat.id, {
+        ...cat,
+        postCount: countMap.get(cat.id) ?? 0,
+        children: [],
+      });
     }
 
     for (const cat of allCats) {

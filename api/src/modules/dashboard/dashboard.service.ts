@@ -125,7 +125,7 @@ export class DashboardService {
   /** 阅读量 TOP5 文章 */
   private async getTopPosts() {
     return this.postRepo.find({
-      where: { status: POST_STATUS.PUBLISHED as any },
+      where: { status: POST_STATUS.PUBLISHED },
       select: ['id', 'title', 'slug', 'viewCount', 'likeCount'],
       order: { viewCount: 'DESC' },
       take: 5,
@@ -142,7 +142,9 @@ export class DashboardService {
   }
 
   /** 文章状态分布（饼图） */
-  private async getPostStatusDist(): Promise<{ name: string; value: number }[]> {
+  private async getPostStatusDist(): Promise<
+    { name: string; value: number }[]
+  > {
     const rows = await this.postRepo
       .createQueryBuilder('p')
       .select('p.status', 'status')
@@ -169,8 +171,14 @@ export class DashboardService {
     const rows = await this.interactionRepo
       .createQueryBuilder('i')
       .select("DATE_FORMAT(i.createdAt, '%Y-%m-%d')", 'date')
-      .addSelect("SUM(CASE WHEN i.type = 'like' THEN 1 ELSE 0 END)", 'likeCount')
-      .addSelect("SUM(CASE WHEN i.type = 'favorite' THEN 1 ELSE 0 END)", 'favoriteCount')
+      .addSelect(
+        "SUM(CASE WHEN i.type = 'like' THEN 1 ELSE 0 END)",
+        'likeCount',
+      )
+      .addSelect(
+        "SUM(CASE WHEN i.type = 'favorite' THEN 1 ELSE 0 END)",
+        'favoriteCount',
+      )
       .where('i.createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)')
       .groupBy('date')
       .orderBy('date', 'ASC')
@@ -178,7 +186,8 @@ export class DashboardService {
 
     // 补全 7 天连续日期（无数据的日期补 0）
     const map = new Map(rows.map((r) => [r.date, r]));
-    const result: { date: string; likeCount: number; favoriteCount: number }[] = [];
+    const result: { date: string; likeCount: number; favoriteCount: number }[] =
+      [];
     const today = new Date();
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
@@ -216,7 +225,9 @@ export class DashboardService {
   }
 
   /** 捐赠状态分布（饼图） */
-  private async getDonationStatusDist(): Promise<{ name: string; value: number }[]> {
+  private async getDonationStatusDist(): Promise<
+    { name: string; value: number }[]
+  > {
     const rows = await this.donationRepo
       .createQueryBuilder('d')
       .select('d.status', 'status')
@@ -235,7 +246,9 @@ export class DashboardService {
   }
 
   /** 支付方式分布（饼图） */
-  private async getDonationPayMethodDist(): Promise<{ name: string; value: number }[]> {
+  private async getDonationPayMethodDist(): Promise<
+    { name: string; value: number }[]
+  > {
     const rows = await this.donationRepo
       .createQueryBuilder('d')
       .select('d.payMethod', 'payMethod')
@@ -262,7 +275,10 @@ export class DashboardService {
       .createQueryBuilder('d')
       .select("DATE_FORMAT(d.createdAt, '%Y-%m-%d')", 'date')
       .addSelect('COUNT(*)', 'count')
-      .addSelect("COALESCE(SUM(CASE WHEN d.currency = 'CNY' THEN d.amount ELSE 0 END), 0)", 'amount')
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN d.currency = 'CNY' THEN d.amount ELSE 0 END), 0)",
+        'amount',
+      )
       .where('d.status = :s', { s: 'confirmed' })
       .andWhere('d.createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)')
       .groupBy('date')

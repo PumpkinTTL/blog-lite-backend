@@ -169,8 +169,8 @@ async function loadCategoryOptions() {
     const payload = res.data
     const list = Array.isArray(payload) ? payload : (payload?.list || [])
     categoryOptions.value = list.map((c: any) => ({ label: c.name, value: c.id }))
-  } catch (e) {
-    console.error('加载分类选项失败:', e)
+  } catch (e: any) {
+    message.error(e?.message || '加载分类选项失败')
   }
 }
 

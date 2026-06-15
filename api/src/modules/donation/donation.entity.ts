@@ -15,13 +15,30 @@ export class DonationEntity {
   @PrimaryGeneratedColumn({ comment: '捐赠 ID' })
   id: number;
 
-  @Column({ type: 'varchar', length: 50, name: 'donor_name', comment: '捐赠者昵称' })
+  @Column({
+    type: 'varchar',
+    length: 50,
+    name: 'donor_name',
+    comment: '捐赠者昵称',
+  })
   donorName: string;
 
-  @Column({ type: 'varchar', length: 500, nullable: true, name: 'donor_avatar', comment: '捐赠者头像 URL' })
+  @Column({
+    type: 'varchar',
+    length: 500,
+    nullable: true,
+    name: 'donor_avatar',
+    comment: '捐赠者头像 URL',
+  })
   donorAvatar: string | null;
 
-  @Column({ type: 'varchar', length: 100, nullable: true, name: 'donor_email', comment: '捐赠者邮箱' })
+  @Column({
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+    name: 'donor_email',
+    comment: '捐赠者邮箱',
+  })
   donorEmail: string | null;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, comment: '捐赠金额' })
@@ -78,7 +95,12 @@ export class DonationEntity {
 
   // ── 通用字段 ──
 
-  @Column({ type: 'varchar', length: 500, nullable: true, comment: '捐赠者留言' })
+  @Column({
+    type: 'varchar',
+    length: 500,
+    nullable: true,
+    comment: '捐赠者留言',
+  })
   message: string | null;
 
   @Column({
@@ -109,7 +131,12 @@ export class DonationEntity {
   @Column({ type: 'int', default: 0, name: 'sort_order', comment: '排序权重' })
   sortOrder: number;
 
-  @Column({ type: 'varchar', length: 255, nullable: true, comment: '管理员备注' })
+  @Column({
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    comment: '管理员备注',
+  })
   remark: string | null;
 
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })

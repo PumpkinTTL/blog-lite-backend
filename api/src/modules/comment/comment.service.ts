@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, IsNull, In } from 'typeorm';
+import { Repository, IsNull, In } from 'typeorm';
 import { CommentEntity } from './comment.entity';
 import {
   CreateCommentDto,

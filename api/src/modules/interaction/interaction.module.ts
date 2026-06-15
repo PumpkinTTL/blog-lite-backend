@@ -7,7 +7,9 @@ import { InteractionService } from './interaction.service';
 import { InteractionController } from './interaction.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([InteractionEntity, UserEntity, PostEntity])],
+  imports: [
+    TypeOrmModule.forFeature([InteractionEntity, UserEntity, PostEntity]),
+  ],
   controllers: [InteractionController],
   providers: [InteractionService],
   exports: [InteractionService],

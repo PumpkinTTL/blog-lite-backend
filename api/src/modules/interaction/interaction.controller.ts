@@ -15,6 +15,7 @@ import { InteractionService } from './interaction.service';
 import { ToggleInteractionDto, BatchCountDto } from './interaction.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 
 /**
  * 互动控制器：点赞 / 收藏
@@ -143,8 +144,8 @@ export class InteractionController {
       userId,
       type as any,
       entityType as any,
-      Number(page),
-      Number(pageSize),
+      parsePage(page),
+      parsePageSize(pageSize),
     );
     return {
       success: true,
@@ -175,8 +176,8 @@ export class InteractionController {
       userId: userId ? Number(userId) : undefined,
       entityId: entityId ? Number(entityId) : undefined,
       keyword,
-      page: Number(page),
-      pageSize: Number(pageSize),
+      page: parsePage(page),
+      pageSize: parsePageSize(pageSize),
     });
     return { success: true, data: result, message: 'ok' };
   }

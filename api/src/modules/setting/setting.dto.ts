@@ -1,4 +1,9 @@
-import { IsString, IsOptional, IsObject, IsNotEmptyObject } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsObject,
+  IsNotEmptyObject,
+} from 'class-validator';
 
 export class UpdateSettingDto {
   @IsString()

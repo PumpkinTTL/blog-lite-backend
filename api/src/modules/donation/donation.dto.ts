@@ -1,5 +1,19 @@
-import { IsString, IsOptional, IsNumber, IsIn, IsEnum, Min, MaxLength, IsArray, IsInt } from 'class-validator';
-import type { PayMethod, CryptoNetwork, DonationStatus } from './donation.entity';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsIn,
+  IsEnum,
+  Min,
+  MaxLength,
+  IsArray,
+  IsInt,
+} from 'class-validator';
+import type {
+  PayMethod,
+  CryptoNetwork,
+  DonationStatus,
+} from './donation.entity';
 
 export class CreateDonationDto {
   @IsString()

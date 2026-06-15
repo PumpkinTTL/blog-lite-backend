@@ -31,10 +31,20 @@ export class EntityVisibilityService {
     // 2. 批量写入新授权
     const rows: Partial<EntityVisibilityEntity>[] = [];
     for (const userId of dedupe(allowedUserIds)) {
-      rows.push({ entityType, entityId, subjectType: 'user', subjectId: userId });
+      rows.push({
+        entityType,
+        entityId,
+        subjectType: 'user',
+        subjectId: userId,
+      });
     }
     for (const roleId of dedupe(allowedRoleIds)) {
-      rows.push({ entityType, entityId, subjectType: 'role', subjectId: roleId });
+      rows.push({
+        entityType,
+        entityId,
+        subjectType: 'role',
+        subjectId: roleId,
+      });
     }
     if (rows.length) {
       await this.repo.save(rows);
@@ -47,8 +57,12 @@ export class EntityVisibilityService {
   async getVisibility(entityType: EntityType, entityId: number) {
     const rows = await this.repo.find({ where: { entityType, entityId } });
     return {
-      allowedUserIds: rows.filter((r) => r.subjectType === 'user').map((r) => r.subjectId),
-      allowedRoleIds: rows.filter((r) => r.subjectType === 'role').map((r) => r.subjectId),
+      allowedUserIds: rows
+        .filter((r) => r.subjectType === 'user')
+        .map((r) => r.subjectId),
+      allowedRoleIds: rows
+        .filter((r) => r.subjectType === 'role')
+        .map((r) => r.subjectId),
     };
   }
 
@@ -84,7 +98,12 @@ export class EntityVisibilityService {
     const cnt = await this.repo.count({
       where: [
         { entityType, entityId, subjectType: 'user', subjectId: userId },
-        { entityType, entityId, subjectType: 'role', subjectId: In(userRoleIds) },
+        {
+          entityType,
+          entityId,
+          subjectType: 'role',
+          subjectId: In(userRoleIds),
+        },
       ],
     });
     return cnt > 0;
@@ -102,7 +121,12 @@ export class EntityVisibilityService {
   ): Promise<Set<number>> {
     if (entityIds.length === 0) return new Set();
     const conditions: any[] = [
-      { entityType, entityId: In(entityIds), subjectType: 'user' as VisibilitySubjectType, subjectId: userId },
+      {
+        entityType,
+        entityId: In(entityIds),
+        subjectType: 'user' as VisibilitySubjectType,
+        subjectId: userId,
+      },
     ];
     if (userRoleIds.length > 0) {
       conditions.push({

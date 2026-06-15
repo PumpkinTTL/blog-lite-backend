@@ -46,7 +46,7 @@ export class CommentEntity {
   @Column({ name: 'user_id', comment: '评论作者 ID' })
   userId: number;
 
-  @ManyToOne(() => UserEntity)
+  @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: UserEntity;
 
@@ -58,23 +58,33 @@ export class CommentEntity {
    * - NULL: 一级评论
    * - 非 NULL: 二级回复（必须是 type=comment/entityType+entityId 一致的一级评论）
    */
-  @Column({ type: 'int', nullable: true, name: 'parent_id', comment: '父评论 ID（NULL=一级）' })
+  @Column({
+    type: 'int',
+    nullable: true,
+    name: 'parent_id',
+    comment: '父评论 ID（NULL=一级）',
+  })
   parentId: number | null;
 
   /**
    * 一级评论自身（用于 ORM 关联查询）
    */
-  @ManyToOne(() => CommentEntity)
+  @ManyToOne(() => CommentEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'parent_id' })
   parent: CommentEntity | null;
 
   /**
    * 回复目标用户 ID（二级回复 @ 谁，同一一级下的另一条二级作者）
    */
-  @Column({ type: 'int', nullable: true, name: 'reply_to_user_id', comment: '@ 目标用户 ID（二级回复间）' })
+  @Column({
+    type: 'int',
+    nullable: true,
+    name: 'reply_to_user_id',
+    comment: '@ 目标用户 ID（二级回复间）',
+  })
   replyToUserId: number | null;
 
-  @ManyToOne(() => UserEntity)
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'reply_to_user_id' })
   replyToUser: UserEntity | null;
 

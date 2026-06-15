@@ -6,10 +6,14 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { PostEntity } from '../post/post.entity';
 
 @Entity('friend_links')
+@Index('uq_friendlink_name', ['name'], { unique: true })
+@Index('idx_friendlink_status', ['status'])
+@Index('idx_friendlink_sort', ['sortOrder'])
 export class FriendLinkEntity {
   @PrimaryGeneratedColumn({ comment: '友链 ID' })
   id: number;
@@ -29,13 +33,23 @@ export class FriendLinkEntity {
   @Column({ type: 'int', default: 0, name: 'sort_order', comment: '排序权重' })
   sortOrder: number;
 
-  @Column({ type: 'varchar', length: 20, default: 'visible', comment: '状态 visible=显示 hidden=隐藏' })
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: 'visible',
+    comment: '状态 visible=显示 hidden=隐藏',
+  })
   status: string;
 
-  @Column({ type: 'int', nullable: true, name: 'post_id', comment: '关联文章 ID，null=全局' })
+  @Column({
+    type: 'int',
+    nullable: true,
+    name: 'post_id',
+    comment: '关联文章 ID，null=全局',
+  })
   postId: number | null;
 
-  @ManyToOne(() => PostEntity)
+  @ManyToOne(() => PostEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'post_id' })
   post: PostEntity | null;
 

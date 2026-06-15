@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -23,9 +28,11 @@ export class AuthService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
   ) {
-    this.authCenterUrl = this.configService.getOrThrow<string>('AUTH_CENTER_URL');
+    this.authCenterUrl =
+      this.configService.getOrThrow<string>('AUTH_CENTER_URL');
     this.clientId = this.configService.getOrThrow<string>('AUTH_CLIENT_ID');
-    this.clientSecret = this.configService.getOrThrow<string>('AUTH_CLIENT_SECRET');
+    this.clientSecret =
+      this.configService.getOrThrow<string>('AUTH_CLIENT_SECRET');
   }
 
   onModuleInit() {
@@ -82,7 +89,10 @@ export class AuthService implements OnModuleInit {
   /**
    * 调用鉴权中心 POST /auth/token 刷新双 Token
    */
-  async refreshToken(refreshToken: string, deviceId: string): Promise<AuthTokenResponse> {
+  async refreshToken(
+    refreshToken: string,
+    deviceId: string,
+  ): Promise<AuthTokenResponse> {
     const body: Record<string, unknown> = {
       clientId: this.clientId,
       clientSecret: this.clientSecret,

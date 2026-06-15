@@ -1,7 +1,16 @@
-import { IsString, IsOptional, IsInt, IsIn, IsUrl, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  IsIn,
+  IsUrl,
+  IsArray,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateFriendLinkDto {
   @IsString()
+  @MaxLength(100)
   name: string;
 
   @IsUrl()
@@ -9,10 +18,12 @@ export class CreateFriendLinkDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   logo?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(255)
   description?: string;
 
   @IsIn(['hidden', 'visible'])
@@ -37,6 +48,7 @@ export class BatchIdsDto {
 export class UpdateFriendLinkDto {
   @IsString()
   @IsOptional()
+  @MaxLength(100)
   name?: string;
 
   @IsUrl()
@@ -45,10 +57,12 @@ export class UpdateFriendLinkDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   logo?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(255)
   description?: string;
 
   @IsIn(['hidden', 'visible'])

@@ -1,8 +1,14 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
-import { MembershipEntity, MembershipSource } from './membership.entity';
-import { PlanEntity, PlanLevel } from '../plan/plan.entity';
+import { Repository } from 'typeorm';
+import { MembershipEntity } from './membership.entity';
+import { PlanLevel } from '../plan/plan.entity';
 import { PlanService } from '../plan/plan.service';
 import { GrantMembershipDto, UpdateMembershipDto } from './membership.dto';
 
@@ -35,9 +41,14 @@ export class MembershipService implements OnModuleInit {
    */
   async onModuleInit() {
     await this.sweepExpired();
-    this.sweepTimer = setInterval(() => {
-      this.sweepExpired().catch((e) => this.logger.error(`定时过期任务失败: ${e.message}`));
-    }, 60 * 60 * 1000); // 1 小时
+    this.sweepTimer = setInterval(
+      () => {
+        this.sweepExpired().catch((e) =>
+          this.logger.error(`定时过期任务失败: ${e.message}`),
+        );
+      },
+      60 * 60 * 1000,
+    ); // 1 小时
   }
 
   async onModuleDestroy() {
@@ -67,16 +78,30 @@ export class MembershipService implements OnModuleInit {
   /**
    * 列表查询（admin 用）
    */
-  async findAll(page = 1, pageSize = 20, filters?: { userId?: number; planId?: number; status?: string; source?: string }) {
-    const qb = this.memberRepo.createQueryBuilder('m')
+  async findAll(
+    page = 1,
+    pageSize = 20,
+    filters?: {
+      userId?: number;
+      planId?: number;
+      status?: string;
+      source?: string;
+    },
+  ) {
+    const qb = this.memberRepo
+      .createQueryBuilder('m')
       .leftJoinAndSelect('m.user', 'user')
       .leftJoinAndSelect('m.plan', 'plan')
       .orderBy('m.createdAt', 'DESC');
 
-    if (filters?.userId) qb.andWhere('m.userId = :userId', { userId: filters.userId });
-    if (filters?.planId) qb.andWhere('m.planId = :planId', { planId: filters.planId });
-    if (filters?.status) qb.andWhere('m.status = :status', { status: filters.status });
-    if (filters?.source) qb.andWhere('m.source = :source', { source: filters.source });
+    if (filters?.userId)
+      qb.andWhere('m.userId = :userId', { userId: filters.userId });
+    if (filters?.planId)
+      qb.andWhere('m.planId = :planId', { planId: filters.planId });
+    if (filters?.status)
+      qb.andWhere('m.status = :status', { status: filters.status });
+    if (filters?.source)
+      qb.andWhere('m.source = :source', { source: filters.source });
 
     qb.skip((page - 1) * pageSize).take(pageSize);
     const [list, total] = await qb.getManyAndCount();
@@ -84,7 +109,10 @@ export class MembershipService implements OnModuleInit {
   }
 
   async findById(id: number): Promise<MembershipEntity> {
-    const m = await this.memberRepo.findOne({ where: { id }, relations: ['user', 'plan'] });
+    const m = await this.memberRepo.findOne({
+      where: { id },
+      relations: ['user', 'plan'],
+    });
     if (!m) throw new NotFoundException('订阅记录不存在');
     return m;
   }
@@ -113,8 +141,12 @@ export class MembershipService implements OnModuleInit {
 
     if (existing) {
       // 续期：基于现有 expiresAt（如果还没过期）或 now（已过期或终身已激活）向后延
-      const baseTime = existing.expiresAt && existing.expiresAt > now ? existing.expiresAt : now;
-      existing.expiresAt = durationDays === 0 ? null : new Date(baseTime.getTime() + durationMs);
+      const baseTime =
+        existing.expiresAt && existing.expiresAt > now
+          ? existing.expiresAt
+          : now;
+      existing.expiresAt =
+        durationDays === 0 ? null : new Date(baseTime.getTime() + durationMs);
       existing.status = 'active';
       if (dto.note) existing.note = dto.note;
       return this.memberRepo.save(existing);
@@ -125,21 +157,28 @@ export class MembershipService implements OnModuleInit {
       userId: dto.userId,
       planId: dto.planId,
       startedAt: now,
-      expiresAt: durationDays === 0 ? null : new Date(now.getTime() + durationMs),
+      expiresAt:
+        durationDays === 0 ? null : new Date(now.getTime() + durationMs),
       status: 'active',
-      source: (dto.source ?? 'admin') as MembershipSource,
+      source: dto.source ?? 'admin',
       sourceId: dto.sourceId ?? null,
       note: dto.note ?? null,
     });
     const saved = await this.memberRepo.save(record);
-    this.logger.log(`开通会员：userId=${dto.userId} plan=${plan.slug} days=${durationDays} source=${dto.source ?? 'admin'}`);
+    this.logger.log(
+      `开通会员：userId=${dto.userId} plan=${plan.slug} days=${durationDays} source=${dto.source ?? 'admin'}`,
+    );
     return saved;
   }
 
-  async update(id: number, dto: UpdateMembershipDto): Promise<MembershipEntity> {
+  async update(
+    id: number,
+    dto: UpdateMembershipDto,
+  ): Promise<MembershipEntity> {
     const m = await this.findById(id);
     if (dto.status) m.status = dto.status;
-    if (dto.expiresAt !== undefined) m.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
+    if (dto.expiresAt !== undefined)
+      m.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     if (dto.note !== undefined) m.note = dto.note;
     return this.memberRepo.save(m);
   }
@@ -194,7 +233,9 @@ export class MembershipService implements OnModuleInit {
    * 实现：一条 SQL（IN + JOIN plan + 过期过滤在 SQL 完成）+ 一次内存遍历挑最高等级。
    * 每个用户只会出现在结果 Map 里一次（等级最高的那条）。
    */
-  async getHighestActiveBatch(userIds: number[]): Promise<Map<number, MembershipSummary>> {
+  async getHighestActiveBatch(
+    userIds: number[],
+  ): Promise<Map<number, MembershipSummary>> {
     if (userIds.length === 0) return new Map();
 
     // 一条 SQL：JOIN plan、过滤 status=active + 过期
@@ -203,11 +244,16 @@ export class MembershipService implements OnModuleInit {
       .innerJoinAndSelect('m.plan', 'p')
       .where('m.userId IN (:...ids)', { ids: userIds })
       .andWhere('m.status = :status', { status: 'active' })
-      .andWhere('(m.expiresAt IS NULL OR m.expiresAt >= :now)', { now: new Date() })
+      .andWhere('(m.expiresAt IS NULL OR m.expiresAt >= :now)', {
+        now: new Date(),
+      })
       .getMany();
 
     // 一次遍历：每个 userId 保留等级最高（weight 大）的一条；同等级保留最远到期
-    const best = new Map<number, { weight: number; summary: MembershipSummary }>();
+    const best = new Map<
+      number,
+      { weight: number; summary: MembershipSummary }
+    >();
     for (const m of rows) {
       const weight = LEVEL_WEIGHT[m.plan.level];
       const cur = best.get(m.userId);

@@ -1,22 +1,37 @@
-import { IsString, IsOptional, IsArray, IsInt, MinLength, IsEmail, IsIn, ArrayNotEmpty } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsInt,
+  MinLength,
+  IsEmail,
+  IsIn,
+  ArrayNotEmpty,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
+  @MaxLength(50)
   username: string;
 
   @IsString()
   @MinLength(6)
+  @MaxLength(100)
   password: string;
 
   @IsString()
+  @MaxLength(50)
   nickname: string;
 
   @IsEmail()
+  @MaxLength(100)
   @IsOptional()
   email?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   avatar?: string;
 
   @IsIn(['active', 'disabled'])
@@ -32,19 +47,23 @@ export class CreateUserDto {
 export class UpdateUserDto {
   @IsString()
   @IsOptional()
+  @MaxLength(50)
   nickname?: string;
 
   @IsString()
   @IsOptional()
   @MinLength(6)
+  @MaxLength(100)
   password?: string;
 
   @IsEmail()
   @IsOptional()
+  @MaxLength(100)
   email?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   avatar?: string;
 
   @IsIn(['active', 'disabled'])
@@ -60,14 +79,17 @@ export class UpdateUserDto {
 export class UpdateProfileDto {
   @IsString()
   @IsOptional()
+  @MaxLength(50)
   nickname?: string;
 
   @IsEmail()
   @IsOptional()
+  @MaxLength(100)
   email?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   avatar?: string;
 }
 

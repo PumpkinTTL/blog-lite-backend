@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { NSpin, NIcon, NEmpty, NButton } from 'naive-ui'
+import { NSpin, NIcon, NEmpty, NButton, useMessage } from 'naive-ui'
 import {
   DocumentTextOutline,
   PaperPlaneOutline,
@@ -28,6 +28,7 @@ import { isDark } from '../../theme'
 echarts.use([LineChart, PieChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const router = useRouter()
+const message = useMessage()
 const loading = ref(true)
 const stats = ref<DashboardStats>({
   postCount: 0, publishedCount: 0, draftCount: 0,
@@ -72,7 +73,7 @@ async function loadStats() {
   try {
     const res = await getDashboardStats()
     if (res.data) { stats.value = res.data; await nextTick(); renderCharts() }
-  } catch (e) { console.error(e) }
+  } catch (e: any) { message.error(e?.message || '加载统计数据失败') }
   finally { loading.value = false }
 }
 
@@ -185,7 +186,7 @@ onBeforeUnmount(() => {
         <n-button text size="tiny" style="color:#3B82F6;gap:4px;margin-left:16px" @click="router.push('/posts/create')">
           <n-icon size="14"><CreateOutline /></n-icon>写文章
         </n-button>
-        <n-button text size="tiny" style="color:#8B5CF6;gap:4px;margin-left:8px" @click="router.push('/memberships')">
+        <n-button text size="tiny" style="color:#8B5CF6;gap:4px;margin-left:8px" @click="router.push('/membership')">
           <n-icon size="14"><GiftOutline /></n-icon>开通会员
         </n-button>
       </div>

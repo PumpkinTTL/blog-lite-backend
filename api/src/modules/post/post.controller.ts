@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe, Req } from '@nestjs/common';
+﻿import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  ParseIntPipe,
+  Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -7,6 +18,7 @@ import { PostEntity } from './post.entity';
 import { CreatePostDto, UpdatePostDto, BatchIdsDto } from './post.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import { POST_STATUS } from '../../common/constants/status';
 import { InteractionService } from '../interaction/interaction.service';
 
@@ -37,8 +49,8 @@ export class PostController {
     const isAdmin = user?.roles?.includes('admin') ?? false;
     const isLoggedIn = !!user && !isAdmin;
     const data = await this.postService.findAll(
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100),
+      parsePage(page),
+      parsePageSize(pageSize),
       {
         id: id !== undefined ? parseInt(id) : undefined,
         keyword,
@@ -59,8 +71,8 @@ export class PostController {
     @Query('pageSize') pageSize?: string,
   ) {
     const data = await this.postService.findTrashed(
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100),
+      parsePage(page),
+      parsePageSize(pageSize),
     );
     return { success: true, data, message: 'ok' };
   }
@@ -103,18 +115,33 @@ export class PostController {
     }
 
     // admin 看详情时附带可见性配置
-    let visibility: { allowedUserIds: number[]; allowedRoleIds: number[] } | undefined;
+    let visibility:
+      | { allowedUserIds: number[]; allowedRoleIds: number[] }
+      | undefined;
     if (isAdmin) {
       visibility = await this.postService.getVisibility(id);
     }
 
-    return { success: true, data: { ...post, ...(visibility ? { allowedUserIds: visibility.allowedUserIds, allowedRoleIds: visibility.allowedRoleIds } : {}) }, message: 'ok' };
+    return {
+      success: true,
+      data: {
+        ...post,
+        ...(visibility
+          ? {
+              allowedUserIds: visibility.allowedUserIds,
+              allowedRoleIds: visibility.allowedRoleIds,
+            }
+          : {}),
+      },
+      message: 'ok',
+    };
   }
 
   @Public()
   @Post(':id/view')
   async recordView(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
-    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
     const ua = req.headers['user-agent'] || '';
     await this.postService.recordView(id, ip, ua);
     return { success: true, message: 'ok' };
@@ -159,7 +186,10 @@ export class PostController {
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePostDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdatePostDto,
+  ) {
     const data = await this.postService.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }
@@ -189,7 +219,11 @@ export class PostController {
     }
     const type = body?.type;
     if (type !== 'like' && type !== 'favorite') {
-      return { success: false, message: 'type 只能是 like 或 favorite', data: null };
+      return {
+        success: false,
+        message: 'type 只能是 like 或 favorite',
+        data: null,
+      };
     }
     const result = await this.interactionService.toggle(
       userId,

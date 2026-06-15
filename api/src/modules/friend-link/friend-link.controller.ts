@@ -1,10 +1,26 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, Query, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  Query,
+  Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { FriendLinkService } from './friend-link.service';
-import { CreateFriendLinkDto, UpdateFriendLinkDto, BatchIdsDto } from './friend-link.dto';
+import {
+  CreateFriendLinkDto,
+  UpdateFriendLinkDto,
+  BatchIdsDto,
+} from './friend-link.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { FRIEND_LINK_STATUS } from '../../common/constants/status';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 
 @Controller('friend-link')
 @Roles('admin')
@@ -26,8 +42,8 @@ export class FriendLinkController {
     const isAdmin = user?.roles?.includes('admin') ?? false;
     const finalStatus = !isAdmin ? FRIEND_LINK_STATUS.VISIBLE : status;
     const data = await this.service.findAll(
-      page ? parseInt(page) : 1,
-      pageSize ? parseInt(pageSize) : 20,
+      parsePage(page),
+      parsePageSize(pageSize),
       {
         id: id !== undefined ? parseInt(id) : undefined,
         keyword,
@@ -56,7 +72,10 @@ export class FriendLinkController {
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateFriendLinkDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateFriendLinkDto,
+  ) {
     const data = await this.service.update(id, dto);
     return { success: true, data, message: '更新成功' };
   }

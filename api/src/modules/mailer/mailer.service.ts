@@ -17,10 +17,14 @@ export class MailerService {
     const user = this.configService.get<string>('SMTP_USER');
     const pass = this.configService.get<string>('SMTP_PASS');
 
-    this.logger.log(`SMTP 配置: host=${host}, port=${port}, user=${user}, pass=${pass ? '***已设置' : '未设置'}`);
+    this.logger.log(
+      `SMTP 配置: host=${host}, port=${port}, user=${user}, pass=${pass ? '***已设置' : '未设置'}`,
+    );
 
     if (!host || !user || !pass) {
-      this.logger.warn('SMTP 配置缺失，邮件功能不可用。请配置 SMTP_HOST/SMTP_USER/SMTP_PASS');
+      this.logger.warn(
+        'SMTP 配置缺失，邮件功能不可用。请配置 SMTP_HOST/SMTP_USER/SMTP_PASS',
+      );
       return;
     }
 
@@ -46,11 +50,17 @@ export class MailerService {
       return false;
     }
 
-    const from = this.configService.get<string>('SMTP_FROM') ||
+    const from =
+      this.configService.get<string>('SMTP_FROM') ||
       `"观书星" <${this.configService.get<string>('SMTP_USER')}>`;
 
     try {
-      const result = await this.transporter.sendMail({ from, to, subject, html });
+      const result = await this.transporter.sendMail({
+        from,
+        to,
+        subject,
+        html,
+      });
       this.logger.log(`邮件已发送: ${to} - ${subject}`);
       this.logger.debug(`邮件发送结果: ${JSON.stringify(result)}`);
       return true;
@@ -58,7 +68,9 @@ export class MailerService {
       const errMsg = error.message || '未知错误';
       const errCode = error.code || '';
       const errCmd = error.command || '';
-      this.logger.error(`邮件发送失败: ${to} - code=${errCode} cmd=${errCmd} msg=${errMsg}`);
+      this.logger.error(
+        `邮件发送失败: ${to} - code=${errCode} cmd=${errCmd} msg=${errMsg}`,
+      );
       throw error; // 往上抛，让 controller 能看到具体原因
     }
   }
@@ -66,7 +78,11 @@ export class MailerService {
   /**
    * 发送验证码邮件
    */
-  async sendVerifyCode(to: string, code: string, expireMinutes: number = 10): Promise<boolean> {
+  async sendVerifyCode(
+    to: string,
+    code: string,
+    expireMinutes: number = 10,
+  ): Promise<boolean> {
     const html = `
       <div style="max-width:480px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;">
         <div style="padding:32px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;">

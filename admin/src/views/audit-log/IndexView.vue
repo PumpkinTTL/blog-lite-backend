@@ -95,7 +95,13 @@ const columns: DataTableColumns<AuditLog> = [
 ]
 
 function handleSearch() { page.value = 1; load() }
-function handleReset() { list.value = []; total.value = 0 }
+function handleReset() {
+  // 清空筛选条件并回到第 1 页重新加载
+  targetType.value = null
+  targetId.value = null
+  page.value = 1
+  load()
+}
 function handlePageChange(p: number) { page.value = p; load() }
 
 onMounted(() => { load() })

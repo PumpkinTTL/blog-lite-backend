@@ -1,6 +1,7 @@
-import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+﻿import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { AuditLogService } from './audit-log.service';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 
 @Controller('audit-log')
 @Roles('admin')
@@ -13,8 +14,9 @@ export class AuditLogController {
     @Query('pageSize') pageSize?: string,
   ) {
     const data = await this.service.findAll(
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100));
+      parsePage(page),
+      parsePageSize(pageSize),
+    );
     return { success: true, data, message: 'ok' };
   }
 
@@ -25,9 +27,12 @@ export class AuditLogController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
-    const data = await this.service.findByTarget(type as any, id,
-      Math.max(parseInt(page || '1'), 1),
-      Math.min(parseInt(pageSize || '20'), 100));
+    const data = await this.service.findByTarget(
+      type as any,
+      id,
+      parsePage(page),
+      parsePageSize(pageSize),
+    );
     return { success: true, data, message: 'ok' };
   }
 }

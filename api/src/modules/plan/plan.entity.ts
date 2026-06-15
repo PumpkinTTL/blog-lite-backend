@@ -1,11 +1,4 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  Index,
-} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 /**
  * 套餐等级
@@ -60,7 +53,11 @@ export class PlanEntity {
   @Column({ type: 'text', nullable: true, comment: '套餐描述' })
   description: string | null;
 
-  @Column({ type: 'boolean', default: true, comment: '是否上架（false=下架，不再售卖）' })
+  @Column({
+    type: 'boolean',
+    default: true,
+    comment: '是否上架（false=下架，不再售卖）',
+  })
   isActive: boolean;
 
   @Column({ type: 'int', default: 0, comment: '排序权重（升序）' })

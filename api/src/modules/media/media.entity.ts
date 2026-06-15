@@ -10,9 +10,16 @@ import {
 import { UserEntity } from '../user/user.entity';
 
 export type StorageType = 'local' | 'oss';
-export type OssPlatform = 'aliyun' | 'tencent' | 'cloudflare' | 'backblaze' | null;
+export type OssPlatform =
+  | 'aliyun'
+  | 'tencent'
+  | 'cloudflare'
+  | 'backblaze'
+  | null;
 
 @Index('idx_media_hash', ['hash'])
+@Index('idx_media_uploader', ['uploaderId'])
+@Index('idx_media_created', ['createdAt'])
 @Entity('media')
 export class MediaEntity {
   @PrimaryGeneratedColumn({ comment: '素材 ID' })
@@ -21,10 +28,20 @@ export class MediaEntity {
   @Column({ type: 'varchar', length: 255, comment: '存储文件名' })
   filename: string;
 
-  @Column({ type: 'varchar', length: 255, name: 'original_name', comment: '原始文件名' })
+  @Column({
+    type: 'varchar',
+    length: 255,
+    name: 'original_name',
+    comment: '原始文件名',
+  })
   originalName: string;
 
-  @Column({ type: 'varchar', length: 100, name: 'mime_type', comment: 'MIME 类型' })
+  @Column({
+    type: 'varchar',
+    length: 100,
+    name: 'mime_type',
+    comment: 'MIME 类型',
+  })
   mimeType: string;
 
   @Column({ type: 'bigint', comment: '文件大小（字节）' })
@@ -54,14 +71,19 @@ export class MediaEntity {
   })
   ossPlatform: OssPlatform;
 
-  @ManyToOne(() => UserEntity)
+  @ManyToOne(() => UserEntity, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'uploader_id' })
   uploader: UserEntity;
 
   @Column({ name: 'uploader_id', comment: '上传者 ID' })
   uploaderId: number;
 
-  @Column({ type: 'varchar', length: 255, nullable: true, comment: '备注：描述文件用途' })
+  @Column({
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    comment: '备注：描述文件用途',
+  })
   note: string | null;
 
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })

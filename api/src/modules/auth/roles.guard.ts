@@ -23,10 +23,10 @@ export class RolesGuard implements CanActivate {
     }
 
     // 获取 @Roles('admin') 等装饰器要求的角色
-    const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const requiredRoles = this.reflector.getAllAndOverride<string[]>(
+      ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // 没有 @Roles 装饰器 → 不需要角色校验，放行
     if (!requiredRoles || requiredRoles.length === 0) {

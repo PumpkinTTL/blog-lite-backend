@@ -1,4 +1,11 @@
-import { IsString, IsOptional, IsArray, IsIn, IsInt } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsIn,
+  IsInt,
+  MaxLength,
+} from 'class-validator';
 
 export class BatchIdsDto {
   @IsArray()
@@ -8,9 +15,11 @@ export class BatchIdsDto {
 
 export class CreatePostDto {
   @IsString()
+  @MaxLength(200)
   title: string;
 
   @IsString()
+  @MaxLength(200)
   slug: string;
 
   @IsString()
@@ -19,10 +28,12 @@ export class CreatePostDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   summary?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   coverImage?: string;
 
   @IsIn(['draft', 'published', 'login', 'private'])
@@ -52,10 +63,12 @@ export class CreatePostDto {
 export class UpdatePostDto {
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   title?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   slug?: string;
 
   @IsString()
@@ -64,10 +77,12 @@ export class UpdatePostDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   summary?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   coverImage?: string;
 
   @IsIn(['draft', 'published', 'login', 'private'])
