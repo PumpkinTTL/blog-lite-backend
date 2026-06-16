@@ -117,16 +117,17 @@ const statusText = computed(() => {
 
 <style scoped>
 .tool-card {
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(99, 102, 241, 0.04);
-  border: 1px solid rgba(99, 102, 241, 0.15);
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   font-size: 12px;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
-.tool-card.is-running { border-color: rgba(245, 158, 11, 0.4); }
-.tool-card.is-success { border-color: rgba(16, 185, 129, 0.35); }
-.tool-card.is-error { border-color: rgba(239, 68, 68, 0.4); }
+.tool-card.is-running { border-color: rgba(245, 158, 11, 0.45); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.08); }
+.tool-card.is-success { border-color: rgba(16, 185, 129, 0.4); }
+.tool-card.is-error { border-color: rgba(239, 68, 68, 0.45); }
 
 .tool-head {
   display: flex;
@@ -138,10 +139,10 @@ const statusText = computed(() => {
 .tool-tag {
   font-size: 9px;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
   background: rgba(99, 102, 241, 0.1);
-  color: rgba(99, 102, 241, 0.8);
+  color: #6366f1;
   letter-spacing: 0.5px;
 }
 .tool-status {
@@ -150,13 +151,14 @@ const statusText = computed(() => {
   align-items: center;
   gap: 3px;
   font-size: 11px;
+  font-weight: 500;
 }
 .tool-chevron { color: #94a3b8; transition: transform 0.2s; margin-left: 2px; }
 .tool-chevron.rotated { transform: rotate(180deg); }
 .tool-chevron:hover { color: #64748b; }
 
 .tool-args {
-  margin-top: 4px;
+  margin-top: 5px;
   color: #64748b;
   font-size: 11px;
   word-break: break-all;
@@ -164,18 +166,18 @@ const statusText = computed(() => {
 }
 .tool-result {
   margin-top: 3px;
-  color: #10b981;
+  color: #059669;
   font-size: 11px;
   word-break: break-all;
   line-height: 1.5;
 }
-.tool-raw { margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(99, 102, 241, 0.15); }
-.raw-label { font-size: 10px; color: #94a3b8; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+.tool-raw { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0; }
+.raw-label { font-size: 10px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
 .tool-raw pre {
   margin: 0 0 6px;
-  padding: 6px;
-  background: rgba(0,0,0,0.04);
-  border-radius: 4px;
+  padding: 7px;
+  background: #f8fafc;
+  border-radius: 5px;
   font-size: 10.5px;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   white-space: pre-wrap;

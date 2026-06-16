@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, computed, onBeforeUnmount, watch } from 'vue'
 import {
-  NIcon, NInput, NButton, NSelect, useMessage,
+  NIcon, NInput, NSelect, useMessage,
 } from 'naive-ui'
 import {
   ChatbubbleEllipsesOutline, CloseOutline, RemoveOutline, ExpandOutline,
   PaperPlaneOutline, BulbOutline, ChevronDownOutline,
-  SparklesOutline, PersonCircleOutline,
+  SparklesOutline, PersonCircleOutline, TrashOutline,
 } from '@vicons/ionicons5'
 import { streamChat } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext } from '../../api/ai'
@@ -33,11 +33,9 @@ const message = useMessage()
 // === 面板状态 ===
 const open = ref(false)
 const dragging = ref(false)
-// 面板位置（默认右下）
 const panelPos = reactive({ left: 0, top: 0 })
 const panelSize = reactive({ expanded: false })
 
-// 解包 formValue（可能是 ref 或裸对象）
 const form = computed<ArticleForm>(() =>
   props.formValue && 'value' in props.formValue ? props.formValue.value : (props.formValue as ArticleForm),
 )
@@ -48,7 +46,6 @@ const inputText = ref('')
 const sending = ref(false)
 const selectedModel = ref<string | null>(null)
 
-// 模型列表（与后端 .env 对齐，可按需增减）
 const modelOptions = [
   { label: 'DeepSeek V4 Flash', value: 'cmc/deepseek/deepseek-v4-flash' },
   { label: 'DeepSeek V4 Pro', value: 'cmc/deepseek/deepseek-v4-pro' },
@@ -61,42 +58,32 @@ const modelOptions = [
 interface RenderItem {
   id: string
   kind: 'user' | 'assistant' | 'tool'
-  // user/assistant 的文本（原始，可能含 <think> 标签）
   text?: string
-  // 拆分后的思考过程（<think> 标签内）
   thinkText?: string
-  // 拆分后的正式回复（</think> 之后）
   replyText?: string
-  // assistant 正在流式输出（逐字）
   streaming?: boolean
-  // tool 相关
   toolCall?: AiToolCall
   toolStatus?: 'pending' | 'running' | 'success' | 'error'
   toolResult?: string
 }
 const renderItems = ref<RenderItem[]>([])
 const scrollBody = ref<HTMLElement | null>(null)
-// 展开 think 的 item id 集合（流式时自动展开，结束可手动折叠）
 const thinkExpanded = ref<Set<string>>(new Set())
 
 let itemSeq = 0
 const nextId = () => `m${++itemSeq}`
 
-// === 工具边界值保护工具 ===
-/** 强制转为有限整数，非法值用 fallback */
+// === 工具边界值保护 ===
 function toInt(v: unknown, fallback: number): number {
   const n = typeof v === 'string' ? parseInt(v, 10) : typeof v === 'number' ? v : NaN
   return Number.isFinite(n) ? Math.trunc(n) : fallback
 }
-/** clamp 到 [min, max] */
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
 }
-/** 强制字符串 + 截断到 maxLen */
 function toStr(v: unknown, maxLen: number): string {
   return (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, maxLen)
 }
-/** slug 清洗：小写、非法字符替换为连字符、去首尾连字符 */
 function sanitizeSlug(v: string): string {
   return toStr(v, 60)
     .toLowerCase()
@@ -104,7 +91,6 @@ function sanitizeSlug(v: string): string {
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '')
 }
-/** 错误结果快捷构造 */
 const fail = (error: string) => JSON.stringify({ ok: false, error })
 
 // === 工具执行器（前端执行，直接改文章 formValue） ===
@@ -128,9 +114,7 @@ function executeTool(call: AiToolCall): string {
       const total = lines.length
       let start = clamp(toInt(args.startLine, 1), 1, total)
       let end = clamp(toInt(args.endLine, total), 1, total)
-      // start > end：反转，避免返回空
       if (start > end) [start, end] = [end, start]
-      // 限制单次返回最多 200 行，防止 token 撑爆
       const maxReturn = 200
       if (end - start + 1 > maxReturn) end = start + maxReturn - 1
       return JSON.stringify({
@@ -178,7 +162,6 @@ function executeTool(call: AiToolCall): string {
       if (!v) return fail('text 不能为空')
       const lines = f.content.split('\n')
       const total = lines.length
-      // afterLine: 0 表示插到最前；负数兜底为 0；超过总行数兜底为末尾
       const after = clamp(toInt(args.afterLine, 0), 0, total)
       lines.splice(after, 0, v)
       f.content = lines.join('\n')
@@ -236,6 +219,20 @@ function buildContext(): AiArticleContext {
 // === 发送 + agent 循环 ===
 const MAX_LOOP = 8
 
+/**
+ * 创建一个响应式渲染项并加入列表，返回其代理引用。
+ *
+ * ⚠️ 关键：必须用 reactive() 创建 item，使其本身就是代理对象。
+ * 否则 push 到 ref 数组后，数组内部会代理化该元素，但我们持有的仍是原始引用，
+ * 回调里改 assistantItem.replyText 不会触发响应式更新 —— 这正是
+ * 「思考能渲染、正文不流式」的根因（思考靠 thinkExpanded.add 副作用顺带刷新）。
+ */
+function addRenderItem(item: RenderItem): RenderItem {
+  const reactiveItem = reactive(item)
+  renderItems.value.push(reactiveItem)
+  return reactiveItem
+}
+
 async function handleSend() {
   const text = inputText.value.trim()
   if (!text || sending.value) return
@@ -244,25 +241,24 @@ async function handleSend() {
 
   // 1) 用户消息
   messages.value.push({ role: 'user', content: text })
-  renderItems.value.push({ id: nextId(), kind: 'user', text })
+  addRenderItem({ id: nextId(), kind: 'user', text })
   await scrollToBottom()
 
-  // 当前正在流式输出的 assistant 项（提到外层，便于 catch 清理）
   let currentAssistantItem: RenderItem | null = null
 
   try {
     // 2) agent 循环（最多 MAX_LOOP 步）
     for (let step = 0; step < MAX_LOOP; step++) {
-      // 准备 assistant 渲染项（流式）
-      const assistantItem: RenderItem = { id: nextId(), kind: 'assistant', text: '', streaming: true }
+      // 准备 assistant 渲染项（流式）—— reactive 确保回调里的属性变更触发视图更新
+      const assistantItem = addRenderItem({ id: nextId(), kind: 'assistant', text: '', streaming: true })
       currentAssistantItem = assistantItem
-      renderItems.value.push(assistantItem)
       await scrollToBottom()
 
       const result = await streamChat(
         messages.value,
         buildContext(),
         // token 回调：正式回复，直接渲染（真实流式）
+        // 现在 assistantItem 是代理对象，赋值会触发响应式更新
         (tok) => {
           assistantItem.replyText = (assistantItem.replyText ?? '') + tok
           scrollToBottom()
@@ -270,7 +266,7 @@ async function handleSend() {
         // tool_calls 回调：先占位渲染（状态 pending）
         (calls) => {
           for (const c of calls) {
-            renderItems.value.push({
+            addRenderItem({
               id: nextId(), kind: 'tool', toolCall: c, toolStatus: 'pending',
             })
           }
@@ -280,7 +276,6 @@ async function handleSend() {
         // thinking 回调：模型的思考过程（reasoning_content），实时渲染
         (think) => {
           assistantItem.thinkText = (assistantItem.thinkText ?? '') + think
-          // 思考阶段自动展开，让用户看到思考过程
           thinkExpanded.value.add(assistantItem.id)
           scrollToBottom()
         },
@@ -288,7 +283,6 @@ async function handleSend() {
 
       assistantItem.streaming = false
       currentAssistantItem = null
-      // 流式结束：think 默认折叠（用户可点击展开回顾）
       thinkExpanded.value.delete(assistantItem.id)
 
       // 3) 把 assistant 消息记录到历史（含 tool_calls）
@@ -323,10 +317,8 @@ async function handleSend() {
       // 继续下一轮，让 AI 看到工具结果后继续
     }
   } catch (e) {
-    // 调用失败：停止当前 assistant 的流式闪烁状态
     if (currentAssistantItem) {
       currentAssistantItem.streaming = false
-      // 若该 assistant 项还没收到任何 token，移除空气泡，避免残留
       if (!currentAssistantItem.text && !currentAssistantItem.replyText && !currentAssistantItem.thinkText) {
         renderItems.value = renderItems.value.filter((r) => r.id !== currentAssistantItem!.id)
       }
@@ -335,12 +327,10 @@ async function handleSend() {
   } finally {
     sending.value = false
     await scrollToBottom()
-    // 不在此自动保存：对话历史只在文章保存成功时才落库（见 persistConversation）
   }
 }
 
 function handleClear() {
-  // 只清内存：文章未保存前，对话不落库；保存时以最终内存状态为准
   messages.value = []
   renderItems.value = []
   thinkExpanded.value.clear()
@@ -350,10 +340,6 @@ function handleClear() {
 // === 历史对话持久化（按 postId 加载/保存） ===
 const historyLoaded = ref(false)
 
-/**
- * 从 DB 加载历史对话（postId 变化或首次打开时触发）。
- * 仅编辑已有文章时加载；新增文章无 postId 不加载。
- */
 async function loadHistory() {
   if (!props.postId) {
     messages.value = []
@@ -376,34 +362,26 @@ async function loadHistory() {
   }
 }
 
-/** 把 messages 历史重建为渲染项（历史对话不重放工具执行，仅展示文本） */
 function rebuildRenderFromHistory() {
   renderItems.value = []
   thinkExpanded.value.clear()
   for (const m of messages.value) {
     if (m.role === 'user') {
-      renderItems.value.push({ id: nextId(), kind: 'user', text: m.content })
+      addRenderItem({ id: nextId(), kind: 'user', text: m.content })
     } else if (m.role === 'assistant') {
-      renderItems.value.push({
+      addRenderItem({
         id: nextId(), kind: 'assistant',
         replyText: m.content || '',
         streaming: false,
       })
     }
-    // tool 角色消息是工具结果回传，历史展示时跳过（避免噪音）
   }
 }
 
-/**
- * 持久化当前对话到 DB（供父组件在文章保存成功后调用）。
- * 设计：对话历史与文章生命周期绑定——只有文章保存了，对话才值得留。
- *   - 有 postId 且有对话内容 → upsert 到 DB
- *   - 新建文章刚保存拿到 id 的情况：父组件传入 newPostId 后再调
- */
 async function persistConversation(newPostId?: number): Promise<void> {
   const pid = newPostId ?? props.postId
-  if (!pid) return // 仍无 postId（理论上不会，因为文章已保存）
-  if (messages.value.length === 0) return // 没用 AI 就不存，避免空记录
+  if (!pid) return
+  if (messages.value.length === 0) return
   try {
     await saveConversation({
       postId: pid,
@@ -415,17 +393,14 @@ async function persistConversation(newPostId?: number): Promise<void> {
   }
 }
 
-// 暴露给父组件：文章保存成功后持久化对话
 defineExpose({ persistConversation })
 
-// postId 变化时重新加载历史
 watch(() => props.postId, () => {
   historyLoaded.value = false
   loadHistory()
 }, { immediate: true })
 
 onBeforeUnmount(() => {
-  // 不再在卸载时保存：用户放弃文章（没点保存）则对话随之丢弃
   document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)
@@ -454,8 +429,9 @@ function onInputKeydown(e: KeyboardEvent) {
 <template>
   <!-- 悬浮触发器 -->
   <div class="robot-trigger" :class="{ active: open }" @click="togglePanel">
-    <n-icon :size="26"><ChatbubbleEllipsesOutline /></n-icon>
-    <span v-if="!open" class="robot-pulse" />
+    <n-icon :size="24"><ChatbubbleEllipsesOutline /></n-icon>
+    <span v-if="!open && !sending" class="robot-pulse" />
+    <span v-if="sending" class="robot-badge" />
   </div>
 
   <!-- 聊天面板 -->
@@ -469,15 +445,24 @@ function onInputKeydown(e: KeyboardEvent) {
       <!-- 头部（可拖拽） -->
       <div class="panel-head" @mousedown="startDrag">
         <div class="head-title">
-          <n-icon :size="15" class="head-icon"><ChatbubbleEllipsesOutline /></n-icon>
-          <span>AI 写作助手</span>
+          <div class="head-logo">
+            <n-icon :size="15"><SparklesOutline /></n-icon>
+          </div>
+          <div class="head-text">
+            <span class="head-name">写作助手</span>
+            <span class="head-sub">AI Agent</span>
+          </div>
         </div>
         <div class="head-actions">
-          <n-icon :size="16" class="head-btn" @click.stop="panelSize.expanded = !panelSize.expanded">
-            <ExpandOutline v-if="!panelSize.expanded" />
-            <RemoveOutline v-else />
-          </n-icon>
-          <n-icon :size="16" class="head-btn" @click.stop="open = false"><CloseOutline /></n-icon>
+          <button class="head-btn" @click.stop="panelSize.expanded = !panelSize.expanded" :title="panelSize.expanded ? '收起' : '展开'">
+            <n-icon :size="15"><ExpandOutline v-if="!panelSize.expanded" /><RemoveOutline v-else /></n-icon>
+          </button>
+          <button class="head-btn" @click.stop="handleClear" :disabled="sending" title="清空对话">
+            <n-icon :size="15"><TrashOutline /></n-icon>
+          </button>
+          <button class="head-btn" @click.stop="open = false" title="关闭">
+            <n-icon :size="15"><CloseOutline /></n-icon>
+          </button>
         </div>
       </div>
 
@@ -486,20 +471,26 @@ function onInputKeydown(e: KeyboardEvent) {
         <n-select
           v-model:value="selectedModel"
           :options="modelOptions"
-          size="tiny"
+          size="small"
           placeholder="默认模型"
           clearable
           class="model-select"
         />
-        <n-button size="tiny" quaternary @click="handleClear" :disabled="sending">清空</n-button>
       </div>
 
       <!-- 消息流 -->
       <div ref="scrollBody" class="panel-body">
         <div v-if="renderItems.length === 0" class="empty-hint">
-          <n-icon :size="32"><ChatbubbleEllipsesOutline /></n-icon>
-          <p>和 AI 讨论当前文章</p>
-          <p class="hint-sub">它能读取、修改标题/正文/摘要等</p>
+          <div class="empty-icon">
+            <n-icon :size="36"><SparklesOutline /></n-icon>
+          </div>
+          <p class="empty-title">AI 写作助手</p>
+          <p class="empty-desc">它能读取、修改你的文章</p>
+          <div class="empty-tips">
+            <span class="tip-chip">✦ 改标题</span>
+            <span class="tip-chip">✦ 写摘要</span>
+            <span class="tip-chip">✦ 润色正文</span>
+          </div>
         </div>
         <template v-for="item in renderItems" :key="item.id">
           <!-- 用户消息 -->
@@ -507,7 +498,7 @@ function onInputKeydown(e: KeyboardEvent) {
             <div class="bubble-wrap">
               <div class="bubble bubble-user">{{ item.text }}</div>
               <div class="avatar avatar-user">
-                <n-icon :size="14"><PersonCircleOutline /></n-icon>
+                <n-icon :size="13"><PersonCircleOutline /></n-icon>
               </div>
             </div>
           </div>
@@ -515,7 +506,7 @@ function onInputKeydown(e: KeyboardEvent) {
           <div v-else-if="item.kind === 'assistant'" class="msg msg-ai">
             <div class="bubble-wrap">
               <div class="avatar avatar-ai" :class="{ thinking: item.streaming }">
-                <n-icon :size="14"><SparklesOutline /></n-icon>
+                <n-icon :size="13"><SparklesOutline /></n-icon>
               </div>
               <div class="ai-content">
                 <!-- 思考过程（折叠块） -->
@@ -525,15 +516,15 @@ function onInputKeydown(e: KeyboardEvent) {
                   :class="{ expanded: thinkExpanded.has(item.id) }"
                 >
                   <div class="think-head" @click="!item.streaming && toggleThink(item.id)">
-                    <n-icon :size="13" class="think-icon"><BulbOutline /></n-icon>
+                    <n-icon :size="12" class="think-icon"><BulbOutline /></n-icon>
                     <span class="think-label">思考过程</span>
                     <n-icon
                       v-if="!item.streaming"
-                      :size="12"
+                      :size="11"
                       class="think-chevron"
                       :class="{ rotated: thinkExpanded.has(item.id) }"
                     ><ChevronDownOutline /></n-icon>
-                    <span v-if="item.streaming" class="think-streaming">思考中…</span>
+                    <span v-if="item.streaming" class="think-streaming">思考中</span>
                   </div>
                   <transition name="think">
                     <div v-if="thinkExpanded.has(item.id) || item.streaming" class="think-body">
@@ -545,6 +536,10 @@ function onInputKeydown(e: KeyboardEvent) {
                 <div v-if="item.replyText" class="bubble bubble-ai">
                   {{ item.replyText }}
                   <span v-if="item.streaming" class="cursor">▋</span>
+                </div>
+                <!-- 占位加载点（既无 think 也无 reply 且正在流式） -->
+                <div v-else-if="item.streaming && !item.thinkText" class="typing-dots">
+                  <span></span><span></span><span></span>
                 </div>
               </div>
             </div>
@@ -566,20 +561,18 @@ function onInputKeydown(e: KeyboardEvent) {
           v-model:value="inputText"
           type="textarea"
           :autosize="{ minRows: 1, maxRows: 4 }"
-          placeholder="输入指令，Enter 发送 / Shift+Enter 换行"
+          placeholder="输入指令，Enter 发送"
           :disabled="sending"
           @keydown="onInputKeydown"
         />
-        <n-button
+        <button
           class="send-btn"
-          type="primary"
-          circle
-          :loading="sending"
-          :disabled="!inputText.trim()"
+          :class="{ disabled: !inputText.trim() || sending }"
+          :disabled="!inputText.trim() || sending"
           @click="handleSend"
         >
-          <template #icon><n-icon><PaperPlaneOutline /></n-icon></template>
-        </n-button>
+          <n-icon :size="16"><PaperPlaneOutline /></n-icon>
+        </button>
       </div>
     </div>
   </transition>
@@ -591,105 +584,147 @@ function onInputKeydown(e: KeyboardEvent) {
   position: fixed;
   right: 24px;
   bottom: 24px;
-  width: 52px;
-  height: 52px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #38bdf8);
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45), 0 0 0 0 rgba(99, 102, 241, 0.4);
   z-index: 9999;
   transition: transform 0.2s, box-shadow 0.2s;
 }
-.robot-trigger:hover { transform: scale(1.08); box-shadow: 0 8px 28px rgba(99, 102, 241, 0.55); }
-.robot-trigger.active { background: linear-gradient(135deg, #475569, #64748b); }
+.robot-trigger:hover {
+  transform: scale(1.08);
+  box-shadow: 0 8px 28px rgba(99, 102, 241, 0.6), 0 0 0 0 rgba(99, 102, 241, 0.4);
+}
+.robot-trigger.active { background: linear-gradient(135deg, #64748b, #475569); }
 
 .robot-pulse {
   position: absolute;
-  inset: 0;
+  inset: -3px;
   border-radius: 50%;
-  border: 2px solid #6366f1;
+  border: 2px solid #818cf8;
   animation: robot-ring 2s ease-out infinite;
 }
 @keyframes robot-ring {
-  0% { transform: scale(1); opacity: 0.6; }
-  100% { transform: scale(1.6); opacity: 0; }
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(1.5); opacity: 0; }
 }
+
+/* 发送中红点 */
+.robot-badge {
+  position: absolute;
+  top: -2px; right: -2px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid #fff;
+  animation: badge-blink 1s ease-in-out infinite;
+}
+@keyframes badge-blink { 50% { opacity: 0.4; } }
 
 /* === 面板 === */
 .agent-panel {
   position: fixed;
-  width: 380px;
-  height: 520px;
+  width: 384px;
+  height: 540px;
   z-index: 10001;
   background: #ffffff;
-  border-radius: 14px;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.15), 0 0 0 1px rgba(99,102,241,0.1);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(99, 102, 241, 0.08);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
-.agent-panel.expanded { width: 480px; height: 640px; }
+.agent-panel.expanded { width: 480px; height: 660px; }
 
+/* 头部 */
 .panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  background: linear-gradient(135deg, rgba(99,102,241,0.06), rgba(56,189,248,0.04));
-  border-bottom: 1px solid rgba(99,102,241,0.12);
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
   cursor: grab;
   user-select: none;
 }
 .panel-head:active { cursor: grabbing; }
-.head-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #475569;
+.head-title { display: inline-flex; align-items: center; gap: 9px; }
+.head-logo {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  backdrop-filter: blur(4px);
 }
-.head-icon { color: #6366f1; }
-.head-actions { display: flex; gap: 4px; }
-.head-btn {
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 3px;
-  border-radius: 4px;
-  transition: color 0.15s, background 0.15s;
-}
-.head-btn:hover { color: #475569; background: rgba(0,0,0,0.05); }
+.head-text { display: flex; flex-direction: column; line-height: 1.15; }
+.head-name { font-size: 14px; font-weight: 600; color: #fff; }
+.head-sub { font-size: 10px; color: rgba(255, 255, 255, 0.7); letter-spacing: 0.5px; }
 
+.head-actions { display: flex; gap: 2px; }
+.head-btn {
+  width: 26px; height: 26px;
+  border: none; background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.head-btn:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.head-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 工具栏 */
 .panel-toolbar {
   display: flex;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid #f1f5f9;
   align-items: center;
+  background: #fafbff;
 }
 .model-select { flex: 1; }
 
+/* 消息流 */
 .panel-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  background: linear-gradient(180deg, #fcfcff 0%, #f8f9ff 100%);
 }
+.panel-body::-webkit-scrollbar { width: 6px; }
+.panel-body::-webkit-scrollbar-thumb { background: #d1d5e8; border-radius: 3px; }
+.panel-body::-webkit-scrollbar-track { background: transparent; }
 
-.empty-hint {
-  margin: auto;
-  text-align: center;
-  color: #cbd5e1;
+/* 空状态 */
+.empty-hint { margin: auto; text-align: center; }
+.empty-icon {
+  width: 64px; height: 64px;
+  margin: 0 auto 14px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+  display: flex; align-items: center; justify-content: center;
+  color: #6366f1;
 }
-.empty-hint p { margin: 8px 0 0; font-size: 13px; color: #94a3b8; }
-.empty-hint .hint-sub { font-size: 11px; color: #cbd5e1; }
+.empty-title { margin: 0; font-size: 15px; font-weight: 600; color: #334155; }
+.empty-desc { margin: 4px 0 14px; font-size: 12px; color: #94a3b8; }
+.empty-tips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.tip-chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.08);
+  color: #6366f1;
+}
 
 .msg { display: flex; }
 .msg-user { justify-content: flex-end; }
@@ -700,15 +735,14 @@ function onInputKeydown(e: KeyboardEvent) {
 .bubble-wrap {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: 7px;
   max-width: 88%;
 }
 .msg-user .bubble-wrap { flex-direction: row-reverse; }
 
 .avatar {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: 26px; height: 26px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -716,76 +750,75 @@ function onInputKeydown(e: KeyboardEvent) {
   color: #fff;
 }
 .avatar-ai {
-  background: linear-gradient(135deg, #6366f1, #38bdf8);
-  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.35);
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
 }
-.avatar-ai.thinking {
-  animation: avatar-pulse 1.4s ease-in-out infinite;
-}
+.avatar-ai.thinking { animation: avatar-pulse 1.4s ease-in-out infinite; }
 @keyframes avatar-pulse {
-  0%, 100% { box-shadow: 0 2px 6px rgba(99, 102, 241, 0.35); }
-  50% { box-shadow: 0 2px 14px rgba(99, 102, 241, 0.7); }
+  0%, 100% { box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4); }
+  50% { box-shadow: 0 2px 16px rgba(99, 102, 241, 0.8); }
 }
-.avatar-user {
-  background: #94a3b8;
-}
+.avatar-user { background: #cbd5e1; }
 
-/* AI 内容容器（含 think + reply），让气泡自适应宽度 */
 .msg-ai .ai-content { flex: 1; min-width: 0; }
 
 .bubble {
-  padding: 8px 12px;
-  border-radius: 12px;
+  padding: 9px 13px;
+  border-radius: 14px;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
 }
 .bubble-user {
-  background: #6366f1;
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
   color: #fff;
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 5px;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
 }
 .bubble-ai {
-  background: #f1f5f9;
+  background: #ffffff;
   color: #334155;
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: 5px;
   display: inline-block;
+  border: 1px solid #ececf5;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
 }
 
-/* === 思考过程折叠块 === */
+/* 思考过程折叠块 */
 .think-block {
   width: 100%;
-  border-radius: 8px;
-  background: rgba(99, 102, 241, 0.04);
-  border: 1px solid rgba(99, 102, 241, 0.12);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.04));
+  border: 1px solid rgba(99, 102, 241, 0.14);
   overflow: hidden;
-  margin-bottom: 2px;
+  margin-bottom: 5px;
 }
 .think-head {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 9px;
+  padding: 6px 10px;
   cursor: pointer;
   user-select: none;
   font-size: 11px;
-  color: #94a3b8;
+  color: #8b5cf6;
 }
 .think-icon { color: #a78bfa; }
 .think-label { font-weight: 500; }
-.think-chevron { margin-left: auto; transition: transform 0.25s; color: #cbd5e1; }
+.think-chevron { margin-left: auto; transition: transform 0.25s; color: #c4b5fd; }
 .think-chevron.rotated { transform: rotate(180deg); }
 .think-streaming {
   margin-left: auto;
   color: #a78bfa;
   font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 .think-streaming::after {
   content: '';
-  display: inline-block;
   width: 4px; height: 4px;
-  margin-left: 3px;
   border-radius: 50%;
   background: #a78bfa;
   animation: think-dot 1s ease-in-out infinite;
@@ -795,40 +828,77 @@ function onInputKeydown(e: KeyboardEvent) {
   50% { opacity: 1; transform: scale(1.2); }
 }
 .think-body {
-  padding: 0 9px 8px;
+  padding: 0 10px 9px;
   font-size: 11.5px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: #94a3b8;
   white-space: pre-wrap;
   word-break: break-word;
   font-style: italic;
-  border-top: 1px dashed rgba(99, 102, 241, 0.1);
-  padding-top: 6px;
+  border-top: 1px dashed rgba(139, 92, 246, 0.12);
+  padding-top: 7px;
 }
 .think-enter-active, .think-leave-active {
   transition: opacity 0.2s, max-height 0.25s ease;
   max-height: 300px;
   overflow: hidden;
 }
-.think-enter-from, .think-leave-to {
-  opacity: 0;
-  max-height: 0;
+.think-enter-from, .think-leave-to { opacity: 0; max-height: 0; }
+
+/* 加载三点动画（首字未到时） */
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1px solid #ececf5;
+  border-radius: 14px;
+  border-bottom-left-radius: 5px;
 }
+.typing-dots span {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #c4b5fd;
+  animation: typing 1.2s ease-in-out infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
 .cursor {
   display: inline-block;
   color: #6366f1;
+  margin-left: 1px;
   animation: blink 0.9s steps(2) infinite;
 }
 @keyframes blink { 50% { opacity: 0; } }
 
+/* 输入区 */
 .panel-input {
   display: flex;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid #f1f5f9;
+  background: #ffffff;
   align-items: flex-end;
 }
-.send-btn { flex-shrink: 0; }
+.send-btn {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  color: #fff;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+}
+.send-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.5); }
+.send-btn.disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; transform: none; }
 
 /* 面板展开/收起过渡 */
 .panel-enter-active, .panel-leave-active {
@@ -840,9 +910,7 @@ function onInputKeydown(e: KeyboardEvent) {
 }
 
 /* 消息项入场动画 */
-.msg {
-  animation: msg-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
+.msg { animation: msg-in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes msg-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
