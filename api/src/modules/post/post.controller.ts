@@ -165,12 +165,6 @@ export class PostController {
     return { success: true, message: '批量删除成功' };
   }
 
-  @Post('batch/force-delete')
-  async batchForceDelete(@Body() body: BatchIdsDto) {
-    await this.postService.batchForceDelete(body.ids);
-    return { success: true, message: '彻底删除成功' };
-  }
-
   @Post()
   async create(@Body() dto: CreatePostDto, @Req() req: Request) {
     const payload = req as unknown as { user?: { sub?: string } };

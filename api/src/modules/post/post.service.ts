@@ -317,31 +317,14 @@ export class PostService implements OnModuleInit {
   }
 
   async remove(id: number) {
-    await this.postRepo.update(id, { deletedAt: new Date() });
-    // 软删除不清除可见性配置，restore 后仍生效
-  }
-
-  /** 硬删除文章，同时清理关联的 R2 文件（封面+正文图片） */
-  async forceDelete(id: number) {
     const post = await this.postRepo.findOne({ where: { id } });
     if (!post) throw new NotFoundException('文章不存在');
 
+    // 清理封面和正文图片
     const urls = this.extractImageUrls(post.coverImage, post.content);
     await this.deleteMediaByUrls(urls);
 
     await this.postRepo.delete(id);
-    this.logger.log(`硬删除文章#${id}，已清理 ${urls.length} 个关联文件`);
-  }
-
-  async batchForceDelete(ids: number[]) {
-    const posts = await this.postRepo.findBy({ id: In(ids) });
-    const allUrls: string[] = [];
-    for (const post of posts) {
-      allUrls.push(...this.extractImageUrls(post.coverImage, post.content));
-    }
-    await this.deleteMediaByUrls([...new Set(allUrls)]);
-    await this.postRepo.delete(ids);
-    this.logger.log(`批量硬删除 ${ids.length} 篇文章，已清理文件`);
   }
 
   /** 从封面和正文中提取所有图片 URL */
@@ -403,7 +386,13 @@ export class PostService implements OnModuleInit {
   }
 
   async batchDelete(ids: number[]) {
-    await this.postRepo.update({ id: In(ids) }, { deletedAt: new Date() });
+    const posts = await this.postRepo.findBy({ id: In(ids) });
+    const allUrls: string[] = [];
+    for (const post of posts) {
+      allUrls.push(...this.extractImageUrls(post.coverImage, post.content));
+    }
+    await this.deleteMediaByUrls([...new Set(allUrls)]);
+    await this.postRepo.delete(ids);
   }
 
   async togglePin(id: number) {
