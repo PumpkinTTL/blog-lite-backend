@@ -81,8 +81,6 @@ function axisColor() { return isDark.value ? '#334155' : '#E2E8F0' }
 function textColor() { return isDark.value ? '#CBD5E1' : '#64748B' }
 function tooltipBg() { return isDark.value ? '#1E293B' : '#FFFFFF' }
 
-
-
 function getGreeting(): string {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 12) return '早上好'
@@ -257,8 +255,6 @@ onBeforeUnmount(() => {
             <div ref="donEl" class="chart-box"></div>
           </div>
         </div>
-
-
 
       </div>
     </n-spin>
