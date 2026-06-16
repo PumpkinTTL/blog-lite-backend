@@ -4,7 +4,6 @@ import {
   IsInt,
   IsEnum,
   IsArray,
-  IsObject,
   MaxLength,
   Min,
   ValidateNested,

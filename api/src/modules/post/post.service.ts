@@ -59,7 +59,7 @@ export class PostService implements OnModuleInit {
       // 迁移完成清空旧表
       await rawRepo.query('TRUNCATE TABLE post_allowed_users');
       this.logger.log(`迁移完成：${rows.length} 条 post_allowed_users → entity_visibility`);
-    } catch (e) {
+    } catch {
       // 旧表可能已不存在，忽略
     }
   }

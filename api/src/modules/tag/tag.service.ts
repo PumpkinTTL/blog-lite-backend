@@ -70,8 +70,8 @@ export class TagService {
     }
 
     // 排除关联字段，只更新纯字段
-    const { posts, ...updateData } = data as any;
-    await this.tagRepo.update(id, updateData);
+    const { posts: _omitPosts, ...updateData } = data as Partial<TagEntity> & { posts?: unknown };
+    await this.tagRepo.update(id, updateData as any);
     return this.tagRepo.findOne({ where: { id } });
   }
 

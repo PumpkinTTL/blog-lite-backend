@@ -37,10 +37,10 @@ export class RoleService {
 
   async update(id: number, data: Partial<RoleEntity>) {
     // 排除关联字段，只更新纯字段
-    const { users, ...updateData } = data as any;
+    const { users: _omitUsers, ...updateData } = data as Partial<RoleEntity> & { users?: unknown };
     const existing = await this.roleRepo.findOne({ where: { id } });
     if (!existing) throw new NotFoundException('角色不存在');
-    await this.roleRepo.update(id, updateData);
+    await this.roleRepo.update(id, updateData as any);
     return this.findById(id);
   }
 

@@ -50,8 +50,8 @@ export class FriendLinkService {
     const existing = await this.repo.findOne({ where: { id } });
     if (!existing) throw new NotFoundException('友链不存在');
     // 排除关联字段，只更新纯字段
-    const { post, ...updateData } = data as any;
-    await this.repo.update(id, updateData);
+    const { post: _omitPost, ...updateData } = data as Partial<FriendLinkEntity> & { post?: unknown };
+    await this.repo.update(id, updateData as any);
     return this.repo.findOne({ where: { id }, relations: ['post'] });
   }
 
