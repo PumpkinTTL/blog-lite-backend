@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, computed, onBeforeUnmount, watch } from 'vue'
 import {
-  NIcon, NInput, NSelect, useMessage,
+  NIcon, NInput, NSelect, useMessage, NTooltip,
 } from 'naive-ui'
 import {
   ChatbubbleEllipsesOutline, CloseOutline, RemoveOutline, ExpandOutline,
   PaperPlaneOutline, BulbOutline, ChevronDownOutline,
-  SparklesOutline, PersonCircleOutline, TrashOutline,
+  SparklesOutline, TrashOutline,
 } from '@vicons/ionicons5'
 import { streamChat } from '../../api/ai'
-import type { AiChatMessage, AiToolCall, AiArticleContext } from '../../api/ai'
+import type { AiChatMessage, AiToolCall, AiArticleContext, AiUsage } from '../../api/ai'
 import { getConversationByPostId, saveConversation } from '../../api/ai-conversation'
 import ToolCallCard from './ToolCallCard.vue'
 
@@ -22,11 +22,16 @@ interface ArticleForm {
   summary: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   formValue: { value: ArticleForm } | ArticleForm
   /** 当前编辑的文章 ID（新增文章时为 null，不持久化） */
   postId?: number | null
-}>()
+  /** 面板标题（复用时可覆盖，默认"写作助手"） */
+  title?: string
+}>(), {
+  postId: null,
+  title: '写作助手',
+})
 
 const message = useMessage()
 
@@ -46,6 +51,20 @@ const inputText = ref('')
 const sending = ref(false)
 const selectedModel = ref<string | null>(null)
 
+// 当前登录用户名首字（用于用户头像）
+const userInitial = computed(() => {
+  // 尝试从 localStorage 取用户信息（admin 登录后通常会存）
+  const raw = localStorage.getItem('userInfo') || sessionStorage.getItem('userInfo')
+  if (raw) {
+    try {
+      const info = JSON.parse(raw)
+      const name = info.username || info.name || info.nickname
+      if (name) return name.charAt(0).toUpperCase()
+    } catch { /* ignore */ }
+  }
+  return 'U'
+})
+
 const modelOptions = [
   { label: 'DeepSeek V4 Flash', value: 'cmc/deepseek/deepseek-v4-flash' },
   { label: 'DeepSeek V4 Pro', value: 'cmc/deepseek/deepseek-v4-pro' },
@@ -53,6 +72,18 @@ const modelOptions = [
   { label: 'GLM-5', value: 'cmc/zai-org/GLM-5' },
   { label: 'Kimi K2.6', value: 'cmc/moonshotai/Kimi-K2.6' },
 ]
+
+// === Token 统计（会话级累计，来自网关 usage） ===
+const tokenStats = reactive({
+  prompt: 0,       // 累计输入 token
+  completion: 0,   // 累计输出 token
+  rounds: 0,       // 对话轮数
+})
+function resetTokenStats() {
+  tokenStats.prompt = 0
+  tokenStats.completion = 0
+  tokenStats.rounds = 0
+}
 
 // 渲染用的消息列表（把 tool_call 独立成可渲染项）
 interface RenderItem {
@@ -181,7 +212,6 @@ function executeTool(call: AiToolCall): string {
       else if (scope === 'summary') { target = f.summary; setter = (v) => { f.summary = v } }
       else return fail(`未知 scope: ${scope}`)
       const before = target
-      // 全局替换所有匹配项
       const after = before.split(findText).join(replaceText)
       const count = before.split(findText).length - 1
       if (count === 0) return JSON.stringify({ ok: true, scope, replaced: 0, message: '未找到匹配文本' })
@@ -203,13 +233,12 @@ function executeTool(call: AiToolCall): string {
 
     case 'get_word_count': {
       const content = f.content
-      // 字数：去掉 Markdown 语法符号后统计中文字 + 英文词
       const plain = content
-        .replace(/```[\s\S]*?```/g, '')   // 代码块
-        .replace(/`[^`]*`/g, '')          // 行内代码
-        .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // 图片
-        .replace(/\[[^\]]*\]\([^)]*\)/g, '$1') // 链接保留文字
-        .replace(/[#>*_~\-]/g, '')        // markdown 符号
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/`[^`]*`/g, '')
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+        .replace(/\[[^\]]*\]\([^)]*\)/g, '$1')
+        .replace(/[#>*_~\-]/g, '')
         .trim()
       const cjk = (plain.match(/[\u4e00-\u9fa5]/g) || []).length
       const words = (plain.match(/[a-zA-Z]+/g) || []).length
@@ -266,7 +295,11 @@ function startDrag(e: MouseEvent) {
 
 function togglePanel() {
   open.value = !open.value
-  if (open.value) ensureDefaultPos()
+  if (open.value) {
+    ensureDefaultPos()
+    // 打开面板时滚动到最后一条
+    nextTick(() => scrollToBottom())
+  }
 }
 
 // === 上下文快照 ===
@@ -333,6 +366,12 @@ async function handleSend() {
           thinkExpanded.value.add(assistantItem.id)
           scrollToBottom()
         },
+        // usage 回调：本步 token 用量（流末尾，网关返回）
+        (usage: AiUsage) => {
+          tokenStats.prompt += usage.promptTokens
+          tokenStats.completion += usage.completionTokens
+          tokenStats.rounds += 1
+        },
       )
 
       assistantItem.streaming = false
@@ -387,6 +426,7 @@ function handleClear() {
   messages.value = []
   renderItems.value = []
   thinkExpanded.value.clear()
+  resetTokenStats()
   itemSeq = 0
 }
 
@@ -398,6 +438,7 @@ async function loadHistory() {
     messages.value = []
     renderItems.value = []
     thinkExpanded.value.clear()
+    resetTokenStats()
     historyLoaded.value = true
     return
   }
@@ -412,18 +453,19 @@ async function loadHistory() {
     // 加载失败静默，允许重新对话
   } finally {
     historyLoaded.value = true
+    // 历史加载完成后滚动到底部
+    await nextTick()
+    scrollToBottom()
   }
 }
 
 /**
  * 把 messages 历史重建为渲染项。
- * 工具调用记录也重建：assistant 的 tool_calls 与后续 role:'tool' 结果按 id 配对，
- * 让用户在历史会话里也能看到 AI 做过哪些修改（折叠态展示）。
+ * 工具调用记录也重建：assistant 的 tool_calls 与后续 role:'tool' 结果按 id 配对。
  */
 function rebuildRenderFromHistory() {
   renderItems.value = []
   thinkExpanded.value.clear()
-  // 构建 tool_call_id → 结果 的映射
   const toolResults = new Map<string, string>()
   for (const m of messages.value) {
     if (m.role === 'tool' && m.tool_call_id) {
@@ -439,7 +481,6 @@ function rebuildRenderFromHistory() {
         replyText: m.content || '',
         streaming: false,
       })
-      // 重建该 assistant 的工具调用卡片
       if (m.tool_calls) {
         for (const tc of m.tool_calls) {
           const result = toolResults.get(tc.id)
@@ -452,7 +493,6 @@ function rebuildRenderFromHistory() {
         }
       }
     }
-    // tool 角色消息已被上面的卡片消费，不再单独渲染
   }
 }
 
@@ -507,7 +547,7 @@ function onInputKeydown(e: KeyboardEvent) {
 <template>
   <!-- 悬浮触发器 -->
   <div class="robot-trigger" :class="{ active: open }" @click="togglePanel">
-    <n-icon :size="22"><ChatbubbleEllipsesOutline /></n-icon>
+    <n-icon :size="22"><SparklesOutline /></n-icon>
     <span v-if="!open && !sending" class="robot-pulse" />
     <span v-if="sending" class="robot-badge" />
   </div>
@@ -524,7 +564,7 @@ function onInputKeydown(e: KeyboardEvent) {
       <div class="panel-head" @mousedown="startDrag">
         <div class="head-title">
           <n-icon :size="16" class="head-icon"><SparklesOutline /></n-icon>
-          <span class="head-name">写作助手</span>
+          <span class="head-name">{{ title }}</span>
         </div>
         <div class="head-actions">
           <button class="head-btn" @click.stop="panelSize.expanded = !panelSize.expanded" :title="panelSize.expanded ? '收起' : '展开'">
@@ -557,7 +597,7 @@ function onInputKeydown(e: KeyboardEvent) {
           <div class="empty-icon">
             <n-icon :size="32"><SparklesOutline /></n-icon>
           </div>
-          <p class="empty-title">写作助手</p>
+          <p class="empty-title">{{ title }}</p>
           <p class="empty-desc">帮你阅读、修改、润色当前文章</p>
           <div class="empty-tips">
             <span class="tip-chip">改标题</span>
@@ -570,9 +610,7 @@ function onInputKeydown(e: KeyboardEvent) {
           <div v-if="item.kind === 'user'" class="msg msg-user">
             <div class="bubble-wrap">
               <div class="bubble bubble-user">{{ item.text }}</div>
-              <div class="avatar avatar-user">
-                <n-icon :size="13"><PersonCircleOutline /></n-icon>
-              </div>
+              <div class="avatar avatar-user">{{ userInitial }}</div>
             </div>
           </div>
           <!-- AI 消息 -->
@@ -610,7 +648,7 @@ function onInputKeydown(e: KeyboardEvent) {
                   {{ item.replyText }}
                   <span v-if="item.streaming" class="cursor">▋</span>
                 </div>
-                <!-- 占位加载点（既无 think 也无 reply 且正在流式） -->
+                <!-- 占位加载点 -->
                 <div v-else-if="item.streaming && !item.thinkText" class="typing-dots">
                   <span></span><span></span><span></span>
                 </div>
@@ -628,31 +666,44 @@ function onInputKeydown(e: KeyboardEvent) {
         </template>
       </div>
 
-      <!-- 输入区 -->
-      <div class="panel-input">
-        <n-input
-          v-model:value="inputText"
-          type="textarea"
-          :autosize="{ minRows: 1, maxRows: 4 }"
-          placeholder="输入指令，Enter 发送"
-          :disabled="sending"
-          @keydown="onInputKeydown"
-        />
-        <button
-          class="send-btn"
-          :class="{ disabled: !inputText.trim() || sending }"
-          :disabled="!inputText.trim() || sending"
-          @click="handleSend"
-        >
-          <n-icon :size="16"><PaperPlaneOutline /></n-icon>
-        </button>
+      <!-- 状态栏：token 统计 + 输入区 -->
+      <div class="panel-footer">
+        <div v-if="tokenStats.rounds > 0" class="token-stats">
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <span class="stat-chip">
+                <n-icon :size="11"><ChatbubbleEllipsesOutline /></n-icon>
+                {{ tokenStats.rounds }} 轮 · {{ tokenStats.prompt + tokenStats.completion }} tokens
+              </span>
+            </template>
+            输入 {{ tokenStats.prompt }} · 输出 {{ tokenStats.completion }}
+          </n-tooltip>
+        </div>
+        <div class="panel-input">
+          <n-input
+            v-model:value="inputText"
+            type="textarea"
+            :autosize="{ minRows: 1, maxRows: 4 }"
+            placeholder="输入指令，Enter 发送"
+            :disabled="sending"
+            @keydown="onInputKeydown"
+          />
+          <button
+            class="send-btn"
+            :class="{ disabled: !inputText.trim() || sending }"
+            :disabled="!inputText.trim() || sending"
+            @click="handleSend"
+          >
+            <n-icon :size="16"><PaperPlaneOutline /></n-icon>
+          </button>
+        </div>
       </div>
     </div>
   </transition>
 </template>
 
 <style scoped>
-/* ===== Claude 风：暖灰米色 + 土橙强调，无紫色 ===== */
+/* ===== Claude 风：暖灰米色 + 土橙强调 ===== */
 
 /* === 悬浮触发器 === */
 .robot-trigger {
@@ -810,14 +861,14 @@ function onInputKeydown(e: KeyboardEvent) {
 
 .avatar {
   flex-shrink: 0;
-  width: 24px; height: 24px;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
 }
 .avatar-ai {
+  width: 24px; height: 24px;
+  border-radius: 50%;
   background: #c15f3c;
 }
 .avatar-ai.thinking { animation: avatar-pulse 1.4s ease-in-out infinite; }
@@ -825,7 +876,14 @@ function onInputKeydown(e: KeyboardEvent) {
   0%, 100% { box-shadow: 0 0 0 0 rgba(193, 95, 60, 0.4); }
   50% { box-shadow: 0 0 0 6px rgba(193, 95, 60, 0); }
 }
-.avatar-user { background: #a8a29e; }
+/* 用户头像：首字母圆形（不再用图标） */
+.avatar-user {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: #44403c;
+  font-size: 11px;
+  font-weight: 600;
+}
 
 .msg-ai .ai-content { flex: 1; min-width: 0; }
 
@@ -941,13 +999,25 @@ function onInputKeydown(e: KeyboardEvent) {
 }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* 输入区 */
+/* 底部：token 统计 + 输入区 */
+.panel-footer {
+  border-top: 1px solid #e7e5e4;
+  background: #fafaf9;
+}
+.token-stats {
+  padding: 5px 12px 0;
+}
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: #a8a29e;
+}
 .panel-input {
   display: flex;
   gap: 8px;
   padding: 10px 12px;
-  border-top: 1px solid #e7e5e4;
-  background: #fafaf9;
   align-items: flex-end;
 }
 .send-btn {

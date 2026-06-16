@@ -180,6 +180,8 @@ export class AiService {
           model: usedModel,
           messages,
           stream: true,
+          // 请求网关在流末尾返回 usage（prompt/completion/total tokens）
+          stream_options: { include_usage: true },
           tools: POST_AGENT_TOOLS,
           tool_choice: 'auto',
         },

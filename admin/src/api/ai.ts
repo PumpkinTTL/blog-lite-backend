@@ -66,11 +66,20 @@ export interface AiArticleContext {
   content?: string
 }
 
+/** 单步 token 用量（来自网关 usage，精确值） */
+export interface AiUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
 /** streamChat 单步返回：本步是否产生工具调用 */
 export interface StreamChatResult {
   content: string
   toolCalls: AiToolCall[]
   finishReason: string
+  /** 本步 token 用量（网关在流末尾返回，若无则为 null） */
+  usage: AiUsage | null
 }
 
 /**
@@ -79,6 +88,9 @@ export interface StreamChatResult {
  *
  * @param onToken 每个 token 片段回调（实时）
  * @param onToolCalls 本步产生工具调用时回调（流末尾）
+ * @param model 可选：覆盖默认模型
+ * @param onThinking 可选：思考过程回调（reasoning_content）
+ * @param onUsage 可选：本步 token 用量回调（流末尾，来自网关 usage）
  * @returns 本步聚合结果
  */
 export async function streamChat(
@@ -88,6 +100,7 @@ export async function streamChat(
   onToolCalls: (calls: AiToolCall[]) => void,
   model?: string,
   onThinking?: (text: string) => void,
+  onUsage?: (usage: AiUsage) => void,
 ): Promise<StreamChatResult> {
   const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
   const baseURL = import.meta.env.VITE_API_BASE_URL
@@ -112,6 +125,7 @@ export async function streamChat(
   let content = ''
   const toolCalls: AiToolCall[] = []
   let finishReason = 'stop'
+  let usage: AiUsage | null = null
 
   while (true) {
     const { done, value } = await reader.read()
@@ -134,6 +148,13 @@ export async function streamChat(
         } else if (evt.type === 'tool_calls' && Array.isArray(evt.data?.calls)) {
           toolCalls.push(...evt.data.calls)
           onToolCalls(evt.data.calls)
+        } else if (evt.type === 'usage' && evt.data?.totalTokens != null) {
+          usage = {
+            promptTokens: evt.data.promptTokens ?? 0,
+            completionTokens: evt.data.completionTokens ?? 0,
+            totalTokens: evt.data.totalTokens ?? 0,
+          }
+          onUsage?.(usage)
         } else if (evt.type === 'done') {
           finishReason = evt.data?.finishReason ?? 'stop'
         } else if (evt.type === 'error') {
@@ -146,5 +167,5 @@ export async function streamChat(
     }
   }
 
-  return { content, toolCalls, finishReason }
+  return { content, toolCalls, finishReason, usage }
 }

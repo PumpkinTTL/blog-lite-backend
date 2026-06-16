@@ -14,7 +14,7 @@ const props = defineProps<{
 
 const expanded = ref(false)
 
-// 工具名中文映射，方便用户理解
+// 工具名中文映射
 const NAME_LABEL: Record<string, string> = {
   get_article: '读取文章',
   get_content_section: '读取正文片段',
@@ -32,35 +32,38 @@ const NAME_LABEL: Record<string, string> = {
 
 const label = computed(() => NAME_LABEL[props.call.function.name] || props.call.function.name)
 
-// 解析参数为可读形式
-const argsDisplay = computed(() => {
+// 参数解析为 key-value 数组（结构化展示）
+interface KV { key: string; value: string }
+const argsList = computed<KV[]>(() => {
   try {
-    const obj = JSON.parse(props.call.function.arguments)
-    return Object.entries(obj)
-      .map(([k, v]) => {
-        const vs = typeof v === 'string' ? (v.length > 60 ? v.slice(0, 60) + '…' : v) : String(v)
-        return `${k}: ${vs}`
-      })
-      .join(' · ')
+    const obj = JSON.parse(props.call.function.arguments || '{}')
+    return Object.entries(obj).map(([k, v]) => ({
+      key: k,
+      value: typeof v === 'string' ? v : JSON.stringify(v),
+    }))
   } catch {
-    return props.call.function.arguments
+    return [{ key: '(原始)', value: props.call.function.arguments }]
   }
 })
 
-const resultDisplay = computed(() => {
-  if (!props.result) return ''
+// 结果解析为 key-value 数组
+const resultList = computed<KV[]>(() => {
+  if (!props.result) return []
   try {
     const obj = JSON.parse(props.result)
-    return Object.entries(obj)
-      .map(([k, v]) => {
-        const vs = typeof v === 'string' ? (v.length > 80 ? v.slice(0, 80) + '…' : v) : String(v)
-        return `${k}: ${vs}`
-      })
-      .join(' · ')
+    return Object.entries(obj).map(([k, v]) => ({
+      key: k,
+      value: typeof v === 'string' ? v : JSON.stringify(v),
+    }))
   } catch {
-    return props.result.slice(0, 100)
+    return [{ key: '(原始)', value: props.result.slice(0, 200) }]
   }
 })
+
+// 截断长文本用于摘要展示
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + '…' : s
+}
 
 const statusIcon = computed(() => {
   switch (props.status) {
@@ -92,27 +95,51 @@ const statusText = computed(() => {
 
 <template>
   <div class="tool-card" :class="`is-${status}`">
+    <!-- 头部：图标 + 工具名 + 状态 -->
     <div class="tool-head" @click="expanded = !expanded">
+      <span class="tool-status-dot" :style="{ background: statusColor }" :class="{ spinning: status === 'running' }" />
       <span class="tool-name">{{ label }}</span>
       <span class="tool-tag">{{ call.function.name }}</span>
-      <span class="tool-status" :style="{ color: statusColor }">
-        <n-icon :size="13" :class="{ spinning: status === 'running' }">
-          <component :is="statusIcon" />
-        </n-icon>
+      <span class="tool-status-text" :style="{ color: statusColor }">
+        <n-icon :size="12"><component :is="statusIcon" /></n-icon>
         {{ statusText }}
       </span>
-      <n-icon :size="13" class="tool-chevron" :class="{ rotated: expanded }">
+      <n-icon :size="12" class="tool-chevron" :class="{ rotated: expanded }">
         <ChevronDownOutline />
       </n-icon>
     </div>
-    <div class="tool-args">{{ argsDisplay }}</div>
-    <div v-if="resultDisplay" class="tool-result">→ {{ resultDisplay }}</div>
-    <div v-if="expanded" class="tool-raw">
-      <div class="raw-label">参数</div>
-      <pre>{{ call.function.arguments }}</pre>
+
+    <!-- 参数概览（始终显示，紧凑） -->
+    <div v-if="argsList.length > 0" class="tool-section">
+      <div v-for="arg in argsList" :key="arg.key" class="kv-row">
+        <span class="kv-key">{{ arg.key }}</span>
+        <span class="kv-val">{{ truncate(arg.value, 80) }}</span>
+      </div>
+    </div>
+
+    <!-- 结果概览（成功时显示，紧凑） -->
+    <div v-if="resultList.length > 0" class="tool-section tool-result-section">
+      <div v-for="r in resultList" :key="r.key" class="kv-row">
+        <span class="kv-key">{{ r.key }}</span>
+        <span class="kv-val">{{ truncate(r.value, 80) }}</span>
+      </div>
+    </div>
+
+    <!-- 展开详情：id + 完整参数/结果 JSON -->
+    <div v-if="expanded" class="tool-detail">
+      <div class="detail-row">
+        <span class="detail-label">call_id</span>
+        <code class="detail-val">{{ call.id || '(无)' }}</code>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">参数（原始）</span>
+      </div>
+      <pre class="detail-code">{{ call.function.arguments || '{}' }}</pre>
       <template v-if="result">
-        <div class="raw-label">结果</div>
-        <pre>{{ result }}</pre>
+        <div class="detail-row">
+          <span class="detail-label">结果（原始）</span>
+        </div>
+        <pre class="detail-code">{{ result }}</pre>
       </template>
     </div>
   </div>
@@ -131,12 +158,21 @@ const statusText = computed(() => {
 .tool-card.is-success { border-color: #e7e5e4; }
 .tool-card.is-error { border-color: #dc2626; background: #fef9f9; }
 
+/* 头部 */
 .tool-head {
   display: flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  user-select: none;
 }
+.tool-status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tool-status-dot.spinning { animation: dot-pulse 1s ease-in-out infinite; }
+@keyframes dot-pulse { 50% { opacity: 0.4; } }
 .tool-name { font-weight: 600; color: #1c1917; }
 .tool-tag {
   font-size: 9px;
@@ -145,9 +181,9 @@ const statusText = computed(() => {
   border-radius: 4px;
   background: #f5f5f4;
   color: #78716c;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
 }
-.tool-status {
+.tool-status-text {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
@@ -155,27 +191,59 @@ const statusText = computed(() => {
   font-size: 11px;
   font-weight: 500;
 }
-.tool-chevron { color: #a8a29e; transition: transform 0.2s; margin-left: 2px; }
+.tool-chevron { color: #a8a29e; transition: transform 0.2s; }
 .tool-chevron.rotated { transform: rotate(180deg); }
-.tool-chevron:hover { color: #57534e; }
 
-.tool-args {
-  margin-top: 5px;
+/* 参数/结果 区块 */
+.tool-section {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed #e7e5e4;
+}
+.tool-result-section .kv-val { color: #16a34a; }
+
+.kv-row {
+  display: flex;
+  gap: 8px;
+  line-height: 1.6;
+  font-size: 11px;
+}
+.kv-key {
+  flex-shrink: 0;
+  color: #a8a29e;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  min-width: 60px;
+}
+.kv-val {
   color: #57534e;
-  font-size: 11px;
   word-break: break-all;
-  line-height: 1.5;
+  flex: 1;
 }
-.tool-result {
-  margin-top: 3px;
-  color: #16a34a;
-  font-size: 11px;
-  word-break: break-all;
-  line-height: 1.5;
+
+/* 展开详情 */
+.tool-detail {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e7e5e4;
 }
-.tool-raw { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e7e5e4; }
-.raw-label { font-size: 10px; color: #a8a29e; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
-.tool-raw pre {
+.detail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.detail-label {
+  font-size: 10px;
+  color: #a8a29e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.detail-val {
+  font-size: 10px;
+  color: #78716c;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+}
+.detail-code {
   margin: 0 0 6px;
   padding: 7px;
   background: #f5f5f4;
@@ -185,9 +253,7 @@ const statusText = computed(() => {
   white-space: pre-wrap;
   word-break: break-all;
   color: #44403c;
-  max-height: 120px;
+  max-height: 140px;
   overflow: auto;
 }
-.spinning { animation: tool-spin 1s linear infinite; }
-@keyframes tool-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 </style>

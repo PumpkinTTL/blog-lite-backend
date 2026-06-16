@@ -95,6 +95,17 @@ export class AiController {
           if (payload === '[DONE]' || payload === '') continue;
           try {
             const json = JSON.parse(payload);
+
+            // usage 帧（流末尾，choices 可能为空数组，单独解析）
+            // 网关在 stream_options.include_usage=true 时返回
+            if (json.usage) {
+              writeEvent('usage', {
+                promptTokens: json.usage.prompt_tokens ?? 0,
+                completionTokens: json.usage.completion_tokens ?? 0,
+                totalTokens: json.usage.total_tokens ?? 0,
+              });
+            }
+
             const choice = json.choices?.[0];
             if (!choice) continue;
             if (choice.finish_reason) finishReason = choice.finish_reason;
