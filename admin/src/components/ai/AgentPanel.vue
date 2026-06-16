@@ -6,6 +6,7 @@ import {
 import {
   ChatbubbleEllipsesOutline, CloseOutline, RemoveOutline, ExpandOutline,
   PaperPlaneOutline, BulbOutline, ChevronDownOutline,
+  SparklesOutline, PersonCircleOutline,
 } from '@vicons/ionicons5'
 import { streamChat } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext } from '../../api/ai'
@@ -82,7 +83,7 @@ const nextId = () => `m${++itemSeq}`
  * 把含 <think> 标签的原始文本拆成 think / reply 两段。
  * 支持流式（标签未闭合时 think 持续增长）。
  */
-function splitThink(raw: string): { think: string; reply: string } {
+function splitThink(raw: string | undefined): { think: string; reply: string } {
   if (!raw) return { think: '', reply: '' }
   const openIdx = raw.indexOf('<think>')
   if (openIdx === -1) return { think: '', reply: raw }
@@ -272,6 +273,8 @@ async function handleSend() {
 
   // 当前正在流式输出的 assistant 项（提到外层，便于 catch 清理）
   let currentAssistantItem: RenderItem | null = null
+  // 当前 token 播放器的停止函数（提到外层，便于 catch 清理）
+  let currentStopPlayer: (() => void) | null = null
 
   try {
     // 2) agent 循环（最多 MAX_LOOP 步）
@@ -282,18 +285,52 @@ async function handleSend() {
       renderItems.value.push(assistantItem)
       await scrollToBottom()
 
+      // token 平滑播放器：网络批量到 → 前端逐字吐出，保证视觉流式感
+      // （上游网关会把多个 token 打成一个包，Node 中转后前端一次收到一批，
+      //   直接渲染会"卡顿后一次性出现"；用播放器按固定节奏吐字）
+      const tokenQueue: string[] = []
+      let playerTimer: ReturnType<typeof setInterval> | null = null
+      const TOKEN_INTERVAL = 18 // ms/字，约 55 字/秒，阅读舒适
+      const startPlayer = () => {
+        if (playerTimer) return
+        playerTimer = setInterval(() => {
+          if (tokenQueue.length === 0) return
+          // 每帧按队列长度自适应吐字（积压多时加速，避免落太多）
+          const batchSize = Math.max(1, Math.floor(tokenQueue.length / 6))
+          let consumed = ''
+          for (let i = 0; i < batchSize && tokenQueue.length > 0; i++) {
+            consumed += tokenQueue.shift()
+          }
+          if (consumed) {
+            assistantItem.text = (assistantItem.text ?? '') + consumed
+            const { think, reply } = splitThink(assistantItem.text)
+            assistantItem.thinkText = think
+            assistantItem.replyText = reply
+            if (think) thinkExpanded.value.add(assistantItem.id)
+            scrollToBottom()
+          }
+        }, TOKEN_INTERVAL)
+      }
+      const stopPlayer = () => {
+        if (playerTimer) { clearInterval(playerTimer); playerTimer = null }
+        // 清空队列残余，确保最终文本完整
+        while (tokenQueue.length > 0) {
+          const rest = tokenQueue.shift()
+          if (rest !== undefined) assistantItem.text = (assistantItem.text ?? '') + rest
+        }
+        const { think, reply } = splitThink(assistantItem.text)
+        assistantItem.thinkText = think
+        assistantItem.replyText = reply
+      }
+      currentStopPlayer = stopPlayer
+
       const result = await streamChat(
         messages.value,
         buildContext(),
-        // token 回调：累加 raw text，实时拆分 think/reply
+        // token 回调：只入队，不直接渲染（由播放器平滑吐出）
         (tok) => {
-          assistantItem.text = (assistantItem.text ?? '') + tok
-          const { think, reply } = splitThink(assistantItem.text)
-          assistantItem.thinkText = think
-          assistantItem.replyText = reply
-          // 流式思考阶段自动展开，方便用户看到思考过程
-          if (think) thinkExpanded.value.add(assistantItem.id)
-          scrollToBottom()
+          tokenQueue.push(tok)
+          startPlayer()
         },
         // tool_calls 回调：先占位渲染（状态 pending）
         (calls) => {
@@ -307,6 +344,9 @@ async function handleSend() {
         selectedModel.value ?? undefined,
       )
 
+      // 流结束：停播放器，把残余 token 一次性 flush，保证完整
+      stopPlayer()
+      currentStopPlayer = null
       assistantItem.streaming = false
       currentAssistantItem = null
       // 流式结束：think 默认折叠（用户可点击展开回顾）
@@ -344,7 +384,8 @@ async function handleSend() {
       // 继续下一轮，让 AI 看到工具结果后继续
     }
   } catch (e) {
-    // 调用失败：停止当前 assistant 的流式闪烁状态
+    // 调用失败：停播放器 + 停止当前 assistant 的流式闪烁状态
+    if (currentStopPlayer) { currentStopPlayer(); currentStopPlayer = null }
     if (currentAssistantItem) {
       currentAssistantItem.streaming = false
       // 若该 assistant 项还没收到任何 token，移除空气泡，避免残留
@@ -439,41 +480,48 @@ function onInputKeydown(e: KeyboardEvent) {
         <template v-for="item in renderItems" :key="item.id">
           <!-- 用户消息 -->
           <div v-if="item.kind === 'user'" class="msg msg-user">
-            <div class="bubble bubble-user">{{ item.text }}</div>
+            <div class="bubble-wrap">
+              <div class="bubble bubble-user">{{ item.text }}</div>
+              <div class="avatar avatar-user">
+                <n-icon :size="14"><PersonCircleOutline /></n-icon>
+              </div>
+            </div>
           </div>
           <!-- AI 消息 -->
           <div v-else-if="item.kind === 'assistant'" class="msg msg-ai">
-            <div class="ai-content">
-              <!-- 思考过程（折叠块） -->
-              <div
-                v-if="item.thinkText"
-                class="think-block"
-                :class="{ expanded: thinkExpanded.has(item.id) }"
-              >
-                <div class="think-head" @click="!item.streaming && toggleThink(item.id)">
-                  <n-icon :size="13" class="think-icon"><BulbOutline /></n-icon>
-                  <span class="think-label">思考过程</span>
-                  <n-icon
-                    v-if="!item.streaming"
-                    :size="12"
-                    class="think-chevron"
-                    :class="{ rotated: thinkExpanded.has(item.id) }"
-                  ><ChevronDownOutline /></n-icon>
-                  <span v-if="item.streaming" class="think-streaming">思考中…</span>
-                </div>
-                <transition name="think">
-                  <div v-if="thinkExpanded.has(item.id) || item.streaming" class="think-body">
-                    {{ item.thinkText }}
+            <div class="bubble-wrap">
+              <div class="avatar avatar-ai" :class="{ thinking: item.streaming }">
+                <n-icon :size="14"><SparklesOutline /></n-icon>
+              </div>
+              <div class="ai-content">
+                <!-- 思考过程（折叠块） -->
+                <div
+                  v-if="item.thinkText"
+                  class="think-block"
+                  :class="{ expanded: thinkExpanded.has(item.id) }"
+                >
+                  <div class="think-head" @click="!item.streaming && toggleThink(item.id)">
+                    <n-icon :size="13" class="think-icon"><BulbOutline /></n-icon>
+                    <span class="think-label">思考过程</span>
+                    <n-icon
+                      v-if="!item.streaming"
+                      :size="12"
+                      class="think-chevron"
+                      :class="{ rotated: thinkExpanded.has(item.id) }"
+                    ><ChevronDownOutline /></n-icon>
+                    <span v-if="item.streaming" class="think-streaming">思考中…</span>
                   </div>
-                </transition>
-              </div>
-              <!-- 正式回复 -->
-              <div v-if="item.replyText || (!item.thinkText && item.streaming)" class="bubble bubble-ai">
-                {{ item.replyText }}
-                <span v-if="item.streaming && !item.thinkText" class="cursor">▋</span>
-              </div>
-              <div v-else-if="item.replyText === '' && item.streaming && !item.thinkText" class="bubble bubble-ai">
-                <span class="cursor">▋</span>
+                  <transition name="think">
+                    <div v-if="thinkExpanded.has(item.id) || item.streaming" class="think-body">
+                      {{ item.thinkText }}
+                    </div>
+                  </transition>
+                </div>
+                <!-- 正式回复 -->
+                <div v-if="item.replyText" class="bubble bubble-ai">
+                  {{ item.replyText }}
+                  <span v-if="item.streaming" class="cursor">▋</span>
+                </div>
               </div>
             </div>
           </div>
@@ -624,8 +672,44 @@ function onInputKeydown(e: KeyboardEvent) {
 .msg-ai { justify-content: flex-start; }
 .msg-tool { justify-content: stretch; }
 
+/* 头像 + 气泡 容器 */
+.bubble-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 88%;
+}
+.msg-user .bubble-wrap { flex-direction: row-reverse; }
+
+.avatar {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.avatar-ai {
+  background: linear-gradient(135deg, #6366f1, #38bdf8);
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.35);
+}
+.avatar-ai.thinking {
+  animation: avatar-pulse 1.4s ease-in-out infinite;
+}
+@keyframes avatar-pulse {
+  0%, 100% { box-shadow: 0 2px 6px rgba(99, 102, 241, 0.35); }
+  50% { box-shadow: 0 2px 14px rgba(99, 102, 241, 0.7); }
+}
+.avatar-user {
+  background: #94a3b8;
+}
+
+/* AI 内容容器（含 think + reply），让气泡自适应宽度 */
+.msg-ai .ai-content { flex: 1; min-width: 0; }
+
 .bubble {
-  max-width: 80%;
   padding: 8px 12px;
   border-radius: 12px;
   font-size: 13px;
@@ -642,15 +726,7 @@ function onInputKeydown(e: KeyboardEvent) {
   background: #f1f5f9;
   color: #334155;
   border-bottom-left-radius: 4px;
-}
-
-/* === AI 内容容器（含 think + reply） === */
-.ai-content {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-  max-width: 85%;
+  display: inline-block;
 }
 
 /* === 思考过程折叠块 === */
@@ -660,6 +736,7 @@ function onInputKeydown(e: KeyboardEvent) {
   background: rgba(99, 102, 241, 0.04);
   border: 1px solid rgba(99, 102, 241, 0.12);
   overflow: hidden;
+  margin-bottom: 2px;
 }
 .think-head {
   display: flex;
