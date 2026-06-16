@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NCard, NForm, NFormItem, NInput, NButton, NSelect, NSpace, NIcon, NUpload, NTag, useMessage } from 'naive-ui'
+import { NCard, NForm, NFormItem, NInput, NButton, NSelect, NSpace, NIcon, NUpload, NTag, NCheckbox, NCheckboxGroup, useMessage } from 'naive-ui'
 import type { FormInst, FormRules, UploadFileInfo } from 'naive-ui'
 import type { ExposeParam, UploadImgCallBack } from 'md-editor-v3'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
-import { ArrowBackOutline, SaveOutline, CloudUploadOutline, TrashOutline } from '@vicons/ionicons5'
+import { ArrowBackOutline, SaveOutline, CloudUploadOutline, TrashOutline, SparklesOutline } from '@vicons/ionicons5'
 import { getPost, createPost, updatePost } from '../../api/post'
+import { generateByAi } from '../../api/ai'
+import type { AiGenerateField } from '../../api/ai'
 import { getCategories } from '../../api/category'
 import { getTags } from '../../api/tag'
 import { getUsers } from '../../api/user'
@@ -30,6 +32,7 @@ const isEdit = computed(() => !!route.params.id)
 
 const formValue = ref({
   title: '',
+  subtitle: '',
   slug: '',
   content: '',
   summary: '',
@@ -77,6 +80,40 @@ const isPrivate = computed(() => formValue.value.status === 'private')
 /** 封面是否为待上传的 base64（未实际上传） */
 const isCoverPending = computed(() => formValue.value.coverImage.startsWith('data:'))
 
+/** AI 助手：复选框选中要生成哪些字段 */
+const aiFields = ref<AiGenerateField[]>(['summary'])
+const aiLoading = ref(false)
+
+/** 调用后端 AI 模块，根据标题+正文生成勾选的内容（副标题/摘要/slug） */
+async function handleAiGenerate() {
+  if (!formValue.value.title && !formValue.value.content) {
+    message.warning('请先填写标题或正文')
+    return
+  }
+  if (aiFields.value.length === 0) {
+    message.warning('请至少选择一项要生成的内容')
+    return
+  }
+  aiLoading.value = true
+  try {
+    // 响应拦截器已解包为 { success, data, message }，data 即生成结果
+    const res = await generateByAi({
+      title: formValue.value.title,
+      content: formValue.value.content,
+      fields: aiFields.value,
+    })
+    const r = res.data
+    if (r.subtitle) formValue.value.subtitle = r.subtitle
+    if (r.summary) formValue.value.summary = r.summary
+    if (r.slug) formValue.value.slug = r.slug
+    message.success('AI 生成完成')
+  } catch (e: any) {
+    message.error(e?.message || 'AI 生成失败')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
 function resolveCoverUrl(url: string): string {
   if (!url) return ''
   if (url.startsWith('data:')) return url
@@ -120,6 +157,7 @@ async function loadPost(id: number) {
     if (post) {
       formValue.value = {
         title: post.title || '',
+        subtitle: post.subtitle || '',
         slug: post.slug || '',
         content: post.content || '',
         summary: post.summary || '',
@@ -368,6 +406,10 @@ onMounted(async () => {
               <n-input v-model:value="formValue.title" placeholder="请输入文章标题" size="large" />
             </n-form-item>
 
+            <n-form-item label="副标题" path="subtitle">
+              <n-input v-model:value="formValue.subtitle" placeholder="一句话副标题（可选）" />
+            </n-form-item>
+
             <div class="content-block">
               <div class="field-label">内容</div>
               <MdEditor
@@ -388,6 +430,33 @@ onMounted(async () => {
       <div class="editor-sidebar">
         <n-card :bordered="false" class="side-card" title="文章设置">
           <n-space vertical :size="16">
+            <!-- AI 助手：勾选要生成的内容，一次调用生成多项 -->
+            <div class="ai-panel" :class="{ 'is-loading': aiLoading }">
+              <div class="ai-panel-header">
+                <div class="ai-panel-title">
+                  <n-icon class="ai-spark-icon" :size="15"><SparklesOutline /></n-icon>
+                  <span>AI 助手</span>
+                </div>
+                <span class="ai-panel-tag">DEEPSEEK</span>
+              </div>
+              <n-checkbox-group v-model:value="aiFields" class="ai-fields">
+                <n-checkbox value="subtitle">副标题</n-checkbox>
+                <n-checkbox value="summary">摘要</n-checkbox>
+                <n-checkbox value="slug">Slug</n-checkbox>
+              </n-checkbox-group>
+              <n-button
+                block
+                size="small"
+                type="primary"
+                ghost
+                :loading="aiLoading"
+                :disabled="aiFields.length === 0"
+                @click="handleAiGenerate"
+              >
+                {{ aiLoading ? '正在生成…' : '一键生成' }}
+              </n-button>
+            </div>
+
             <div>
               <div class="field-label">Slug</div>
               <n-input v-model:value="formValue.slug" placeholder="url-friendly 标识" />
@@ -618,6 +687,72 @@ onMounted(async () => {
   font-weight: 500;
   margin-bottom: 6px;
   color: #64748B;
+}
+
+/* === AI 助手面板：扁平 + 科技感 === */
+.ai-panel {
+  position: relative;
+  padding: 12px 12px 14px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.045), rgba(56, 189, 248, 0.03));
+  border: 1px dashed rgba(99, 102, 241, 0.3);
+  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.ai-panel.is-loading {
+  border-color: rgba(99, 102, 241, 0.55);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.09), rgba(56, 189, 248, 0.06));
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
+}
+
+.ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.ai-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: #6366f1;
+}
+
+/* 火花图标：默认微亮，生成时脉冲闪烁 */
+.ai-spark-icon {
+  color: #818cf8;
+  transition: color 0.25s ease;
+}
+.ai-panel.is-loading .ai-spark-icon {
+  animation: ai-pulse 1.1s ease-in-out infinite;
+}
+
+/* 右上角科技感小标签 */
+.ai-panel-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: rgba(99, 102, 241, 0.75);
+  background: rgba(99, 102, 241, 0.1);
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+}
+
+.ai-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 11px;
+}
+
+@keyframes ai-pulse {
+  0%, 100% { color: #818cf8; transform: scale(1); }
+  50% { color: #38bdf8; transform: scale(1.18); }
 }
 
 /* === 存储方式选择行 === */

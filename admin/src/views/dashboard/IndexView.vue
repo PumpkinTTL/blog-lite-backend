@@ -19,13 +19,13 @@ import {
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts/core'
 import { LineChart, PieChart, BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, LegendComponent, GraphicComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getDashboardStats } from '../../api/dashboard'
 import type { DashboardStats } from '../../api/dashboard'
 import { isDark } from '../../theme'
 
-echarts.use([LineChart, PieChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+echarts.use([LineChart, PieChart, BarChart, GridComponent, TooltipComponent, LegendComponent, GraphicComponent, CanvasRenderer])
 
 const router = useRouter()
 const message = useMessage()

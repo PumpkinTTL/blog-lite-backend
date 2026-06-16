@@ -12,6 +12,7 @@ export interface PostAuthor {
 export interface Post {
   id: number
   title: string
+  subtitle: string | null
   slug: string
   content: string
   summary: string | null
