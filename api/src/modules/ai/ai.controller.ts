@@ -9,7 +9,7 @@ import type { Response } from 'express';
 import { AiService } from './ai.service';
 import { AiGenerateDto, AiChatDto } from './ai.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
-import type { AiToolCall } from './ai.dto';
+import type { AiToolCall, AiChatMessage } from './ai.dto';
 
 /**
  * AI 能力接口（仅 admin 可调用）。
@@ -39,6 +39,25 @@ export class AiController {
       dto.model,
     );
     return { success: true, data, message: 'AI 生成完成' };
+  }
+
+  /**
+   * 压缩对话历史：POST /ai/compact
+   * 把多轮历史交给 AI 总结成摘要，前端用摘要替换旧历史，释放上下文 token。
+   * 非流式（压缩是后台操作，无需逐字）。
+   */
+  @Post('compact')
+  async compact(
+    @Body() body: { messages: AiChatMessage[]; model?: string },
+  ) {
+    if (!body.messages || body.messages.length === 0) {
+      throw new BadRequestException('消息不能为空');
+    }
+    const summary = await this.aiService.summarizeHistory(
+      body.messages,
+      body.model,
+    );
+    return { success: true, data: { summary }, message: '历史已压缩' };
   }
 
   /**

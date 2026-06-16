@@ -65,6 +65,48 @@ export class AiService {
   }
 
   /**
+   * 压缩对话历史：让 AI 把多轮历史总结成一段摘要。
+   * 前端收到摘要后，用 [system:摘要] 替换掉旧历史，释放上下文 token。
+   *
+   * 入参 history 是扁平的对话记录（user/assistant/tool），会原样喂给 AI。
+   * 返回摘要文本（纯文本，可直接作为 system 消息）。
+   */
+  async summarizeHistory(
+    history: AiChatMessage[],
+    model?: string,
+  ): Promise<string> {
+    // 把历史拼成可读文本，让 AI 总结
+    const transcript = history
+      .map((m) => {
+        if (m.role === 'tool') return `[工具结果 ${m.tool_call_id}]: ${m.content}`;
+        if (m.role === 'assistant' && m.tool_calls?.length) {
+          return `[助手-调用工具]: ${m.tool_calls.map((t) => t.function.name).join(', ')}`;
+        }
+        return `[${m.role}]: ${m.content ?? ''}`;
+      })
+      .join('\n\n');
+
+    const summarizeMessages: Array<{
+      role: 'system' | 'user';
+      content: string;
+    }> = [
+      {
+        role: 'system',
+        content:
+          '你是对话压缩器。把下面的多轮对话历史总结成一段紧凑的摘要，' +
+          '保留关键决策、已执行的操作、文章的当前状态和待办事项。' +
+          '用第二人称（"你"）描述。只输出摘要正文，不要多余解释。',
+      },
+      {
+        role: 'user',
+        content: `请压缩以下对话历史：\n\n${transcript}`,
+      },
+    ];
+
+    return this.chat(summarizeMessages, model);
+  }
+
+  /**
    * 底层通用调用：OpenAI 兼容 /chat/completions。
    *
    * 以 stream:true 发起（网关要求），内部聚合 SSE 流，

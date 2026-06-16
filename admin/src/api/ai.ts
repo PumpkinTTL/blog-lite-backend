@@ -41,6 +41,24 @@ export function generateByAi(data: AiGeneratePayload) {
   )
 }
 
+/* ============ 历史压缩 ============ */
+
+/** 压缩历史返回 */
+export interface AiCompactResult {
+  summary: string
+}
+
+/**
+ * 压缩对话历史：把多轮历史交给后端 AI 总结成摘要。
+ * 前端用返回的摘要替换旧历史，释放上下文 token。
+ */
+export function compactHistory(data: { messages: AiChatMessage[]; model?: string }) {
+  return request.post<AiApiResponse<AiCompactResult>, AiApiResponse<AiCompactResult>>(
+    '/ai/compact',
+    data,
+  )
+}
+
 /* ============ Agent 对话（SSE 流式） ============ */
 
 /** 工具调用（已聚合） */
