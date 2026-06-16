@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, h, onMounted } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NSelect, NAvatar, NPagination, useDialog, useMessage } from 'naive-ui'
-import type { DataTableColumns } from 'naive-ui'
+import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { TrashOutline, SearchOutline, RefreshOutline, HeartOutline, StarOutline } from '@vicons/ionicons5'
 import { getAdminInteractions, deleteInteraction, batchDeleteInteractions } from '../../api/interaction'
 import type { AdminInteraction, InteractionType, InteractionEntityType } from '../../api/interaction'
@@ -26,12 +26,12 @@ const typeOptions = [
   { label: '全部', value: null },
   { label: '点赞', value: 'like' },
   { label: '收藏', value: 'favorite' },
-]
+] as unknown as SelectOption[]
 const entityTypeOptions = [
   { label: '全部', value: null },
   { label: '文章', value: 'post' },
   { label: '评论', value: 'comment' },
-]
+] as unknown as SelectOption[]
 
 const typeLabelMap: Record<InteractionType, string> = {
   like: '点赞',

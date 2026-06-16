@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, h, computed, onMounted } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber, NTabs, NTabPane, NDatePicker, NTooltip } from 'naive-ui'
-import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, BanOutline, PricetagOutline, PricetagsOutline, CopyOutline } from '@vicons/ionicons5'
 import { getCodes, updateCode, deleteCode, batchCreateCodes, batchDisableCodes, batchDeleteCodes, getAllUsageLogs } from '../../api/code'
 import type { Code, CodeUsageLog, CodeDiscount } from '../../api/code'
@@ -31,7 +31,7 @@ const typeOptions = [
   { label: '优惠码', value: 'discount' },
   { label: '会员码', value: 'membership' },
   { label: '资源访问码', value: 'resource' },
-]
+] as unknown as SelectOption[]
 
 const statusOptions = [
   { label: '全部', value: null },
@@ -39,14 +39,13 @@ const statusOptions = [
   { label: '已用', value: 'used' },
   { label: '过期', value: 'expired' },
   { label: '禁用', value: 'disabled' },
-]
+] as unknown as SelectOption[]
 
-const typeTagMap: Record<string, string> = { invitation: 'info', activation: 'success', discount: 'warning', membership: 'error', resource: 'primary' }
+type TagType = 'default' | 'info' | 'success' | 'warning' | 'error' | 'primary'
+const typeTagMap: Record<string, TagType> = { invitation: 'info', activation: 'success', discount: 'warning', membership: 'error', resource: 'primary' }
 const typeLabelMap: Record<string, string> = { invitation: '邀请码', activation: '激活码', discount: '优惠码', membership: '会员码', resource: '资源访问码' }
-const statusTagMap: Record<string, string> = { active: 'success', used: 'warning', expired: 'default', disabled: 'error' }
+const statusTagMap: Record<string, TagType> = { active: 'success', used: 'warning', expired: 'default', disabled: 'error' }
 const statusLabelMap: Record<string, string> = { active: '有效', used: '已用', expired: '过期', disabled: '禁用' }
-
-const discountTypeLabel: Record<string, string> = { percentage: '打折', threshold: '满减', fixed: '立减' }
 
 function renderDiscount(discount: CodeDiscount | null) {
   if (!discount) return '-'

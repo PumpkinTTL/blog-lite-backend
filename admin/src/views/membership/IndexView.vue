@@ -5,7 +5,7 @@ import {
   NSelect, NPagination, NInputNumber, NSwitch, NTabs, NTabPane, NTag,
   useMessage, useDialog,
 } from 'naive-ui'
-import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, GiftOutline, BanOutline } from '@vicons/ionicons5'
 import {
   getPlans, createPlan, updatePlan, deletePlan, batchDeletePlans,
@@ -312,13 +312,13 @@ const statusFilterOptions = [
   { label: '生效中', value: 'active' },
   { label: '已过期', value: 'expired' },
   { label: '已取消', value: 'cancelled' },
-]
+] as unknown as SelectOption[]
 const sourceFilterOptions = [
   { label: '全部', value: null },
   { label: '手动开通', value: 'admin' },
   { label: '兑换码', value: 'code' },
   { label: '支付', value: 'payment' },
-]
+] as unknown as SelectOption[]
 
 async function loadMembers() {
   memberLoading.value = true
@@ -487,7 +487,10 @@ const memberColumns: DataTableColumns<Membership> = [
   },
   {
     title: '等级', key: 'level', width: 80,
-    render: (row) => row.plan ? h(NTag, { size: 'small', type: levelTagType[row.plan.level], bordered: false }, { default: () => levelLabel[row.plan.level] }) : '-',
+    render: (row) => {
+      const lvl = row.plan?.level
+      return lvl ? h(NTag, { size: 'small', type: levelTagType[lvl], bordered: false }, { default: () => levelLabel[lvl] }) : '-'
+    },
   },
   {
     title: '开始时间', key: 'startedAt', width: 180,

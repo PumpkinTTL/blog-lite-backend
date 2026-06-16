@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, h } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination } from 'naive-ui'
-import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getFriendLinks, createFriendLink, updateFriendLink, deleteFriendLink, batchDeleteFriendLinks } from '../../api/friend-link'
 import type { FriendLink } from '../../api/friend-link'
@@ -20,11 +20,11 @@ const friendLinkStatusOptions = [
   { label: '全部', value: null },
   { label: '显示', value: 'visible' },
   { label: '隐藏', value: 'hidden' },
-]
+] as unknown as SelectOption[]
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
   handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit,
-  handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn, message } =
+  handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn } =
   useCrudList<FriendLink>({
     loadApi: (params) => getFriendLinks({
       ...params,

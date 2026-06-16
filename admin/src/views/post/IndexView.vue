@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
 import { NButton, NDataTable, NSpace, NTag, NInput, NIcon, NSelect, NPagination, NImage, NCheckbox, useMessage, useDialog } from 'naive-ui'
-import type { DataTableColumns } from 'naive-ui'
+import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, ImageOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
 import { getPosts, deletePost, batchDeletePosts } from '../../api/post'
@@ -29,7 +29,7 @@ const statusOptions = [
   { label: '已发布', value: 'published' },
   { label: '登录可见', value: 'login' },
   { label: '指定用户', value: 'private' },
-]
+] as unknown as SelectOption[]
 
 function resolveCoverUrl(url: string | null): string {
   if (!url) return ''

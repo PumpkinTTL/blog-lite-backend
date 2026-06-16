@@ -21,7 +21,6 @@ import {
   MoonOutline,
   SunnyOutline,
   RibbonOutline,
-  CardOutline,
   ChatbubblesOutline,
   StarOutline,
   ClipboardOutline,

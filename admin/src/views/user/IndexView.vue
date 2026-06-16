@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, h, watch } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch, NAvatar, NUpload } from 'naive-ui'
-import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getUsers, createUser, updateUser, deleteUser, batchDeleteUsers, toggleUserStatus } from '../../api/user'
 import type { User } from '../../api/user'
@@ -25,7 +25,7 @@ const userStatusOptions = [
   { label: '全部', value: null },
   { label: '正常', value: 'active' },
   { label: '禁用', value: 'disabled' },
-]
+] as unknown as SelectOption[]
 
 // 会员等级标签（与 membership 页一致）
 const levelTagType: Record<PlanLevel, 'info' | 'success' | 'warning'> = {

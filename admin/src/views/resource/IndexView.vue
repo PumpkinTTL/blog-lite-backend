@@ -19,7 +19,7 @@ import {
   NTabPane,
   NImage,
 } from 'naive-ui'
-import type { DataTableColumns, FormInst, FormRules, UploadFileInfo } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, SelectOption, UploadFileInfo } from 'naive-ui'
 import { MdEditor } from 'md-editor-v3'
 import type { UploadImgCallBack } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
@@ -91,14 +91,14 @@ const statusOptions = [
   { label: '公开', value: 'published' },
   { label: '登录可见', value: 'login' },
   { label: '指定可见', value: 'private' },
-]
+] as unknown as SelectOption[]
 
 const memberLevelOptions = [
   { label: '不限', value: null },
   { label: 'Plus', value: 'plus' },
   { label: 'Pro', value: 'pro' },
   { label: 'Max', value: 'max' },
-]
+] as unknown as SelectOption[]
 
 const formStatusOptions = [
   { label: '草稿', value: 'draft' },

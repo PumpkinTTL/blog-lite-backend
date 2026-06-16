@@ -153,9 +153,9 @@ describe('Post API', () => {
 
   it('getPosts 应该传递分页和筛选参数', async () => {
     ;(request.get as any).mockResolvedValue({ data: [] })
-    await postApi.getPosts({ page: 1, pageSize: 10, status: 1, categoryId: 2 })
+    await postApi.getPosts({ page: 1, pageSize: 10, status: 'published', categoryId: 2 })
     expect(request.get).toHaveBeenCalledWith('/post', {
-      params: { page: 1, pageSize: 10, status: 1, categoryId: 2 },
+      params: { page: 1, pageSize: 10, status: 'published', categoryId: 2 },
     })
   })
 

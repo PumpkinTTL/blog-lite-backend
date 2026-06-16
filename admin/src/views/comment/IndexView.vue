@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, h, onMounted } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NSelect, NPagination, useDialog, useMessage } from 'naive-ui'
-import type { DataTableColumns } from 'naive-ui'
+import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { CheckmarkOutline, CloseOutline, TrashOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getAdminComments, moderateComment, batchModerateComment, deleteComment, batchDeleteComments } from '../../api/comment'
 import type { Comment, CommentStatus } from '../../api/comment'
@@ -26,11 +26,11 @@ const statusOptions = [
   { label: '待审核', value: 'pending' },
   { label: '已通过', value: 'approved' },
   { label: '已拒绝', value: 'rejected' },
-]
+] as unknown as SelectOption[]
 const entityTypeOptions = [
   { label: '全部', value: null },
   { label: '文章', value: 'post' },
-]
+] as unknown as SelectOption[]
 
 const statusTagMap: Record<CommentStatus, 'warning' | 'success' | 'error'> = {
   pending: 'warning',

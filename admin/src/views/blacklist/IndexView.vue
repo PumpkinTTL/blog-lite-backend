@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, h } from 'vue'
-import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NSwitch, NDatePicker } from 'naive-ui'
-import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NDatePicker } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getBlacklists, createBlacklist, updateBlacklist, deleteBlacklist, batchDeleteBlacklists } from '../../api/blacklist'
 import type { Blacklist } from '../../api/blacklist'
@@ -20,13 +20,13 @@ const typeOptions = [
   { label: '全部', value: null },
   { label: 'IP', value: 'ip' },
   { label: '用户', value: 'user' },
-]
+] as unknown as SelectOption[]
 
 const statusOptions = [
   { label: '全部', value: null },
   { label: '生效中', value: 'active' },
   { label: '已解除', value: 'expired' },
-]
+] as unknown as SelectOption[]
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
   handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit,

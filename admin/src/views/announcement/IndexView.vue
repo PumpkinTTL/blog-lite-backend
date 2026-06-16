@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, h } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NTag, NSelect, NPagination, NInputNumber } from 'naive-ui'
-import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, batchDeleteAnnouncements } from '../../api/announcement'
 import type { Announcement } from '../../api/announcement'
@@ -20,10 +20,10 @@ const announcementStatusOptions = [
   { label: '全部', value: null },
   { label: '显示', value: 'visible' },
   { label: '隐藏', value: 'hidden' },
-]
+] as unknown as SelectOption[]
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn, message } =
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn } =
   useCrudList<Announcement>({
     loadApi: (params) => getAnnouncements({
       ...params,
@@ -61,7 +61,7 @@ function handleReset() {
 }
 
 async function handleSave() {
-  return _handleSave(() => formRef!.validate())
+  return _handleSave(() => formRef.value?.validate())
 }
 
 function handlePageChange(p: number) {

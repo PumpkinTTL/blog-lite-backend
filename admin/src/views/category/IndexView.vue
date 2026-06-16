@@ -15,7 +15,7 @@ const page = ref(1)
 const pageSize = ref(5)
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
-  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn, message } =
+  handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn } =
   useCrudList<Category>({
     loadApi: (params) => getCategories({
       ...params,
@@ -51,7 +51,7 @@ function handleReset() {
 }
 
 async function handleSave() {
-  return _handleSave(() => formRef?.validate())
+  return _handleSave(() => formRef.value?.validate())
 }
 
 function handlePageChange(p: number) {

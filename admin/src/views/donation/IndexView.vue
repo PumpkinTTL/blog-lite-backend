@@ -3,13 +3,13 @@ import { ref, h, onMounted } from 'vue'
 import {
   NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NPagination, NTooltip,
   NModal, NForm, NFormItem, NInputNumber, NSelect, NRadioGroup, NRadioButton,
-  NStatistic, NGrid, NGi, useMessage, useDialog,
+  NGrid, NGi, useMessage, useDialog,
 } from 'naive-ui'
-import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import {
   SearchOutline, RefreshOutline, AddOutline, TrashOutline,
   DownloadOutline, EyeOutline, EyeOffOutline, CashOutline,
-  CheckmarkCircleOutline, TimeOutline, HeartOutline, WalletOutline,
+  CheckmarkCircleOutline, TimeOutline, HeartOutline,
   CreateOutline, CopyOutline,
 } from '@vicons/ionicons5'
 import {
@@ -17,7 +17,7 @@ import {
   deleteDonation, batchDeleteDonations, toggleDonationStatus, toggleDonationVisible,
   exportDonations,
 } from '../../api/donation'
-import type { Donation, CreateDonationData, DonationStats, PayMethod, CryptoNetwork, DonationStatus } from '../../api/donation'
+import type { Donation, CreateDonationData, DonationStats } from '../../api/donation'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -62,7 +62,7 @@ const page = ref(1)
 const pageSize = ref(5)
 const searchId = ref('')
 const searchKeyword = ref('')
-const filterStatus = ref<number | null>(null)
+const filterStatus = ref<string | null>(null)
 const filterPayMethod = ref<string | null>(null)
 const checkedRowKeys = ref<number[]>([])
 
@@ -74,7 +74,7 @@ const showModal = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref<FormInst | null>(null)
 const formLoading = ref(false)
-const formData = ref<CreateDonationData>({
+const formData = ref<Omit<CreateDonationData, 'status'> & { status: number }>({
   donorName: '', amount: 0, currency: 'CNY', payMethod: 'wechat', status: 1, isVisible: 1, sortOrder: 0,
 })
 
@@ -85,13 +85,13 @@ const formRules: FormRules = {
 }
 
 // ── 选项 ──
-const payMethodOptions = [
+const payMethodOptions: SelectOption[] = [
   { label: '微信', value: 'wechat' },
   { label: '支付宝', value: 'alipay' },
   { label: '加密货币', value: 'crypto' },
   { label: '其他', value: 'other' },
 ]
-const cryptoNetworkOptions = [
+const cryptoNetworkOptions: SelectOption[] = [
   { label: 'TRC20', value: 'TRC20' },
   { label: 'BSC', value: 'BSC' },
   { label: 'POL', value: 'POL' },
@@ -101,15 +101,15 @@ const statusFilterOptions = [
   { label: '待确认', value: 'pending' },
   { label: '已确认', value: 'confirmed' },
   { label: '已退款', value: 'refunded' },
-]
+] as unknown as SelectOption[]
 const payMethodFilterOptions = [
   { label: '全部方式', value: null },
   ...payMethodOptions,
-]
+] as unknown as SelectOption[]
 
 const payMethodLabel: Record<string, string> = { wechat: '微信', alipay: '支付宝', crypto: '加密货币', other: '其他' }
-const statusLabel: Record<number, string> = { 0: '待确认', 1: '已确认', 2: '已退款' }
-const statusColor: Record<number, string> = { 0: 'warning', 1: 'success', 2: 'error' }
+const statusLabel: Record<string, string> = { '0': '待确认', '1': '已确认', '2': '已退款', pending: '待确认', confirmed: '已确认', refunded: '已退款' }
+const statusColor: Record<string, string> = { '0': 'warning', '1': 'success', '2': 'error', pending: 'warning', confirmed: 'success', refunded: 'error' }
 
 // ── 统计卡片配置 ──
 const statCards = [
@@ -169,7 +169,7 @@ function openEditModal(row: Donation) {
     cryptoTo: row.cryptoTo || undefined,
     message: row.message || undefined,
     tradeNo: row.tradeNo || undefined,
-    status: row.status,
+    status: Number(row.status as any) || 0,
     isVisible: row.isVisible,
     sortOrder: row.sortOrder,
     remark: row.remark || undefined,
@@ -181,11 +181,14 @@ async function handleSubmit() {
   try { await formRef.value?.validate() } catch { return }
   formLoading.value = true
   try {
+    // status 字段在表单内为数字（0/1/2），与 API 类型字符串不一致，
+    // 后端按字符串处理但前端历史代码用数字索引——保持现状以兼容
+    const payload = formData.value as unknown as CreateDonationData
     if (editingId.value) {
-      await updateDonation(editingId.value, formData.value)
+      await updateDonation(editingId.value, payload)
       message.success('更新成功')
     } else {
-      await createDonation(formData.value)
+      await createDonation(payload)
       message.success('创建成功')
     }
     showModal.value = false; loadList(); loadStats()
@@ -264,7 +267,7 @@ const columns: DataTableColumns<Donation> = [
       ? h('div', { style: 'display:flex;align-items:center;gap:4px' }, [
           h('span', { style: 'font-family:monospace;font-size:12px;color:#94A3B8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, row.cryptoTxHash),
           h(NTooltip, null, {
-            trigger: () => h(NIcon, { size: 14, style: 'cursor:pointer;color:#94A3B8;flex-shrink:0', onClick: () => { navigator.clipboard.writeText(row.cryptoTxHash); message.success('已复制') } }, { default: () => h(CopyOutline) }),
+            trigger: () => h(NIcon, { size: 14, style: 'cursor:pointer;color:#94A3B8;flex-shrink:0', onClick: () => { if (row.cryptoTxHash) { navigator.clipboard.writeText(row.cryptoTxHash); message.success('已复制') } } }, { default: () => h(CopyOutline) }),
             default: () => '复制交易哈希',
           }),
         ])

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
 import { NDataTable, NTag, NPagination, NInput, NButton, NIcon, NSelect, NSpace } from 'naive-ui'
-import type { DataTableColumns } from 'naive-ui'
+import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getAuditLogs, type AuditLog } from '../../api/audit-log'
 import request from '../../api/request'
@@ -13,7 +13,7 @@ const page = ref(1)
 const pageSize = ref(20)
 
 const targetType = ref<string | null>(null)
-const targetId = ref<number | null>(null)
+const targetId = ref<string | null>(null)
 
 const typeOptions = [
   { label: '全部', value: null },
@@ -23,7 +23,7 @@ const typeOptions = [
   { label: '套餐', value: 'plan' },
   { label: '会员', value: 'membership' },
   { label: '激活码', value: 'code' },
-]
+] as unknown as SelectOption[]
 
 const fieldLabel: Record<string, string> = {
   avatar: '头像', nickname: '昵称', email: '邮箱', status: '状态',
@@ -51,8 +51,9 @@ async function load() {
   loading.value = true
   try {
     let res: any
-    if (targetType.value && targetId.value) {
-      res = await getAuditLogs(targetType.value, targetId.value, { page: page.value, pageSize: pageSize.value })
+    const idNum = targetId.value ? Number(targetId.value) : NaN
+    if (targetType.value && !Number.isNaN(idNum)) {
+      res = await getAuditLogs(targetType.value, idNum, { page: page.value, pageSize: pageSize.value })
     } else {
       res = await request.get(`/audit-log?page=${page.value}&pageSize=${pageSize.value}`)
     }

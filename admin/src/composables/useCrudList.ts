@@ -39,7 +39,7 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
   const dialog = useDialog()
 
   const loading = ref(false)
-  const list = ref<T[]>([]) as { value: T[] }
+  const list = ref<T[]>([])
   const searchId = ref('')
   const searchKeyword = ref('')
   const showModal = ref(false)
@@ -94,7 +94,7 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
     showModal.value = true
   }
 
-  async function handleSave(validateFn?: () => Promise<void>) {
+  async function handleSave(validateFn?: () => Promise<unknown> | undefined) {
     // 防止双击重入，导致重复创建/更新
     if (saving.value) return false
     if (validateFn) {

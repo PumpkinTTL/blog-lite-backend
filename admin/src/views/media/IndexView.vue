@@ -339,12 +339,12 @@ const columns: DataTableColumns<Media> = [
   },
   {
     title: '类型', key: 'mimeType', width: 120, ellipsis: { tooltip: true },
-    cellProps: (row) => ({ style: { whiteSpace: 'nowrap' } }),
+    cellProps: () => ({ style: { whiteSpace: 'nowrap' } }),
     render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.mimeType }),
   },
   {
     title: '大小', key: 'size', width: 85,
-    cellProps: (row) => ({ style: { whiteSpace: 'nowrap' } }),
+    cellProps: () => ({ style: { whiteSpace: 'nowrap' } }),
     render: (row) => formatSize(row.size),
   },
   {

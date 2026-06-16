@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { NSpin, NIcon, NEmpty, NButton, useMessage } from 'naive-ui'
+import { NSpin, NIcon, NButton, useMessage } from 'naive-ui'
 import {
   DocumentTextOutline,
   PaperPlaneOutline,
