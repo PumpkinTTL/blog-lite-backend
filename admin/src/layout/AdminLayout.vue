@@ -45,28 +45,53 @@ function renderIcon(icon: Component) {
 const menuOptions: MenuOption[] = [
   { label: '数据概览', key: '/dashboard', icon: renderIcon(HomeOutline) },
   { type: 'divider', key: 'd0' },
-  { label: '文章管理', key: '/posts', icon: renderIcon(DocumentTextOutline) },
-  { label: '分类管理', key: '/categories', icon: renderIcon(FolderOutline) },
-  { label: '标签管理', key: '/tags', icon: renderIcon(PricetagsOutline) },
-  { label: '文件管理', key: '/media', icon: renderIcon(ImagesOutline) },
+  {
+    type: 'group', label: '内容', key: 'g-content',
+    children: [
+      { label: '文章管理', key: '/posts', icon: renderIcon(DocumentTextOutline) },
+      { label: '分类管理', key: '/categories', icon: renderIcon(FolderOutline) },
+      { label: '标签管理', key: '/tags', icon: renderIcon(PricetagsOutline) },
+      { label: '文件管理', key: '/media', icon: renderIcon(ImagesOutline) },
+    ],
+  },
   { type: 'divider', key: 'd1' },
-  { label: '用户管理', key: '/users', icon: renderIcon(PeopleOutline) },
-  { label: '角色管理', key: '/roles', icon: renderIcon(ShieldOutline) },
-  { label: '会员管理', key: '/membership', icon: renderIcon(RibbonOutline) },
-  { label: '激活码管理', key: '/codes', icon: renderIcon(KeyOutline) },
+  {
+    type: 'group', label: '用户', key: 'g-user',
+    children: [
+      { label: '用户管理', key: '/users', icon: renderIcon(PeopleOutline) },
+      { label: '角色管理', key: '/roles', icon: renderIcon(ShieldOutline) },
+      { label: '会员管理', key: '/membership', icon: renderIcon(RibbonOutline) },
+      { label: '激活码管理', key: '/codes', icon: renderIcon(KeyOutline) },
+    ],
+  },
   { type: 'divider', key: 'd2' },
-  { label: '评论管理', key: '/comments', icon: renderIcon(ChatbubblesOutline) },
-  { label: '互动管理', key: '/interactions', icon: renderIcon(StarOutline) },
-  { label: '公告管理', key: '/announcements', icon: renderIcon(MegaphoneOutline) },
-  { label: '友情链接', key: '/friend-links', icon: renderIcon(LinkOutline) },
-  { label: '资源管理', key: '/resources', icon: renderIcon(GiftOutline) },
-  { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
+  {
+    type: 'group', label: '互动', key: 'g-interact',
+    children: [
+      { label: '评论管理', key: '/comments', icon: renderIcon(ChatbubblesOutline) },
+      { label: '互动管理', key: '/interactions', icon: renderIcon(StarOutline) },
+      { label: '公告管理', key: '/announcements', icon: renderIcon(MegaphoneOutline) },
+      { label: '友情链接', key: '/friend-links', icon: renderIcon(LinkOutline) },
+      { label: '资源管理', key: '/resources', icon: renderIcon(GiftOutline) },
+      { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
+    ],
+  },
   { type: 'divider', key: 'd3' },
-  { label: '黑名单', key: '/blacklist', icon: renderIcon(BanOutline) },
-  { label: '限流配置', key: '/rate-limit', icon: renderIcon(SpeedometerOutline) },
+  {
+    type: 'group', label: '风控', key: 'g-risk',
+    children: [
+      { label: '黑名单', key: '/blacklist', icon: renderIcon(BanOutline) },
+      { label: '限流配置', key: '/rate-limit', icon: renderIcon(SpeedometerOutline) },
+    ],
+  },
   { type: 'divider', key: 'd4' },
-  { label: '系统设置', key: '/settings', icon: renderIcon(SettingsOutline) },
-  { label: '审计日志', key: '/audit-logs', icon: renderIcon(ClipboardOutline) },
+  {
+    type: 'group', label: '系统', key: 'g-system',
+    children: [
+      { label: '系统设置', key: '/settings', icon: renderIcon(SettingsOutline) },
+      { label: '审计日志', key: '/audit-logs', icon: renderIcon(ClipboardOutline) },
+    ],
+  },
 ]
 
 const activeMenu = computed(() => {
