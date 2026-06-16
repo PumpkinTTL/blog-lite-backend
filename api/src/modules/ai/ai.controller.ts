@@ -100,7 +100,12 @@ export class AiController {
             if (choice.finish_reason) finishReason = choice.finish_reason;
             const delta = choice.delta;
 
-            // 实时转发文本 token
+            // 实时转发思考过程（reasoning_content，网关原生字段）
+            if (typeof delta?.reasoning_content === 'string' && delta.reasoning_content) {
+              writeEvent('thinking', { text: delta.reasoning_content });
+            }
+
+            // 实时转发正式回复 token（content）
             if (typeof delta?.content === 'string' && delta.content) {
               writeEvent('token', { text: delta.content });
             }

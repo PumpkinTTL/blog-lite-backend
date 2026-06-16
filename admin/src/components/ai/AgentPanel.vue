@@ -79,26 +79,6 @@ const thinkExpanded = ref<Set<string>>(new Set())
 let itemSeq = 0
 const nextId = () => `m${++itemSeq}`
 
-/**
- * 把含 <think> 标签的原始文本拆成 think / reply 两段。
- * 支持流式（标签未闭合时 think 持续增长）。
- */
-function splitThink(raw: string | undefined): { think: string; reply: string } {
-  if (!raw) return { think: '', reply: '' }
-  const openIdx = raw.indexOf('<think>')
-  if (openIdx === -1) return { think: '', reply: raw }
-  const afterOpen = openIdx + '<think>'.length
-  const closeIdx = raw.indexOf('</think>', afterOpen)
-  if (closeIdx === -1) {
-    // 标签未闭合：正在思考中，think 持续，reply 为空
-    return { think: raw.slice(afterOpen), reply: '' }
-  }
-  return {
-    think: raw.slice(afterOpen, closeIdx),
-    reply: raw.slice(closeIdx + '</think>'.length).replace(/^\s+/, ''),
-  }
-}
-
 // === 工具边界值保护工具 ===
 /** 强制转为有限整数，非法值用 fallback */
 function toInt(v: unknown, fallback: number): number {
@@ -273,8 +253,6 @@ async function handleSend() {
 
   // 当前正在流式输出的 assistant 项（提到外层，便于 catch 清理）
   let currentAssistantItem: RenderItem | null = null
-  // 当前 token 播放器的停止函数（提到外层，便于 catch 清理）
-  let currentStopPlayer: (() => void) | null = null
 
   try {
     // 2) agent 循环（最多 MAX_LOOP 步）
@@ -285,52 +263,13 @@ async function handleSend() {
       renderItems.value.push(assistantItem)
       await scrollToBottom()
 
-      // token 平滑播放器：网络批量到 → 前端逐字吐出，保证视觉流式感
-      // （上游网关会把多个 token 打成一个包，Node 中转后前端一次收到一批，
-      //   直接渲染会"卡顿后一次性出现"；用播放器按固定节奏吐字）
-      const tokenQueue: string[] = []
-      let playerTimer: ReturnType<typeof setInterval> | null = null
-      const TOKEN_INTERVAL = 18 // ms/字，约 55 字/秒，阅读舒适
-      const startPlayer = () => {
-        if (playerTimer) return
-        playerTimer = setInterval(() => {
-          if (tokenQueue.length === 0) return
-          // 每帧按队列长度自适应吐字（积压多时加速，避免落太多）
-          const batchSize = Math.max(1, Math.floor(tokenQueue.length / 6))
-          let consumed = ''
-          for (let i = 0; i < batchSize && tokenQueue.length > 0; i++) {
-            consumed += tokenQueue.shift()
-          }
-          if (consumed) {
-            assistantItem.text = (assistantItem.text ?? '') + consumed
-            const { think, reply } = splitThink(assistantItem.text)
-            assistantItem.thinkText = think
-            assistantItem.replyText = reply
-            if (think) thinkExpanded.value.add(assistantItem.id)
-            scrollToBottom()
-          }
-        }, TOKEN_INTERVAL)
-      }
-      const stopPlayer = () => {
-        if (playerTimer) { clearInterval(playerTimer); playerTimer = null }
-        // 清空队列残余，确保最终文本完整
-        while (tokenQueue.length > 0) {
-          const rest = tokenQueue.shift()
-          if (rest !== undefined) assistantItem.text = (assistantItem.text ?? '') + rest
-        }
-        const { think, reply } = splitThink(assistantItem.text)
-        assistantItem.thinkText = think
-        assistantItem.replyText = reply
-      }
-      currentStopPlayer = stopPlayer
-
       const result = await streamChat(
         messages.value,
         buildContext(),
-        // token 回调：只入队，不直接渲染（由播放器平滑吐出）
+        // token 回调：正式回复，直接渲染（真实流式）
         (tok) => {
-          tokenQueue.push(tok)
-          startPlayer()
+          assistantItem.replyText = (assistantItem.replyText ?? '') + tok
+          scrollToBottom()
         },
         // tool_calls 回调：先占位渲染（状态 pending）
         (calls) => {
@@ -342,11 +281,15 @@ async function handleSend() {
           scrollToBottom()
         },
         selectedModel.value ?? undefined,
+        // thinking 回调：模型的思考过程（reasoning_content），实时渲染
+        (think) => {
+          assistantItem.thinkText = (assistantItem.thinkText ?? '') + think
+          // 思考阶段自动展开，让用户看到思考过程
+          thinkExpanded.value.add(assistantItem.id)
+          scrollToBottom()
+        },
       )
 
-      // 流结束：停播放器，把残余 token 一次性 flush，保证完整
-      stopPlayer()
-      currentStopPlayer = null
       assistantItem.streaming = false
       currentAssistantItem = null
       // 流式结束：think 默认折叠（用户可点击展开回顾）
@@ -384,12 +327,11 @@ async function handleSend() {
       // 继续下一轮，让 AI 看到工具结果后继续
     }
   } catch (e) {
-    // 调用失败：停播放器 + 停止当前 assistant 的流式闪烁状态
-    if (currentStopPlayer) { currentStopPlayer(); currentStopPlayer = null }
+    // 调用失败：停止当前 assistant 的流式闪烁状态
     if (currentAssistantItem) {
       currentAssistantItem.streaming = false
       // 若该 assistant 项还没收到任何 token，移除空气泡，避免残留
-      if (!currentAssistantItem.text) {
+      if (!currentAssistantItem.text && !currentAssistantItem.replyText && !currentAssistantItem.thinkText) {
         renderItems.value = renderItems.value.filter((r) => r.id !== currentAssistantItem!.id)
       }
     }

@@ -87,6 +87,7 @@ export async function streamChat(
   onToken: (text: string) => void,
   onToolCalls: (calls: AiToolCall[]) => void,
   model?: string,
+  onThinking?: (text: string) => void,
 ): Promise<StreamChatResult> {
   const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
   const baseURL = import.meta.env.VITE_API_BASE_URL
@@ -125,7 +126,9 @@ export async function streamChat(
       if (!payload) continue
       try {
         const evt = JSON.parse(payload)
-        if (evt.type === 'token' && typeof evt.data?.text === 'string') {
+        if (evt.type === 'thinking' && typeof evt.data?.text === 'string') {
+          onThinking?.(evt.data.text)
+        } else if (evt.type === 'token' && typeof evt.data?.text === 'string') {
           content += evt.data.text
           onToken(evt.data.text)
         } else if (evt.type === 'tool_calls' && Array.isArray(evt.data?.calls)) {
