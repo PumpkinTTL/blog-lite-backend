@@ -25,6 +25,9 @@ const NAME_LABEL: Record<string, string> = {
   append_content: '追加正文',
   replace_content: '替换正文',
   insert_content_at: '插入正文',
+  find_and_replace: '查找替换',
+  delete_lines: '删除行',
+  get_word_count: '字数统计',
 }
 
 const label = computed(() => NAME_LABEL[props.call.function.name] || props.call.function.name)
@@ -70,10 +73,10 @@ const statusIcon = computed(() => {
 
 const statusColor = computed(() => {
   switch (props.status) {
-    case 'running': return '#f59e0b'
-    case 'success': return '#10b981'
-    case 'error': return '#ef4444'
-    default: return '#94a3b8'
+    case 'running': return '#c15f3c'
+    case 'success': return '#16a34a'
+    case 'error': return '#dc2626'
+    default: return '#a8a29e'
   }
 })
 
@@ -118,16 +121,15 @@ const statusText = computed(() => {
 <style scoped>
 .tool-card {
   padding: 9px 11px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #e7e5e4;
   font-size: 12px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.2s;
 }
-.tool-card.is-running { border-color: rgba(245, 158, 11, 0.45); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.08); }
-.tool-card.is-success { border-color: rgba(16, 185, 129, 0.4); }
-.tool-card.is-error { border-color: rgba(239, 68, 68, 0.45); }
+.tool-card.is-running { border-color: #c15f3c; background: #fefcfb; }
+.tool-card.is-success { border-color: #e7e5e4; }
+.tool-card.is-error { border-color: #dc2626; background: #fef9f9; }
 
 .tool-head {
   display: flex;
@@ -135,14 +137,14 @@ const statusText = computed(() => {
   gap: 6px;
   cursor: pointer;
 }
-.tool-name { font-weight: 600; color: #334155; }
+.tool-name { font-weight: 600; color: #1c1917; }
 .tool-tag {
   font-size: 9px;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
+  background: #f5f5f4;
+  color: #78716c;
   letter-spacing: 0.5px;
 }
 .tool-status {
@@ -153,36 +155,36 @@ const statusText = computed(() => {
   font-size: 11px;
   font-weight: 500;
 }
-.tool-chevron { color: #94a3b8; transition: transform 0.2s; margin-left: 2px; }
+.tool-chevron { color: #a8a29e; transition: transform 0.2s; margin-left: 2px; }
 .tool-chevron.rotated { transform: rotate(180deg); }
-.tool-chevron:hover { color: #64748b; }
+.tool-chevron:hover { color: #57534e; }
 
 .tool-args {
   margin-top: 5px;
-  color: #64748b;
+  color: #57534e;
   font-size: 11px;
   word-break: break-all;
   line-height: 1.5;
 }
 .tool-result {
   margin-top: 3px;
-  color: #059669;
+  color: #16a34a;
   font-size: 11px;
   word-break: break-all;
   line-height: 1.5;
 }
-.tool-raw { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0; }
-.raw-label { font-size: 10px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+.tool-raw { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e7e5e4; }
+.raw-label { font-size: 10px; color: #a8a29e; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
 .tool-raw pre {
   margin: 0 0 6px;
   padding: 7px;
-  background: #f8fafc;
+  background: #f5f5f4;
   border-radius: 5px;
   font-size: 10.5px;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   white-space: pre-wrap;
   word-break: break-all;
-  color: #475569;
+  color: #44403c;
   max-height: 120px;
   overflow: auto;
 }

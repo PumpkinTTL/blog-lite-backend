@@ -43,6 +43,9 @@ export const POST_AGENT_SYSTEM_PROMPT = `你是一个专业的博客写作助手
 - append_content：在正文末尾追加内容。参数 text（string）。
 - replace_content：整体替换正文。参数 content（string，完整的 Markdown 正文）。慎用，会覆盖全部内容。
 - insert_content_at：在正文指定行后插入。参数 afterLine（number，0 表示插到最前）, text（string）。
+- find_and_replace：在正文中查找并替换文本。参数 findText（string）, replaceText（string）, scope（string，可选，title/subtitle/summary/content，默认 content）。仅在指定字段内替换所有匹配项。findText 为空时报错。
+- delete_lines：删除正文指定行范围。参数 startLine（number，从1开始）, endLine（number，含）。行号越界时自动收敛到正文范围。
+- get_word_count：统计正文字数、行数、各信息字段长度。无参数。用于评估文章规模、判断是否需要分段处理。
 
 【行为规范】
 1. 调用工具时，arguments 必须是合法 JSON。
@@ -164,6 +167,49 @@ export const POST_AGENT_TOOLS: AiTool[] = [
         },
         required: ['afterLine', 'text'],
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_and_replace',
+      description: '在文章指定字段内查找并替换所有匹配文本',
+      parameters: {
+        type: 'object',
+        properties: {
+          findText: { type: 'string', description: '要查找的原文（不能为空）' },
+          replaceText: { type: 'string', description: '替换为的新文本' },
+          scope: {
+            type: 'string',
+            enum: ['title', 'subtitle', 'summary', 'content'],
+            description: '在哪个字段操作，默认 content',
+          },
+        },
+        required: ['findText', 'replaceText'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_lines',
+      description: '删除正文指定行范围（行号从1开始，含两端）',
+      parameters: {
+        type: 'object',
+        properties: {
+          startLine: { type: 'integer', minimum: 1, description: '起始行号（从1开始）' },
+          endLine: { type: 'integer', minimum: 1, description: '结束行号（含）' },
+        },
+        required: ['startLine', 'endLine'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_word_count',
+      description: '统计正文字数、行数及各信息字段长度',
+      parameters: { type: 'object', properties: {}, required: [] },
     },
   },
 ];

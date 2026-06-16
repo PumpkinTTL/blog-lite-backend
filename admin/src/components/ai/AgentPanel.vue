@@ -168,6 +168,65 @@ function executeTool(call: AiToolCall): string {
       return JSON.stringify({ ok: true, insertedAfterLine: after, insertedLength: v.length })
     }
 
+    case 'find_and_replace': {
+      const findText = toStr(args.findText, 10000)
+      const replaceText = toStr(args.replaceText, 10000)
+      if (!findText) return fail('findText 不能为空')
+      const scope = toStr(args.scope, 20) || 'content'
+      let target = ''
+      let setter: ((v: string) => void) | null = null
+      if (scope === 'content') { target = f.content; setter = (v) => { f.content = v } }
+      else if (scope === 'title') { target = f.title; setter = (v) => { f.title = v } }
+      else if (scope === 'subtitle') { target = f.subtitle; setter = (v) => { f.subtitle = v } }
+      else if (scope === 'summary') { target = f.summary; setter = (v) => { f.summary = v } }
+      else return fail(`未知 scope: ${scope}`)
+      const before = target
+      // 全局替换所有匹配项
+      const after = before.split(findText).join(replaceText)
+      const count = before.split(findText).length - 1
+      if (count === 0) return JSON.stringify({ ok: true, scope, replaced: 0, message: '未找到匹配文本' })
+      setter(after)
+      return JSON.stringify({ ok: true, scope, replaced: count })
+    }
+
+    case 'delete_lines': {
+      const lines = f.content.split('\n')
+      const total = lines.length
+      if (total === 0) return fail('正文为空，无可删除行')
+      let start = clamp(toInt(args.startLine, 1), 1, total)
+      let end = clamp(toInt(args.endLine, total), 1, total)
+      if (start > end) [start, end] = [end, start]
+      lines.splice(start - 1, end - start + 1)
+      f.content = lines.join('\n')
+      return JSON.stringify({ ok: true, deletedLines: end - start + 1, range: `${start}-${end}`, remainingLines: lines.length })
+    }
+
+    case 'get_word_count': {
+      const content = f.content
+      // 字数：去掉 Markdown 语法符号后统计中文字 + 英文词
+      const plain = content
+        .replace(/```[\s\S]*?```/g, '')   // 代码块
+        .replace(/`[^`]*`/g, '')          // 行内代码
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // 图片
+        .replace(/\[[^\]]*\]\([^)]*\)/g, '$1') // 链接保留文字
+        .replace(/[#>*_~\-]/g, '')        // markdown 符号
+        .trim()
+      const cjk = (plain.match(/[\u4e00-\u9fa5]/g) || []).length
+      const words = (plain.match(/[a-zA-Z]+/g) || []).length
+      const numbers = (plain.match(/\d+/g) || []).length
+      return JSON.stringify({
+        contentChars: content.length,
+        contentLines: content.split('\n').length,
+        cjkChars: cjk,
+        englishWords: words,
+        numbers,
+        estimatedWordCount: cjk + words + numbers,
+        titleLength: f.title.length,
+        subtitleLength: f.subtitle.length,
+        summaryLength: f.summary.length,
+      })
+    }
+
     default:
       return fail(`未知工具: ${call.function.name}`)
   }
@@ -221,11 +280,8 @@ const MAX_LOOP = 8
 
 /**
  * 创建一个响应式渲染项并加入列表，返回其代理引用。
- *
- * ⚠️ 关键：必须用 reactive() 创建 item，使其本身就是代理对象。
- * 否则 push 到 ref 数组后，数组内部会代理化该元素，但我们持有的仍是原始引用，
- * 回调里改 assistantItem.replyText 不会触发响应式更新 —— 这正是
- * 「思考能渲染、正文不流式」的根因（思考靠 thinkExpanded.add 副作用顺带刷新）。
+ * 必须用 reactive() 创建 item，使其本身就是代理对象，
+ * 否则回调里改 replyText 不触发响应式更新（流式失效根因）。
  */
 function addRenderItem(item: RenderItem): RenderItem {
   const reactiveItem = reactive(item)
@@ -249,7 +305,6 @@ async function handleSend() {
   try {
     // 2) agent 循环（最多 MAX_LOOP 步）
     for (let step = 0; step < MAX_LOOP; step++) {
-      // 准备 assistant 渲染项（流式）—— reactive 确保回调里的属性变更触发视图更新
       const assistantItem = addRenderItem({ id: nextId(), kind: 'assistant', text: '', streaming: true })
       currentAssistantItem = assistantItem
       await scrollToBottom()
@@ -257,8 +312,7 @@ async function handleSend() {
       const result = await streamChat(
         messages.value,
         buildContext(),
-        // token 回调：正式回复，直接渲染（真实流式）
-        // 现在 assistantItem 是代理对象，赋值会触发响应式更新
+        // token 回调：正式回复
         (tok) => {
           assistantItem.replyText = (assistantItem.replyText ?? '') + tok
           scrollToBottom()
@@ -273,7 +327,7 @@ async function handleSend() {
           scrollToBottom()
         },
         selectedModel.value ?? undefined,
-        // thinking 回调：模型的思考过程（reasoning_content），实时渲染
+        // thinking 回调：模型的思考过程（reasoning_content）
         (think) => {
           assistantItem.thinkText = (assistantItem.thinkText ?? '') + think
           thinkExpanded.value.add(assistantItem.id)
@@ -314,7 +368,6 @@ async function handleSend() {
         }
         messages.value.push({ role: 'tool', tool_call_id: call.id, content: output })
       }
-      // 继续下一轮，让 AI 看到工具结果后继续
     }
   } catch (e) {
     if (currentAssistantItem) {
@@ -362,9 +415,21 @@ async function loadHistory() {
   }
 }
 
+/**
+ * 把 messages 历史重建为渲染项。
+ * 工具调用记录也重建：assistant 的 tool_calls 与后续 role:'tool' 结果按 id 配对，
+ * 让用户在历史会话里也能看到 AI 做过哪些修改（折叠态展示）。
+ */
 function rebuildRenderFromHistory() {
   renderItems.value = []
   thinkExpanded.value.clear()
+  // 构建 tool_call_id → 结果 的映射
+  const toolResults = new Map<string, string>()
+  for (const m of messages.value) {
+    if (m.role === 'tool' && m.tool_call_id) {
+      toolResults.set(m.tool_call_id, m.content)
+    }
+  }
   for (const m of messages.value) {
     if (m.role === 'user') {
       addRenderItem({ id: nextId(), kind: 'user', text: m.content })
@@ -374,7 +439,20 @@ function rebuildRenderFromHistory() {
         replyText: m.content || '',
         streaming: false,
       })
+      // 重建该 assistant 的工具调用卡片
+      if (m.tool_calls) {
+        for (const tc of m.tool_calls) {
+          const result = toolResults.get(tc.id)
+          addRenderItem({
+            id: nextId(), kind: 'tool',
+            toolCall: tc,
+            toolStatus: result ? 'success' : 'pending',
+            toolResult: result,
+          })
+        }
+      }
     }
+    // tool 角色消息已被上面的卡片消费，不再单独渲染
   }
 }
 
@@ -429,7 +507,7 @@ function onInputKeydown(e: KeyboardEvent) {
 <template>
   <!-- 悬浮触发器 -->
   <div class="robot-trigger" :class="{ active: open }" @click="togglePanel">
-    <n-icon :size="24"><ChatbubbleEllipsesOutline /></n-icon>
+    <n-icon :size="22"><ChatbubbleEllipsesOutline /></n-icon>
     <span v-if="!open && !sending" class="robot-pulse" />
     <span v-if="sending" class="robot-badge" />
   </div>
@@ -445,13 +523,8 @@ function onInputKeydown(e: KeyboardEvent) {
       <!-- 头部（可拖拽） -->
       <div class="panel-head" @mousedown="startDrag">
         <div class="head-title">
-          <div class="head-logo">
-            <n-icon :size="15"><SparklesOutline /></n-icon>
-          </div>
-          <div class="head-text">
-            <span class="head-name">写作助手</span>
-            <span class="head-sub">AI Agent</span>
-          </div>
+          <n-icon :size="16" class="head-icon"><SparklesOutline /></n-icon>
+          <span class="head-name">写作助手</span>
         </div>
         <div class="head-actions">
           <button class="head-btn" @click.stop="panelSize.expanded = !panelSize.expanded" :title="panelSize.expanded ? '收起' : '展开'">
@@ -482,14 +555,14 @@ function onInputKeydown(e: KeyboardEvent) {
       <div ref="scrollBody" class="panel-body">
         <div v-if="renderItems.length === 0" class="empty-hint">
           <div class="empty-icon">
-            <n-icon :size="36"><SparklesOutline /></n-icon>
+            <n-icon :size="32"><SparklesOutline /></n-icon>
           </div>
-          <p class="empty-title">AI 写作助手</p>
-          <p class="empty-desc">它能读取、修改你的文章</p>
+          <p class="empty-title">写作助手</p>
+          <p class="empty-desc">帮你阅读、修改、润色当前文章</p>
           <div class="empty-tips">
-            <span class="tip-chip">✦ 改标题</span>
-            <span class="tip-chip">✦ 写摘要</span>
-            <span class="tip-chip">✦ 润色正文</span>
+            <span class="tip-chip">改标题</span>
+            <span class="tip-chip">润色正文</span>
+            <span class="tip-chip">查找替换</span>
           </div>
         </div>
         <template v-for="item in renderItems" :key="item.id">
@@ -579,35 +652,37 @@ function onInputKeydown(e: KeyboardEvent) {
 </template>
 
 <style scoped>
+/* ===== Claude 风：暖灰米色 + 土橙强调，无紫色 ===== */
+
 /* === 悬浮触发器 === */
 .robot-trigger {
   position: fixed;
   right: 24px;
   bottom: 24px;
-  width: 50px;
-  height: 50px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #fff;
+  background: #1a1a1a;
+  color: #fafaf9;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45), 0 0 0 0 rgba(99, 102, 241, 0.4);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   z-index: 9999;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
 }
 .robot-trigger:hover {
-  transform: scale(1.08);
-  box-shadow: 0 8px 28px rgba(99, 102, 241, 0.6), 0 0 0 0 rgba(99, 102, 241, 0.4);
+  transform: scale(1.06);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.24);
 }
-.robot-trigger.active { background: linear-gradient(135deg, #64748b, #475569); }
+.robot-trigger.active { background: #78716c; }
 
 .robot-pulse {
   position: absolute;
   inset: -3px;
   border-radius: 50%;
-  border: 2px solid #818cf8;
+  border: 2px solid #d6d3d1;
   animation: robot-ring 2s ease-out infinite;
 }
 @keyframes robot-ring {
@@ -615,14 +690,13 @@ function onInputKeydown(e: KeyboardEvent) {
   100% { transform: scale(1.5); opacity: 0; }
 }
 
-/* 发送中红点 */
 .robot-badge {
   position: absolute;
   top: -2px; right: -2px;
-  width: 12px; height: 12px;
+  width: 11px; height: 11px;
   border-radius: 50%;
-  background: #ef4444;
-  border: 2px solid #fff;
+  background: #c15f3c;
+  border: 2px solid #fafaf9;
   animation: badge-blink 1s ease-in-out infinite;
 }
 @keyframes badge-blink { 50% { opacity: 0.4; } }
@@ -633,9 +707,9 @@ function onInputKeydown(e: KeyboardEvent) {
   width: 384px;
   height: 540px;
   z-index: 10001;
-  background: #ffffff;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(99, 102, 241, 0.08);
+  background: #fafaf9;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(28, 25, 23, 0.18), 0 0 0 1px rgba(28, 25, 23, 0.06);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -647,36 +721,28 @@ function onInputKeydown(e: KeyboardEvent) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  padding: 11px 14px;
+  background: #f5f5f4;
+  border-bottom: 1px solid #e7e5e4;
   cursor: grab;
   user-select: none;
 }
 .panel-head:active { cursor: grabbing; }
-.head-title { display: inline-flex; align-items: center; gap: 9px; }
-.head-logo {
-  width: 28px; height: 28px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  display: flex; align-items: center; justify-content: center;
-  color: #fff;
-  backdrop-filter: blur(4px);
-}
-.head-text { display: flex; flex-direction: column; line-height: 1.15; }
-.head-name { font-size: 14px; font-weight: 600; color: #fff; }
-.head-sub { font-size: 10px; color: rgba(255, 255, 255, 0.7); letter-spacing: 0.5px; }
+.head-title { display: inline-flex; align-items: center; gap: 8px; }
+.head-icon { color: #c15f3c; }
+.head-name { font-size: 13.5px; font-weight: 600; color: #1c1917; }
 
 .head-actions { display: flex; gap: 2px; }
 .head-btn {
   width: 26px; height: 26px;
   border: none; background: transparent;
-  color: rgba(255, 255, 255, 0.8);
+  color: #78716c;
   cursor: pointer;
   border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
   transition: background 0.15s, color 0.15s;
 }
-.head-btn:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.head-btn:hover { background: #e7e5e4; color: #1c1917; }
 .head-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* 工具栏 */
@@ -684,9 +750,9 @@ function onInputKeydown(e: KeyboardEvent) {
   display: flex;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid #e7e5e4;
   align-items: center;
-  background: #fafbff;
+  background: #fafaf9;
 }
 .model-select { flex: 1; }
 
@@ -699,31 +765,33 @@ function onInputKeydown(e: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: linear-gradient(180deg, #fcfcff 0%, #f8f9ff 100%);
+  background: #fafaf9;
 }
 .panel-body::-webkit-scrollbar { width: 6px; }
-.panel-body::-webkit-scrollbar-thumb { background: #d1d5e8; border-radius: 3px; }
+.panel-body::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
 .panel-body::-webkit-scrollbar-track { background: transparent; }
 
 /* 空状态 */
 .empty-hint { margin: auto; text-align: center; }
 .empty-icon {
-  width: 64px; height: 64px;
-  margin: 0 auto 14px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+  width: 56px; height: 56px;
+  margin: 0 auto 12px;
+  border-radius: 14px;
+  background: #f5f5f4;
+  border: 1px solid #e7e5e4;
   display: flex; align-items: center; justify-content: center;
-  color: #6366f1;
+  color: #c15f3c;
 }
-.empty-title { margin: 0; font-size: 15px; font-weight: 600; color: #334155; }
-.empty-desc { margin: 4px 0 14px; font-size: 12px; color: #94a3b8; }
+.empty-title { margin: 0; font-size: 15px; font-weight: 600; color: #1c1917; }
+.empty-desc { margin: 4px 0 12px; font-size: 12px; color: #78716c; }
 .empty-tips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .tip-chip {
   font-size: 11px;
   padding: 3px 9px;
-  border-radius: 12px;
-  background: rgba(99, 102, 241, 0.08);
-  color: #6366f1;
+  border-radius: 6px;
+  background: #f5f5f4;
+  border: 1px solid #e7e5e4;
+  color: #57534e;
 }
 
 .msg { display: flex; }
@@ -742,7 +810,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
 .avatar {
   flex-shrink: 0;
-  width: 26px; height: 26px;
+  width: 24px; height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -750,47 +818,44 @@ function onInputKeydown(e: KeyboardEvent) {
   color: #fff;
 }
 .avatar-ai {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  background: #c15f3c;
 }
 .avatar-ai.thinking { animation: avatar-pulse 1.4s ease-in-out infinite; }
 @keyframes avatar-pulse {
-  0%, 100% { box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4); }
-  50% { box-shadow: 0 2px 16px rgba(99, 102, 241, 0.8); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(193, 95, 60, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(193, 95, 60, 0); }
 }
-.avatar-user { background: #cbd5e1; }
+.avatar-user { background: #a8a29e; }
 
 .msg-ai .ai-content { flex: 1; min-width: 0; }
 
 .bubble {
   padding: 9px 13px;
-  border-radius: 14px;
+  border-radius: 12px;
   font-size: 13px;
   line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
 }
 .bubble-user {
-  background: linear-gradient(135deg, #6366f1, #7c3aed);
-  color: #fff;
-  border-bottom-right-radius: 5px;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+  background: #1c1917;
+  color: #fafaf9;
+  border-bottom-right-radius: 4px;
 }
 .bubble-ai {
   background: #ffffff;
-  color: #334155;
-  border-bottom-left-radius: 5px;
+  color: #1c1917;
+  border-bottom-left-radius: 4px;
   display: inline-block;
-  border: 1px solid #ececf5;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+  border: 1px solid #e7e5e4;
 }
 
 /* 思考过程折叠块 */
 .think-block {
   width: 100%;
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.04));
-  border: 1px solid rgba(99, 102, 241, 0.14);
+  border-radius: 8px;
+  background: #f5f5f4;
+  border: 1px solid #e7e5e4;
   overflow: hidden;
   margin-bottom: 5px;
 }
@@ -802,15 +867,15 @@ function onInputKeydown(e: KeyboardEvent) {
   cursor: pointer;
   user-select: none;
   font-size: 11px;
-  color: #8b5cf6;
+  color: #78716c;
 }
-.think-icon { color: #a78bfa; }
+.think-icon { color: #c15f3c; }
 .think-label { font-weight: 500; }
-.think-chevron { margin-left: auto; transition: transform 0.25s; color: #c4b5fd; }
+.think-chevron { margin-left: auto; transition: transform 0.25s; color: #a8a29e; }
 .think-chevron.rotated { transform: rotate(180deg); }
 .think-streaming {
   margin-left: auto;
-  color: #a78bfa;
+  color: #c15f3c;
   font-size: 10px;
   display: inline-flex;
   align-items: center;
@@ -820,7 +885,7 @@ function onInputKeydown(e: KeyboardEvent) {
   content: '';
   width: 4px; height: 4px;
   border-radius: 50%;
-  background: #a78bfa;
+  background: #c15f3c;
   animation: think-dot 1s ease-in-out infinite;
 }
 @keyframes think-dot {
@@ -828,14 +893,14 @@ function onInputKeydown(e: KeyboardEvent) {
   50% { opacity: 1; transform: scale(1.2); }
 }
 .think-body {
-  padding: 0 10px 9px;
+  padding: 0 10px 8px;
   font-size: 11.5px;
   line-height: 1.65;
-  color: #94a3b8;
+  color: #78716c;
   white-space: pre-wrap;
   word-break: break-word;
   font-style: italic;
-  border-top: 1px dashed rgba(139, 92, 246, 0.12);
+  border-top: 1px dashed #e7e5e4;
   padding-top: 7px;
 }
 .think-enter-active, .think-leave-active {
@@ -845,20 +910,20 @@ function onInputKeydown(e: KeyboardEvent) {
 }
 .think-enter-from, .think-leave-to { opacity: 0; max-height: 0; }
 
-/* 加载三点动画（首字未到时） */
+/* 加载三点动画 */
 .typing-dots {
   display: inline-flex;
   gap: 4px;
-  padding: 12px 14px;
+  padding: 11px 13px;
   background: #ffffff;
-  border: 1px solid #ececf5;
-  border-radius: 14px;
-  border-bottom-left-radius: 5px;
+  border: 1px solid #e7e5e4;
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
 }
 .typing-dots span {
   width: 6px; height: 6px;
   border-radius: 50%;
-  background: #c4b5fd;
+  background: #a8a29e;
   animation: typing 1.2s ease-in-out infinite;
 }
 .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
@@ -870,7 +935,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
 .cursor {
   display: inline-block;
-  color: #6366f1;
+  color: #c15f3c;
   margin-left: 1px;
   animation: blink 0.9s steps(2) infinite;
 }
@@ -881,24 +946,23 @@ function onInputKeydown(e: KeyboardEvent) {
   display: flex;
   gap: 8px;
   padding: 10px 12px;
-  border-top: 1px solid #f1f5f9;
-  background: #ffffff;
+  border-top: 1px solid #e7e5e4;
+  background: #fafaf9;
   align-items: flex-end;
 }
 .send-btn {
   flex-shrink: 0;
   width: 34px; height: 34px;
   border: none;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #6366f1, #7c3aed);
-  color: #fff;
+  border-radius: 8px;
+  background: #1c1917;
+  color: #fafaf9;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+  transition: background 0.15s, opacity 0.15s;
 }
-.send-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.5); }
-.send-btn.disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; transform: none; }
+.send-btn:hover { background: #292524; }
+.send-btn.disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* 面板展开/收起过渡 */
 .panel-enter-active, .panel-leave-active {
