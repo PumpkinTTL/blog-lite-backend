@@ -80,7 +80,7 @@ export class UserService {
     // 收集角色信息传给鉴权中心，后续 AT payload 里会带上
     const roles = user.roles.map((r) => r.name);
 
-    const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 900);
+    const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
     const refreshTtl = this.configService.get<number>(
       'REFRESH_TOKEN_TTL',
       604800,
@@ -462,7 +462,7 @@ export class UserService {
         .digest('hex');
 
       const roles = user.roles.map((r) => r.name);
-      const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 900);
+      const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
       const refreshTtl = this.configService.get<number>(
         'REFRESH_TOKEN_TTL',
         604800,
