@@ -1,17 +1,24 @@
 import { Injectable, Logger, BadGatewayException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import type { AxiosError } from 'axios';
 import type { Readable } from 'stream';
 import type { AiGenerateField, AiChatMessage, AiToolCall } from './ai.dto';
 import { POST_AGENT_SYSTEM_PROMPT, POST_AGENT_TOOLS } from './ai.prompts';
+import { AiProviderService } from '../ai-provider/ai-provider.service';
 
 /** 统一生成返回结构：只有被请求的字段才会有值 */
 export interface AiGenerateResult {
   subtitle?: string;
   summary?: string;
   slug?: string;
+}
+
+interface AiConfig {
+  baseUrl: string;
+  apiKey: string;
+  defaultModel: string;
+  source: 'db' | 'env';
 }
 
 /**
@@ -22,29 +29,39 @@ export interface AiGenerateResult {
  * - 对外暴露 generateSummary / generateSubtitle / generateSlug 三个语义方法
  * - 对外暴露 generate()：按 fields 数组一次生成多项，供统一面板复用
  *
- * 网关特性：当前所用网关（OpenAI 兼容）强制要求 stream:true，
- * 非流式请求一律 400。因此底层始终以 stream:true 发起，在内部聚合
- * SSE 流后对外返回完整文本——业务侧无感知、无需处理流。
+ * 配置来源：从 DB（ai_providers + ai_models）读取启用的 provider/model，
+ *         表为空时兜底回退到环境变量（迁移过渡期不崩）。
+ *         带 30s 内存缓存，避免每次调用查库；改配置后最多 30s 生效。
  *
- * 配置走环境变量：AI_BASE_URL / AI_API_KEY / AI_DEFAULT_MODEL
+ * 网关特性：强制 stream:true，内部聚合 SSE。
  */
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly defaultModel: string;
+  private cachedConfig: AiConfig | null = null;
+  private cacheAt = 0;
+  private static readonly CACHE_TTL = 30_000; // 30s
 
   constructor(
-    private readonly configService: ConfigService,
+    private readonly providerService: AiProviderService,
     private readonly httpService: HttpService,
-  ) {
-    this.baseUrl = this.configService.getOrThrow<string>('AI_BASE_URL');
-    this.apiKey = this.configService.getOrThrow<string>('AI_API_KEY');
-    this.defaultModel = this.configService.get<string>(
-      'AI_DEFAULT_MODEL',
-      'cmc/deepseek/deepseek-v4-flash',
-    );
+  ) {}
+
+  /** 取当前启用的 provider 配置（带缓存） */
+  private async getConfig(): Promise<AiConfig> {
+    const now = Date.now();
+    if (this.cachedConfig && now - this.cacheAt < AiService.CACHE_TTL) {
+      return this.cachedConfig;
+    }
+    const cfg = await this.providerService.getActiveConfig();
+    this.cachedConfig = cfg;
+    this.cacheAt = now;
+    return cfg;
+  }
+
+  /** 主动清缓存（配置变更后可调用，目前管理页改配置走自动过期即可） */
+  invalidateConfigCache() {
+    this.cachedConfig = null;
   }
 
   /**
@@ -57,8 +74,9 @@ export class AiService {
     messages: Array<{ role: 'system' | 'user'; content: string }>,
     model?: string,
   ): Promise<string> {
-    const url = `${this.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-    const usedModel = model ?? this.defaultModel;
+    const cfg = await this.getConfig();
+    const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const usedModel = model ?? cfg.defaultModel;
     try {
       const { data } = await firstValueFrom(
         this.httpService.post<Readable>(
@@ -70,7 +88,7 @@ export class AiService {
           },
           {
             headers: {
-              Authorization: `Bearer ${this.apiKey}`,
+              Authorization: `Bearer ${cfg.apiKey}`,
               'Content-Type': 'application/json',
             },
             responseType: 'stream',
@@ -109,8 +127,9 @@ export class AiService {
     toolCalls: AiToolCall[];
     finishReason: string;
   }> {
-    const url = `${this.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-    const usedModel = options?.model ?? this.defaultModel;
+    const cfg = await this.getConfig();
+    const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const usedModel = options?.model ?? cfg.defaultModel;
     const useTools = options?.tools ?? true;
     const body: Record<string, unknown> = {
       model: usedModel,
@@ -125,7 +144,7 @@ export class AiService {
       const { data } = await firstValueFrom(
         this.httpService.post<Readable>(url, body, {
           headers: {
-            Authorization: `Bearer ${this.apiKey}`,
+            Authorization: `Bearer ${cfg.apiKey}`,
             'Content-Type': 'application/json',
           },
           responseType: 'stream',
@@ -151,8 +170,9 @@ export class AiService {
     messages: AiChatMessage[],
     model?: string,
   ): Promise<Readable> {
-    const url = `${this.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-    const usedModel = model ?? this.defaultModel;
+    const cfg = await this.getConfig();
+    const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const usedModel = model ?? cfg.defaultModel;
     const { data } = await firstValueFrom(
       this.httpService.post<Readable>(
         url,
@@ -165,7 +185,7 @@ export class AiService {
         },
         {
           headers: {
-            Authorization: `Bearer ${this.apiKey}`,
+            Authorization: `Bearer ${cfg.apiKey}`,
             'Content-Type': 'application/json',
           },
           responseType: 'stream',
