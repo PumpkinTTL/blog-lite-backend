@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, nextTick, computed } from 'vue'
+import { ref, reactive, nextTick, computed, onBeforeUnmount } from 'vue'
 import {
   NIcon, NInput, NButton, NSelect, useMessage,
 } from 'naive-ui'
 import {
   ChatbubbleEllipsesOutline, CloseOutline, RemoveOutline, ExpandOutline,
-  PaperPlaneOutline,
+  PaperPlaneOutline, BulbOutline, ChevronDownOutline,
 } from '@vicons/ionicons5'
 import { streamChat } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext } from '../../api/ai'
@@ -32,8 +32,6 @@ const dragging = ref(false)
 // 面板位置（默认右下）
 const panelPos = reactive({ left: 0, top: 0 })
 const panelSize = reactive({ expanded: false })
-// 拖拽临时变量
-let dragStart = { x: 0, y: 0, left: 0, top: 0 }
 
 // 解包 formValue（可能是 ref 或裸对象）
 const form = computed<ArticleForm>(() =>
@@ -59,8 +57,12 @@ const modelOptions = [
 interface RenderItem {
   id: string
   kind: 'user' | 'assistant' | 'tool'
-  // user/assistant 的文本
+  // user/assistant 的文本（原始，可能含 <think> 标签）
   text?: string
+  // 拆分后的思考过程（<think> 标签内）
+  thinkText?: string
+  // 拆分后的正式回复（</think> 之后）
+  replyText?: string
   // assistant 正在流式输出（逐字）
   streaming?: boolean
   // tool 相关
@@ -70,15 +72,65 @@ interface RenderItem {
 }
 const renderItems = ref<RenderItem[]>([])
 const scrollBody = ref<HTMLElement | null>(null)
+// 展开 think 的 item id 集合（流式时自动展开，结束可手动折叠）
+const thinkExpanded = ref<Set<string>>(new Set())
 
 let itemSeq = 0
 const nextId = () => `m${++itemSeq}`
 
+/**
+ * 把含 <think> 标签的原始文本拆成 think / reply 两段。
+ * 支持流式（标签未闭合时 think 持续增长）。
+ */
+function splitThink(raw: string): { think: string; reply: string } {
+  if (!raw) return { think: '', reply: '' }
+  const openIdx = raw.indexOf('<think>')
+  if (openIdx === -1) return { think: '', reply: raw }
+  const afterOpen = openIdx + '<think>'.length
+  const closeIdx = raw.indexOf('</think>', afterOpen)
+  if (closeIdx === -1) {
+    // 标签未闭合：正在思考中，think 持续，reply 为空
+    return { think: raw.slice(afterOpen), reply: '' }
+  }
+  return {
+    think: raw.slice(afterOpen, closeIdx),
+    reply: raw.slice(closeIdx + '</think>'.length).replace(/^\s+/, ''),
+  }
+}
+
+// === 工具边界值保护工具 ===
+/** 强制转为有限整数，非法值用 fallback */
+function toInt(v: unknown, fallback: number): number {
+  const n = typeof v === 'string' ? parseInt(v, 10) : typeof v === 'number' ? v : NaN
+  return Number.isFinite(n) ? Math.trunc(n) : fallback
+}
+/** clamp 到 [min, max] */
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n))
+}
+/** 强制字符串 + 截断到 maxLen */
+function toStr(v: unknown, maxLen: number): string {
+  return (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, maxLen)
+}
+/** slug 清洗：小写、非法字符替换为连字符、去首尾连字符 */
+function sanitizeSlug(v: string): string {
+  return toStr(v, 60)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+/** 错误结果快捷构造 */
+const fail = (error: string) => JSON.stringify({ ok: false, error })
+
 // === 工具执行器（前端执行，直接改文章 formValue） ===
 function executeTool(call: AiToolCall): string {
   let args: any = {}
-  try { args = JSON.parse(call.function.arguments || '{}') } catch { /* 空参数 */ }
+  try { args = JSON.parse(call.function.arguments || '{}') } catch {
+    return fail(`参数不是合法 JSON: ${call.function.arguments.slice(0, 100)}`)
+  }
   const f = form.value
+
   switch (call.function.name) {
     case 'get_article':
       return JSON.stringify({
@@ -86,68 +138,116 @@ function executeTool(call: AiToolCall): string {
         contentLength: f.content.length,
         contentPreview: f.content.slice(0, 2000),
       })
+
     case 'get_content_section': {
       const lines = f.content.split('\n')
-      const start = Math.max(0, (args.startLine ?? 1) - 1)
-      const end = Math.min(lines.length, args.endLine ?? lines.length)
-      return JSON.stringify({ lines: lines.slice(start, end).join('\n'), totalLines: lines.length })
+      const total = lines.length
+      let start = clamp(toInt(args.startLine, 1), 1, total)
+      let end = clamp(toInt(args.endLine, total), 1, total)
+      // start > end：反转，避免返回空
+      if (start > end) [start, end] = [end, start]
+      // 限制单次返回最多 200 行，防止 token 撑爆
+      const maxReturn = 200
+      if (end - start + 1 > maxReturn) end = start + maxReturn - 1
+      return JSON.stringify({
+        lines: lines.slice(start - 1, end).join('\n'),
+        returnedRange: `${start}-${end}`,
+        totalLines: total,
+        truncated: total > end,
+      })
     }
-    case 'update_title':
-      f.title = String(args.title ?? '').slice(0, 200)
+
+    case 'update_title': {
+      const v = toStr(args.title, 200)
+      if (!v.trim()) return fail('title 不能为空')
+      f.title = v
       return JSON.stringify({ ok: true, title: f.title })
+    }
     case 'update_subtitle':
-      f.subtitle = String(args.subtitle ?? '').slice(0, 200)
+      f.subtitle = toStr(args.subtitle, 200)
       return JSON.stringify({ ok: true, subtitle: f.subtitle })
     case 'update_summary':
-      f.summary = String(args.summary ?? '').slice(0, 500)
+      f.summary = toStr(args.summary, 500)
       return JSON.stringify({ ok: true, summary: f.summary })
-    case 'update_slug':
-      f.slug = String(args.slug ?? '').slice(0, 60)
+    case 'update_slug': {
+      const raw = toStr(args.slug, 60)
+      if (!raw.trim()) return fail('slug 不能为空')
+      const cleaned = sanitizeSlug(raw)
+      f.slug = cleaned || `post-${Date.now()}`
       return JSON.stringify({ ok: true, slug: f.slug })
-    case 'append_content':
-      f.content += String(args.text ?? '')
-      return JSON.stringify({ ok: true, appendedLength: String(args.text ?? '').length })
-    case 'replace_content':
-      f.content = String(args.content ?? '')
-      return JSON.stringify({ ok: true, contentLength: f.content.length })
-    case 'insert_content_at': {
-      const lines = f.content.split('\n')
-      const after = Math.max(0, Math.min(lines.length, args.afterLine ?? 0))
-      lines.splice(after, 0, String(args.text ?? ''))
-      f.content = lines.join('\n')
-      return JSON.stringify({ ok: true, insertedAt: after })
     }
+
+    case 'append_content': {
+      const v = toStr(args.text, 100000)
+      if (!v) return fail('text 不能为空')
+      f.content += v
+      return JSON.stringify({ ok: true, appendedLength: v.length })
+    }
+    case 'replace_content': {
+      const v = toStr(args.content, 500000)
+      if (!v.trim()) return fail('content 不能为空（拒绝清空正文）')
+      f.content = v
+      return JSON.stringify({ ok: true, contentLength: f.content.length })
+    }
+    case 'insert_content_at': {
+      const v = toStr(args.text, 100000)
+      if (!v) return fail('text 不能为空')
+      const lines = f.content.split('\n')
+      const total = lines.length
+      // afterLine: 0 表示插到最前；负数兜底为 0；超过总行数兜底为末尾
+      const after = clamp(toInt(args.afterLine, 0), 0, total)
+      lines.splice(after, 0, v)
+      f.content = lines.join('\n')
+      return JSON.stringify({ ok: true, insertedAfterLine: after, insertedLength: v.length })
+    }
+
     default:
-      return JSON.stringify({ ok: false, error: `未知工具: ${call.function.name}` })
+      return fail(`未知工具: ${call.function.name}`)
   }
 }
 
-// === 拖拽 ===
-function startDrag(e: MouseEvent) {
-  dragging.value = true
-  dragStart = { x: e.clientX, y: e.clientY, left: panelPos.left, top: panelPos.top }
-  // 计算默认位置（首次打开）
+// === 拖拽（全局 document 监听，松开鼠标立刻停止） ===
+let dragStart = { x: 0, y: 0, left: 0, top: 0 }
+
+function ensureDefaultPos() {
   if (panelPos.left === 0 && panelPos.top === 0) {
     panelPos.left = window.innerWidth - 400
     panelPos.top = window.innerHeight - 580
-    dragStart.left = panelPos.left
-    dragStart.top = panelPos.top
   }
+}
+
+function onDragMove(e: MouseEvent) {
+  panelPos.left = Math.max(0, Math.min(window.innerWidth - 380, dragStart.left + e.clientX - dragStart.x))
+  panelPos.top = Math.max(0, Math.min(window.innerHeight - 60, dragStart.top + e.clientY - dragStart.y))
+}
+
+function stopDrag() {
+  dragging.value = false
+  document.body.style.userSelect = ''
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', stopDrag)
+}
+
+function startDrag(e: MouseEvent) {
+  ensureDefaultPos()
+  dragging.value = true
+  document.body.style.userSelect = 'none'
+  dragStart = { x: e.clientX, y: e.clientY, left: panelPos.left, top: panelPos.top }
+  document.addEventListener('mousemove', onDragMove)
+  document.addEventListener('mouseup', stopDrag)
   e.preventDefault()
 }
-function onDragMove(e: MouseEvent) {
-  if (!dragging.value) return
-  panelPos.left = Math.max(0, Math.min(window.innerWidth - 380, dragStart.left + e.clientX - dragStart.x))
-  panelPos.top = Math.max(0, Math.min(window.innerHeight - 100, dragStart.top + e.clientY - dragStart.y))
-}
-function stopDrag() { dragging.value = false }
+
+onBeforeUnmount(() => {
+  // 组件卸载时清理，防止监听泄漏 + 还原 userSelect
+  document.body.style.userSelect = ''
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', stopDrag)
+})
 
 function togglePanel() {
   open.value = !open.value
-  if (open.value && panelPos.left === 0 && panelPos.top === 0) {
-    panelPos.left = window.innerWidth - 400
-    panelPos.top = window.innerHeight - 580
-  }
+  if (open.value) ensureDefaultPos()
 }
 
 // === 上下文快照 ===
@@ -170,20 +270,29 @@ async function handleSend() {
   renderItems.value.push({ id: nextId(), kind: 'user', text })
   await scrollToBottom()
 
+  // 当前正在流式输出的 assistant 项（提到外层，便于 catch 清理）
+  let currentAssistantItem: RenderItem | null = null
+
   try {
     // 2) agent 循环（最多 MAX_LOOP 步）
     for (let step = 0; step < MAX_LOOP; step++) {
       // 准备 assistant 渲染项（流式）
       const assistantItem: RenderItem = { id: nextId(), kind: 'assistant', text: '', streaming: true }
+      currentAssistantItem = assistantItem
       renderItems.value.push(assistantItem)
       await scrollToBottom()
 
       const result = await streamChat(
         messages.value,
         buildContext(),
-        // token 回调：逐字更新渲染
+        // token 回调：累加 raw text，实时拆分 think/reply
         (tok) => {
           assistantItem.text = (assistantItem.text ?? '') + tok
+          const { think, reply } = splitThink(assistantItem.text)
+          assistantItem.thinkText = think
+          assistantItem.replyText = reply
+          // 流式思考阶段自动展开，方便用户看到思考过程
+          if (think) thinkExpanded.value.add(assistantItem.id)
           scrollToBottom()
         },
         // tool_calls 回调：先占位渲染（状态 pending）
@@ -199,6 +308,9 @@ async function handleSend() {
       )
 
       assistantItem.streaming = false
+      currentAssistantItem = null
+      // 流式结束：think 默认折叠（用户可点击展开回顾）
+      thinkExpanded.value.delete(assistantItem.id)
 
       // 3) 把 assistant 消息记录到历史（含 tool_calls）
       messages.value.push({
@@ -232,6 +344,14 @@ async function handleSend() {
       // 继续下一轮，让 AI 看到工具结果后继续
     }
   } catch (e) {
+    // 调用失败：停止当前 assistant 的流式闪烁状态
+    if (currentAssistantItem) {
+      currentAssistantItem.streaming = false
+      // 若该 assistant 项还没收到任何 token，移除空气泡，避免残留
+      if (!currentAssistantItem.text) {
+        renderItems.value = renderItems.value.filter((r) => r.id !== currentAssistantItem!.id)
+      }
+    }
     message.error(e instanceof Error ? e.message : 'AI 对话失败')
   } finally {
     sending.value = false
@@ -242,7 +362,13 @@ async function handleSend() {
 function handleClear() {
   messages.value = []
   renderItems.value = []
+  thinkExpanded.value.clear()
   itemSeq = 0
+}
+
+function toggleThink(id: string) {
+  if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)
+  else thinkExpanded.value.add(id)
 }
 
 async function scrollToBottom() {
@@ -266,9 +392,6 @@ function onInputKeydown(e: KeyboardEvent) {
     <n-icon :size="26"><ChatbubbleEllipsesOutline /></n-icon>
     <span v-if="!open" class="robot-pulse" />
   </div>
-
-  <!-- 拖拽遮罩 -->
-  <div v-if="dragging" class="drag-mask" @mousemove="onDragMove" @mouseup="stopDrag" />
 
   <!-- 聊天面板 -->
   <transition name="panel">
@@ -320,9 +443,38 @@ function onInputKeydown(e: KeyboardEvent) {
           </div>
           <!-- AI 消息 -->
           <div v-else-if="item.kind === 'assistant'" class="msg msg-ai">
-            <div class="bubble bubble-ai">
-              {{ item.text }}
-              <span v-if="item.streaming" class="cursor">▋</span>
+            <div class="ai-content">
+              <!-- 思考过程（折叠块） -->
+              <div
+                v-if="item.thinkText"
+                class="think-block"
+                :class="{ expanded: thinkExpanded.has(item.id) }"
+              >
+                <div class="think-head" @click="!item.streaming && toggleThink(item.id)">
+                  <n-icon :size="13" class="think-icon"><BulbOutline /></n-icon>
+                  <span class="think-label">思考过程</span>
+                  <n-icon
+                    v-if="!item.streaming"
+                    :size="12"
+                    class="think-chevron"
+                    :class="{ rotated: thinkExpanded.has(item.id) }"
+                  ><ChevronDownOutline /></n-icon>
+                  <span v-if="item.streaming" class="think-streaming">思考中…</span>
+                </div>
+                <transition name="think">
+                  <div v-if="thinkExpanded.has(item.id) || item.streaming" class="think-body">
+                    {{ item.thinkText }}
+                  </div>
+                </transition>
+              </div>
+              <!-- 正式回复 -->
+              <div v-if="item.replyText || (!item.thinkText && item.streaming)" class="bubble bubble-ai">
+                {{ item.replyText }}
+                <span v-if="item.streaming && !item.thinkText" class="cursor">▋</span>
+              </div>
+              <div v-else-if="item.replyText === '' && item.streaming && !item.thinkText" class="bubble bubble-ai">
+                <span class="cursor">▋</span>
+              </div>
             </div>
           </div>
           <!-- 工具调用 -->
@@ -393,13 +545,6 @@ function onInputKeydown(e: KeyboardEvent) {
 @keyframes robot-ring {
   0% { transform: scale(1); opacity: 0.6; }
   100% { transform: scale(1.6); opacity: 0; }
-}
-
-.drag-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  cursor: grabbing;
 }
 
 /* === 面板 === */
@@ -498,6 +643,76 @@ function onInputKeydown(e: KeyboardEvent) {
   color: #334155;
   border-bottom-left-radius: 4px;
 }
+
+/* === AI 内容容器（含 think + reply） === */
+.ai-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  max-width: 85%;
+}
+
+/* === 思考过程折叠块 === */
+.think-block {
+  width: 100%;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.04);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+  overflow: hidden;
+}
+.think-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.think-icon { color: #a78bfa; }
+.think-label { font-weight: 500; }
+.think-chevron { margin-left: auto; transition: transform 0.25s; color: #cbd5e1; }
+.think-chevron.rotated { transform: rotate(180deg); }
+.think-streaming {
+  margin-left: auto;
+  color: #a78bfa;
+  font-size: 10px;
+}
+.think-streaming::after {
+  content: '';
+  display: inline-block;
+  width: 4px; height: 4px;
+  margin-left: 3px;
+  border-radius: 50%;
+  background: #a78bfa;
+  animation: think-dot 1s ease-in-out infinite;
+}
+@keyframes think-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+.think-body {
+  padding: 0 9px 8px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #94a3b8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-style: italic;
+  border-top: 1px dashed rgba(99, 102, 241, 0.1);
+  padding-top: 6px;
+}
+.think-enter-active, .think-leave-active {
+  transition: opacity 0.2s, max-height 0.25s ease;
+  max-height: 300px;
+  overflow: hidden;
+}
+.think-enter-from, .think-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
 .cursor {
   display: inline-block;
   color: #6366f1;
@@ -516,10 +731,19 @@ function onInputKeydown(e: KeyboardEvent) {
 
 /* 面板展开/收起过渡 */
 .panel-enter-active, .panel-leave-active {
-  transition: opacity 0.2s, transform 0.2s;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .panel-enter-from, .panel-leave-to {
   opacity: 0;
-  transform: translateY(12px) scale(0.96);
+  transform: translateY(16px) scale(0.94);
+}
+
+/* 消息项入场动画 */
+.msg {
+  animation: msg-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>
