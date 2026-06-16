@@ -54,6 +54,10 @@ export class MediaService {
     return media;
   }
 
+  async findByUrl(url: string) {
+    return this.mediaRepo.findOne({ where: { url } });
+  }
+
   async upload(
     file: Express.Multer.File,
     uploaderId: number,

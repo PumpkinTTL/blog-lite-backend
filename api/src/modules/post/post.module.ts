@@ -7,12 +7,14 @@ import { PostService } from './post.service';
 import { PostController } from './post.controller';
 import { EntityVisibilityModule } from '../entity-visibility/entity-visibility.module';
 import { InteractionModule } from '../interaction/interaction.module';
+import { MediaModule } from '../media/media.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([PostEntity, PostViewEntity, TagEntity]),
     EntityVisibilityModule,
     InteractionModule,
+    MediaModule,
   ],
   controllers: [PostController],
   providers: [PostService],

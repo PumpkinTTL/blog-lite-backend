@@ -17,6 +17,7 @@ import { CodeUsageLogEntity } from '../code/code-usage-log.entity';
 import { MembershipService } from '../membership/membership.service';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { MediaService } from '../media/media.service';
 
 export interface TokenPayload {
   accessToken: string;
@@ -40,6 +41,7 @@ export class UserService {
     private readonly membershipService: MembershipService,
     private readonly dataSource: DataSource,
     private readonly auditLog: AuditLogService,
+    private readonly mediaService: MediaService,
   ) {}
 
   /**
@@ -294,6 +296,11 @@ export class UserService {
       );
     }
 
+    // 清理用户头像文件
+    if (user.avatar) {
+      await this.deleteMediaByUrl(user.avatar);
+    }
+
     await this.userRepo.delete(id);
   }
 
@@ -316,7 +323,25 @@ export class UserService {
       }
     }
 
+    // 清理所有头像文件
+    for (const user of users) {
+      if (user.avatar) {
+        await this.deleteMediaByUrl(user.avatar).catch(e =>
+          this.logger.warn(`删除用户头像文件失败: ${e.message}`),
+        );
+      }
+    }
+
     await this.userRepo.delete(ids);
+  }
+
+  /** 根据 URL 删除对应的 media 记录及 R2 文件 */
+  private async deleteMediaByUrl(url: string): Promise<void> {
+    const media = await this.mediaService.findByUrl(url);
+    if (media) {
+      await this.mediaService.remove(media.id);
+      this.logger.log(`已删除关联文件: ${url}`);
+    }
   }
 
   /**

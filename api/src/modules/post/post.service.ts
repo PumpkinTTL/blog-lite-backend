@@ -12,6 +12,7 @@ import { PostViewEntity } from './post-view.entity';
 import { TagEntity } from '../tag/tag.entity';
 import { EntityVisibilityService } from '../entity-visibility/entity-visibility.service';
 import { POST_STATUS } from '../../common/constants/status';
+import { MediaService } from '../media/media.service';
 
 const POST_ENTITY_TYPE = 'post';
 
@@ -26,6 +27,7 @@ export class PostService implements OnModuleInit {
     @InjectRepository(TagEntity)
     private readonly tagRepo: Repository<TagEntity>,
     private readonly visibilityService: EntityVisibilityService,
+    private readonly mediaService: MediaService,
   ) {}
 
   /**
@@ -317,6 +319,55 @@ export class PostService implements OnModuleInit {
   async remove(id: number) {
     await this.postRepo.update(id, { deletedAt: new Date() });
     // 软删除不清除可见性配置，restore 后仍生效
+  }
+
+  /** 硬删除文章，同时清理关联的 R2 文件（封面+正文图片） */
+  async forceDelete(id: number) {
+    const post = await this.postRepo.findOne({ where: { id } });
+    if (!post) throw new NotFoundException('文章不存在');
+
+    const urls = this.extractImageUrls(post.coverImage, post.content);
+    await this.deleteMediaByUrls(urls);
+
+    await this.postRepo.delete(id);
+    this.logger.log(`硬删除文章#${id}，已清理 ${urls.length} 个关联文件`);
+  }
+
+  async batchForceDelete(ids: number[]) {
+    const posts = await this.postRepo.findBy({ id: In(ids) });
+    const allUrls: string[] = [];
+    for (const post of posts) {
+      allUrls.push(...this.extractImageUrls(post.coverImage, post.content));
+    }
+    await this.deleteMediaByUrls([...new Set(allUrls)]);
+    await this.postRepo.delete(ids);
+    this.logger.log(`批量硬删除 ${ids.length} 篇文章，已清理文件`);
+  }
+
+  /** 从封面和正文中提取所有图片 URL */
+  private extractImageUrls(cover: string | null, content: string): string[] {
+    const urls: string[] = [];
+    if (cover) urls.push(cover);
+    // HTML img tag
+    const htmlRe = /<img[^>]+src=["']([^"']+)["']/gi;
+    // Markdown image
+    const mdRe = /!\[[^\]]*\]\(([^)]+)\)/g;
+    let m;
+    while ((m = htmlRe.exec(content)) !== null) urls.push(m[1]);
+    while ((m = mdRe.exec(content)) !== null) urls.push(m[1]);
+    return urls;
+  }
+
+  /** 批量删除 media 记录及对应的 R2 文件 */
+  private async deleteMediaByUrls(urls: string[]) {
+    for (const url of urls) {
+      try {
+        const media = await this.mediaService.findByUrl(url);
+        if (media) await this.mediaService.remove(media.id);
+      } catch (e: any) {
+        this.logger.warn(`删除关联文件失败: ${url} - ${e.message}`);
+      }
+    }
   }
 
   async restore(id: number) {
