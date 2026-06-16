@@ -29,6 +29,7 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { ResourceModule } from './modules/resource/resource.module';
 import { ResourceCategoryModule } from './modules/resource-category/resource-category.module';
 import { BlacklistModule } from './modules/blacklist/blacklist.module';
+import { AiModule } from './modules/ai/ai.module';
 
 @Module({
   providers: [
@@ -126,6 +127,7 @@ import { BlacklistModule } from './modules/blacklist/blacklist.module';
     ResourceModule,
     ResourceCategoryModule,
     BlacklistModule,
+    AiModule,
   ],
 })
 export class AppModule {}

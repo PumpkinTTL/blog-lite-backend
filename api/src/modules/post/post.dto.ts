@@ -19,6 +19,11 @@ export class CreatePostDto {
   title: string;
 
   @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  subtitle?: string;
+
+  @IsString()
   @MaxLength(200)
   slug: string;
 
@@ -65,6 +70,11 @@ export class UpdatePostDto {
   @IsOptional()
   @MaxLength(200)
   title?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  subtitle?: string;
 
   @IsString()
   @IsOptional()

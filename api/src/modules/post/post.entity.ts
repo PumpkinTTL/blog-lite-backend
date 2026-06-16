@@ -28,6 +28,9 @@ export class PostEntity {
   @Column({ type: 'varchar', length: 200, comment: '标题' })
   title: string;
 
+  @Column({ type: 'varchar', length: 200, nullable: true, comment: '副标题' })
+  subtitle: string | null;
+
   @Column({ type: 'varchar', length: 200, unique: true, comment: 'URL slug' })
   slug: string;
 
