@@ -120,6 +120,24 @@ const router = createRouter({
           meta: { title: '黑名单管理' },
         },
         {
+          path: 'ai-providers',
+          name: 'ai-providers',
+          component: () => import('../views/ai-provider/IndexView.vue'),
+          meta: { title: 'AI 提供商' },
+        },
+        {
+          path: 'ai-models',
+          name: 'ai-models',
+          component: () => import('../views/ai-model/IndexView.vue'),
+          meta: { title: 'AI 模型' },
+        },
+        {
+          path: 'ai-conversations',
+          name: 'ai-conversations',
+          component: () => import('../views/ai-conversation/IndexView.vue'),
+          meta: { title: 'AI 对话历史' },
+        },
+        {
           path: 'rate-limit',
           name: 'rate-limit',
           component: () => import('../views/rate-limit/IndexView.vue'),
