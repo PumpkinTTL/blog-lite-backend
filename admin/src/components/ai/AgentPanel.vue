@@ -335,31 +335,27 @@ async function handleSend() {
   } finally {
     sending.value = false
     await scrollToBottom()
-    // 一轮对话结束，防抖保存到 DB
-    scheduleSave()
+    // 不在此自动保存：对话历史只在文章保存成功时才落库（见 persistConversation）
   }
 }
 
 function handleClear() {
+  // 只清内存：文章未保存前，对话不落库；保存时以最终内存状态为准
   messages.value = []
   renderItems.value = []
   thinkExpanded.value.clear()
   itemSeq = 0
-  // 同步清空 DB 历史（静默，失败不阻断）
-  if (props.postId) {
-    saveConversation({ postId: props.postId, messages: [] }).catch(() => {})
-  }
 }
 
 // === 历史对话持久化（按 postId 加载/保存） ===
 const historyLoaded = ref(false)
-// 防抖保存：避免每条消息都打一次接口，聚合 1s 后写一次
-let saveTimer: ReturnType<typeof setTimeout> | null = null
 
-/** 从 DB 加载历史对话（postId 变化或首次打开时触发） */
+/**
+ * 从 DB 加载历史对话（postId 变化或首次打开时触发）。
+ * 仅编辑已有文章时加载；新增文章无 postId 不加载。
+ */
 async function loadHistory() {
   if (!props.postId) {
-    // 新增文章无 id，不加载历史
     messages.value = []
     renderItems.value = []
     thinkExpanded.value.clear()
@@ -371,7 +367,6 @@ async function loadHistory() {
     const data = res.data
     if (data && Array.isArray(data.messages) && data.messages.length > 0) {
       messages.value = data.messages as AiChatMessage[]
-      // 把历史消息渲染到面板（只渲染 user/assistant 的文本，工具调用历史简化展示）
       rebuildRenderFromHistory()
     }
   } catch {
@@ -399,21 +394,29 @@ function rebuildRenderFromHistory() {
   }
 }
 
-/** 防抖保存当前对话到 DB */
-function scheduleSave() {
-  const pid = props.postId
-  if (!pid) return // 新增文章不存
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    saveConversation({
+/**
+ * 持久化当前对话到 DB（供父组件在文章保存成功后调用）。
+ * 设计：对话历史与文章生命周期绑定——只有文章保存了，对话才值得留。
+ *   - 有 postId 且有对话内容 → upsert 到 DB
+ *   - 新建文章刚保存拿到 id 的情况：父组件传入 newPostId 后再调
+ */
+async function persistConversation(newPostId?: number): Promise<void> {
+  const pid = newPostId ?? props.postId
+  if (!pid) return // 仍无 postId（理论上不会，因为文章已保存）
+  if (messages.value.length === 0) return // 没用 AI 就不存，避免空记录
+  try {
+    await saveConversation({
       postId: pid,
       messages: messages.value,
       model: selectedModel.value ?? undefined,
-    }).catch(() => {
-      // 保存失败静默，不阻断对话
     })
-  }, 1000)
+  } catch {
+    // 持久化失败不阻断文章保存流程
+  }
 }
+
+// 暴露给父组件：文章保存成功后持久化对话
+defineExpose({ persistConversation })
 
 // postId 变化时重新加载历史
 watch(() => props.postId, () => {
@@ -422,19 +425,7 @@ watch(() => props.postId, () => {
 }, { immediate: true })
 
 onBeforeUnmount(() => {
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-    // 卸载前最后存一次，确保不丢
-    const pid = props.postId
-    if (pid && messages.value.length > 0) {
-      saveConversation({
-        postId: pid,
-        messages: messages.value,
-        model: selectedModel.value ?? undefined,
-      }).catch(() => {})
-    }
-  }
-  // 还原拖拽相关
+  // 不再在卸载时保存：用户放弃文章（没点保存）则对话随之丢弃
   document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)

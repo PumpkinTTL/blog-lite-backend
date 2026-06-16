@@ -11,6 +11,8 @@ import { getPost, createPost, updatePost } from '../../api/post'
 import { generateByAi } from '../../api/ai'
 import type { AiGenerateField } from '../../api/ai'
 import AgentPanel from '../../components/ai/AgentPanel.vue'
+
+const agentPanelRef = ref<InstanceType<typeof AgentPanel> | null>(null)
 import { getCategories } from '../../api/category'
 import { getTags } from '../../api/tag'
 import { getUsers } from '../../api/user'
@@ -352,9 +354,14 @@ async function handleSave() {
       formValue.value.coverImage = coverImageUrl
       formValue.value.content = realContent
       message.success('保存成功')
+      // 文章保存成功后，把 AI 对话历史落库（没用 AI 则不存）
+      await agentPanelRef.value?.persistConversation()
     } else {
-      await createPost(payload)
+      const res = await createPost(payload)
       message.success('创建成功')
+      // 新建文章：拿到新 id 后把对话历史挂到该文章（没用到 AI 则跳过）
+      const newId = (res as any)?.data?.id
+      if (newId) await agentPanelRef.value?.persistConversation(newId)
       router.push('/posts')
       return
     }
@@ -599,7 +606,7 @@ onMounted(async () => {
     </n-card>
 
     <!-- AI 写作助手（悬浮 + 可拖拽） -->
-    <AgentPanel :form-value="formValue" :post-id="isEdit ? Number(route.params.id) : null" />
+    <AgentPanel ref="agentPanelRef" :form-value="formValue" :post-id="isEdit ? Number(route.params.id) : null" />
   </div>
 </template>
 
