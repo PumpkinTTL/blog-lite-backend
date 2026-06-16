@@ -95,8 +95,12 @@ const statusText = computed(() => {
 
 <template>
   <div class="tool-card" :class="`is-${status}`">
-    <!-- 头部：图标 + 工具名 + 状态 -->
+    <!-- 头部：工具调用标签 + 状态点 + 工具名 + 状态 -->
     <div class="tool-head" @click="expanded = !expanded">
+      <span class="tool-call-label">
+        <n-icon :size="11" class="tool-label-icon"><component :is="statusIcon" /></n-icon>
+        <span>工具调用</span>
+      </span>
       <span class="tool-status-dot" :style="{ background: statusColor }" :class="{ spinning: status === 'running' }" />
       <span class="tool-name">{{ label }}</span>
       <span class="tool-tag">{{ call.function.name }}</span>
@@ -158,6 +162,19 @@ const statusText = computed(() => {
 .tool-card.is-success { border-color: #e7e5e4; }
 .tool-card.is-error { border-color: #dc2626; background: #fef9f9; }
 
+/* 头部内"工具调用"标签（和工具名同一行） */
+.tool-call-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #a8a29e;
+  padding-right: 6px;
+  margin-right: 2px;
+  border-right: 1px solid #e7e5e4;
+}
+.tool-label-icon { color: #c15f3c; }
+
 /* 头部 */
 .tool-head {
   display: flex;
@@ -175,7 +192,7 @@ const statusText = computed(() => {
 @keyframes dot-pulse { 50% { opacity: 0.4; } }
 .tool-name { font-weight: 600; color: #1c1917; }
 .tool-tag {
-  font-size: 9px;
+  font-size: 10px;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   padding: 1px 6px;
   border-radius: 4px;

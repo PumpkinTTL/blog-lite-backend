@@ -4,9 +4,9 @@ import {
   NIcon, NInput, NSelect, useMessage, NTooltip,
 } from 'naive-ui'
 import {
-  ChatbubbleEllipsesOutline, CloseOutline, RemoveOutline, ExpandOutline,
+  ChatbubbleEllipsesOutline, RemoveOutline,
   PaperPlaneOutline, BulbOutline, ChevronDownOutline,
-  SparklesOutline, TrashOutline, ContractOutline,
+  SparklesOutline, ContractOutline,
 } from '@vicons/ionicons5'
 import { streamChat, compactHistory } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext, AiUsage } from '../../api/ai'
@@ -28,9 +28,15 @@ const props = withDefaults(defineProps<{
   postId?: number | null
   /** 面板标题（复用时可覆盖，默认"写作助手"） */
   title?: string
+  /** 空状态副标题（复用时可覆盖） */
+  subtitle?: string
+  /** 空状态能力标签（复用时可覆盖） */
+  tips?: string[]
 }>(), {
   postId: null,
   title: '写作助手',
+  subtitle: '帮你阅读、修改、润色当前文章',
+  tips: () => ['改标题', '润色正文', '查找替换'],
 })
 
 const message = useMessage()
@@ -39,7 +45,6 @@ const message = useMessage()
 const open = ref(false)
 const dragging = ref(false)
 const panelPos = reactive({ left: 0, top: 0 })
-const panelSize = reactive({ expanded: false })
 
 const form = computed<ArticleForm>(() =>
   props.formValue && 'value' in props.formValue ? props.formValue.value : (props.formValue as ArticleForm),
@@ -99,6 +104,7 @@ interface RenderItem {
 }
 const renderItems = ref<RenderItem[]>([])
 const scrollBody = ref<HTMLElement | null>(null)
+const inputRef = ref<any>(null)
 const thinkExpanded = ref<Set<string>>(new Set())
 
 let itemSeq = 0
@@ -264,15 +270,19 @@ function executeTool(call: AiToolCall): string {
 
 // === 拖拽 ===
 let dragStart = { x: 0, y: 0, left: 0, top: 0 }
+const PANEL_W = 480
+const PANEL_H = 660
+let posInited = false
 function ensureDefaultPos() {
-  if (panelPos.left === 0 && panelPos.top === 0) {
-    panelPos.left = window.innerWidth - 400
-    panelPos.top = window.innerHeight - 580
-  }
+  if (posInited) return
+  posInited = true
+  // 默认右下角，留 24px 边距
+  panelPos.left = window.innerWidth - PANEL_W - 24
+  panelPos.top = window.innerHeight - PANEL_H - 24
 }
 function onDragMove(e: MouseEvent) {
-  panelPos.left = Math.max(0, Math.min(window.innerWidth - 380, dragStart.left + e.clientX - dragStart.x))
-  panelPos.top = Math.max(0, Math.min(window.innerHeight - 60, dragStart.top + e.clientY - dragStart.y))
+  panelPos.left = Math.max(0, Math.min(window.innerWidth - PANEL_W, dragStart.left + e.clientX - dragStart.x))
+  panelPos.top = Math.max(0, Math.min(window.innerHeight - 48, dragStart.top + e.clientY - dragStart.y))
 }
 function stopDrag() {
   dragging.value = false
@@ -345,6 +355,8 @@ async function handleCompact() {
     message.error(e instanceof Error ? e.message : '压缩失败')
   } finally {
     compacting.value = false
+    await nextTick()
+    inputRef.value?.focus?.()
   }
 }
 
@@ -444,17 +456,12 @@ async function handleSend() {
   } finally {
     sending.value = false
     await scrollToBottom()
+    // sending 从 true→false 会让 NInput 的 disabled 恢复，焦点会丢失，主动聚焦回来
+    await nextTick()
+    inputRef.value?.focus?.()
   }
   // 引用避免未使用告警
   void userItem
-}
-
-function handleClear() {
-  messages.value = []
-  renderItems.value = []
-  thinkExpanded.value.clear()
-  resetTokenStats()
-  itemSeq = 0
 }
 
 // 点击快捷指令：填入输入框（/compact 直接执行）
@@ -557,7 +564,6 @@ function onInputKeydown(e: KeyboardEvent) {
     <div
       v-if="open"
       class="agent-panel"
-      :class="{ expanded: panelSize.expanded }"
       :style="{ left: panelPos.left + 'px', top: panelPos.top + 'px' }"
     >
       <!-- 头部 -->
@@ -565,16 +571,11 @@ function onInputKeydown(e: KeyboardEvent) {
         <div class="head-title">
           <n-icon :size="16" class="head-icon"><SparklesOutline /></n-icon>
           <span class="head-name">{{ title }}</span>
+          <span v-if="tokenStats.rounds > 0" class="head-mini-info">{{ tokenStats.rounds }}轮</span>
         </div>
         <div class="head-actions">
-          <button class="head-btn" @click.stop="panelSize.expanded = !panelSize.expanded" :title="panelSize.expanded ? '收起' : '展开'">
-            <n-icon :size="15"><ExpandOutline v-if="!panelSize.expanded" /><RemoveOutline v-else /></n-icon>
-          </button>
-          <button class="head-btn" @click.stop="handleClear" :disabled="sending" title="清空对话">
-            <n-icon :size="15"><TrashOutline /></n-icon>
-          </button>
-          <button class="head-btn" @click.stop="open = false" title="关闭">
-            <n-icon :size="15"><CloseOutline /></n-icon>
+          <button class="head-btn" @click.stop="open = false" title="收起">
+            <n-icon :size="15"><RemoveOutline /></n-icon>
           </button>
         </div>
       </div>
@@ -589,38 +590,39 @@ function onInputKeydown(e: KeyboardEvent) {
         <div v-if="renderItems.length === 0" class="empty-hint">
           <div class="empty-icon"><n-icon :size="32"><SparklesOutline /></n-icon></div>
           <p class="empty-title">{{ title }}</p>
-          <p class="empty-desc">帮你阅读、修改、润色当前文章</p>
+          <p class="empty-desc">{{ subtitle }}</p>
           <div class="empty-tips">
-            <span class="tip-chip">改标题</span>
-            <span class="tip-chip">润色正文</span>
-            <span class="tip-chip">查找替换</span>
+            <span v-for="tip in tips" :key="tip" class="tip-chip">{{ tip }}</span>
           </div>
         </div>
 
         <template v-for="item in renderItems" :key="item.id">
-          <!-- 用户消息：靠左，头像在左 -->
+          <!-- 用户消息：靠右，头像在气泡右边 -->
           <div v-if="item.kind === 'user'" class="msg msg-user">
-            <div class="avatar avatar-user">{{ userInitial }}</div>
             <div class="bubble-wrap">
               <div class="bubble bubble-user">{{ item.text }}</div>
             </div>
+            <div class="avatar avatar-user">{{ userInitial }}</div>
           </div>
 
-          <!-- AI 消息：靠右，头像在右 -->
+          <!-- AI 消息：靠左，头像在气泡左边 -->
           <div v-else-if="item.kind === 'assistant'" class="msg msg-ai">
+            <div class="avatar avatar-ai" :class="{ thinking: item.streaming }">
+              <n-icon :size="13"><SparklesOutline /></n-icon>
+            </div>
             <div class="bubble-wrap ai-bubble-wrap">
               <div class="ai-content">
                 <!-- 思考折叠块 -->
-                <div v-if="item.thinkText" class="think-block" :class="{ expanded: thinkExpanded.has(item.id) }">
+                <div v-if="item.thinkText" class="think-block" :class="{ expanded: thinkExpanded.has(item.id) || item.streaming }">
                   <div class="think-head" @click="!item.streaming && toggleThink(item.id)">
                     <n-icon :size="12" class="think-icon"><BulbOutline /></n-icon>
                     <span class="think-label">思考过程</span>
                     <n-icon v-if="!item.streaming" :size="11" class="think-chevron" :class="{ rotated: thinkExpanded.has(item.id) }"><ChevronDownOutline /></n-icon>
                     <span v-if="item.streaming" class="think-streaming">思考中</span>
                   </div>
-                  <transition name="think">
-                    <div v-if="thinkExpanded.has(item.id) || item.streaming" class="think-body">{{ item.thinkText }}</div>
-                  </transition>
+                  <div class="think-collapse">
+                    <div class="think-body">{{ item.thinkText }}</div>
+                  </div>
                 </div>
                 <!-- 正式回复 -->
                 <div v-if="item.replyText" class="bubble bubble-ai">
@@ -637,9 +639,6 @@ function onInputKeydown(e: KeyboardEvent) {
                 </div>
               </div>
             </div>
-            <div class="avatar avatar-ai" :class="{ thinking: item.streaming }">
-              <n-icon :size="13"><SparklesOutline /></n-icon>
-            </div>
           </div>
 
           <!-- 工具调用 -->
@@ -653,7 +652,7 @@ function onInputKeydown(e: KeyboardEvent) {
       <div class="panel-footer">
         <!-- 快捷指令按钮 -->
         <div class="quick-cmds">
-          <n-tooltip v-for="cmd in quickCmds" :key="cmd.label" trigger="hover">
+          <n-tooltip v-for="cmd in quickCmds" :key="cmd.label" trigger="hover" :z-index="10010">
             <template #trigger>
               <button class="quick-btn" :disabled="sending || compacting" @click="applyQuickCmd(cmd)">
                 <n-icon :size="13"><component :is="cmd.icon" /></n-icon>
@@ -666,6 +665,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
         <div class="panel-input">
           <n-input
+            ref="inputRef"
             v-model:value="inputText"
             type="textarea"
             :autosize="{ minRows: 1, maxRows: 4 }"
@@ -680,7 +680,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
         <!-- 会话级 token 统计 -->
         <div v-if="tokenStats.rounds > 0" class="token-stats">
-          <n-tooltip trigger="hover">
+          <n-tooltip trigger="hover" :z-index="10010">
             <template #trigger>
               <span class="stat-chip">
                 <n-icon :size="11"><ChatbubbleEllipsesOutline /></n-icon>
@@ -713,12 +713,12 @@ function onInputKeydown(e: KeyboardEvent) {
 @keyframes badge-blink { 50% { opacity: 0.4; } }
 
 .agent-panel {
-  position: fixed; width: 384px; height: 540px; z-index: 10001;
+  position: fixed; width: 480px; height: 660px; z-index: 10001;
   background: #fafaf9; border-radius: 12px;
   box-shadow: 0 16px 48px rgba(28,25,23,0.18), 0 0 0 1px rgba(28,25,23,0.06);
   display: flex; flex-direction: column; overflow: hidden;
 }
-.agent-panel.expanded { width: 480px; height: 660px; }
+.head-mini-info { font-size: 10px; color: #a8a29e; font-weight: 400; margin-left: 4px; }
 
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; cursor: grab; user-select: none; }
 .panel-head:active { cursor: grabbing; }
@@ -746,15 +746,16 @@ function onInputKeydown(e: KeyboardEvent) {
 .tip-chip { font-size: 11px; padding: 3px 9px; border-radius: 6px; background: #f5f5f4; border: 1px solid #e7e5e4; color: #57534e; }
 
 .msg { display: flex; gap: 7px; max-width: 100%; }
-/* 用户消息靠左 */
-.msg-user { justify-content: flex-start; }
-/* AI 消息靠右 */
-.msg-ai { justify-content: flex-end; }
-.msg-tool { justify-content: stretch; }
+/* 用户消息靠右 */
+.msg-user { justify-content: flex-end; }
+/* AI 消息靠左 */
+.msg-ai { justify-content: flex-start; }
+/* 工具调用：和 AI 气泡一样左对齐，留出头像宽度+gap 的缩进 */
+.msg-tool { justify-content: stretch; padding-left: 31px; box-sizing: border-box; }
 
 .bubble-wrap { display: flex; align-items: flex-end; max-width: 80%; }
-.ai-bubble-wrap { flex-direction: column; align-items: flex-end; }
-.msg-ai .ai-content { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
+.ai-bubble-wrap { flex-direction: column; align-items: flex-start; }
+.msg-ai .ai-content { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 
 .avatar { flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; width: 24px; height: 24px; border-radius: 50%; }
 .avatar-ai { background: #c15f3c; }
@@ -763,8 +764,8 @@ function onInputKeydown(e: KeyboardEvent) {
 .avatar-user { background: #44403c; font-size: 11px; font-weight: 600; }
 
 .bubble { padding: 9px 13px; border-radius: 12px; font-size: 13px; line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
-.bubble-user { background: #f5f5f4; color: #1c1917; border: 1px solid #e7e5e4; border-top-left-radius: 4px; }
-.bubble-ai { background: #1c1917; color: #fafaf9; border-top-right-radius: 4px; display: inline-block; }
+.bubble-user { background: #e7e5e4; color: #1c1917; border-top-right-radius: 4px; }
+.bubble-ai { background: #ffffff; color: #1c1917; border: 1px solid #e7e5e4; border-top-left-radius: 4px; display: inline-block; }
 
 /* 单轮 token 小字 */
 .item-usage { font-size: 10px; color: #a8a29e; margin-top: 3px; padding: 0 4px; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
@@ -779,12 +780,31 @@ function onInputKeydown(e: KeyboardEvent) {
 .think-streaming { margin-left: auto; color: #c15f3c; font-size: 10px; display: inline-flex; align-items: center; gap: 3px; }
 .think-streaming::after { content: ''; width: 4px; height: 4px; border-radius: 50%; background: #c15f3c; animation: think-dot 1s ease-in-out infinite; }
 @keyframes think-dot { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.2); } }
-.think-body { padding: 0 10px 8px; font-size: 11.5px; line-height: 1.65; color: #78716c; white-space: pre-wrap; word-break: break-word; font-style: italic; border-top: 1px dashed #e7e5e4; padding-top: 7px; }
-.think-enter-active, .think-leave-active { transition: opacity 0.2s, max-height 0.25s ease; max-height: 300px; overflow: hidden; }
-.think-enter-from, .think-leave-to { opacity: 0; max-height: 0; }
+/* 思考正文：padding 和 border 也参与过渡，折叠时归零，彻底消除残留高度 */
+.think-body {
+  padding: 0 10px;
+  border-top: 0px solid transparent;
+  font-size: 11.5px; line-height: 1.65; color: #78716c;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.2s ease,
+              padding 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              border-top-width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.think-block.expanded .think-body {
+  padding: 7px 10px 8px;
+  border-top-width: 1px;
+  border-top-style: dashed;
+  border-top-color: #e7e5e4;
+  max-height: 400px;
+  opacity: 1;
+}
 
-.typing-dots { display: inline-flex; gap: 4px; padding: 11px 13px; background: #1c1917; border-radius: 12px; border-top-right-radius: 4px; }
-.typing-dots span { width: 6px; height: 6px; border-radius: 50%; background: #78716c; animation: typing 1.2s ease-in-out infinite; }
+.typing-dots { display: inline-flex; gap: 4px; padding: 11px 13px; background: #ffffff; border: 1px solid #e7e5e4; border-radius: 12px; border-top-left-radius: 4px; }
+.typing-dots span { width: 6px; height: 6px; border-radius: 50%; background: #a8a29e; animation: typing 1.2s ease-in-out infinite; }
 .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
 .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-5px); opacity: 1; } }
