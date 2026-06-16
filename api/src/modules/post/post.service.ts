@@ -316,15 +316,16 @@ export class PostService implements OnModuleInit {
     );
   }
 
-  async remove(id: number) {
-    const post = await this.postRepo.findOne({ where: { id } });
-    if (!post) throw new NotFoundException('文章不存在');
-
-    // 清理封面和正文图片
-    const urls = this.extractImageUrls(post.coverImage, post.content);
-    await this.deleteMediaByUrls(urls);
-
-    await this.postRepo.delete(id);
+  async remove(id: number, force = false) {
+    if (force) {
+      const post = await this.postRepo.findOne({ where: { id } });
+      if (!post) throw new NotFoundException('文章不存在');
+      const urls = this.extractImageUrls(post.coverImage, post.content);
+      await this.deleteMediaByUrls(urls);
+      await this.postRepo.delete(id);
+    } else {
+      await this.postRepo.update(id, { deletedAt: new Date() });
+    }
   }
 
   /** 从封面和正文中提取所有图片 URL */
@@ -385,14 +386,18 @@ export class PostService implements OnModuleInit {
     }
   }
 
-  async batchDelete(ids: number[]) {
-    const posts = await this.postRepo.findBy({ id: In(ids) });
-    const allUrls: string[] = [];
-    for (const post of posts) {
-      allUrls.push(...this.extractImageUrls(post.coverImage, post.content));
+  async batchDelete(ids: number[], force = false) {
+    if (force) {
+      const posts = await this.postRepo.findBy({ id: In(ids) });
+      const allUrls: string[] = [];
+      for (const post of posts) {
+        allUrls.push(...this.extractImageUrls(post.coverImage, post.content));
+      }
+      await this.deleteMediaByUrls([...new Set(allUrls)]);
+      await this.postRepo.delete(ids);
+    } else {
+      await this.postRepo.update({ id: In(ids) }, { deletedAt: new Date() });
     }
-    await this.deleteMediaByUrls([...new Set(allUrls)]);
-    await this.postRepo.delete(ids);
   }
 
   async togglePin(id: number) {

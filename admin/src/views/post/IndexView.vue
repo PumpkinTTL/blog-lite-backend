@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { NButton, NDataTable, NSpace, NTag, NInput, NIcon, NSelect, NPagination, NImage, useMessage, useDialog } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NTag, NInput, NIcon, NSelect, NPagination, NImage, NCheckbox, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline, ImageOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
@@ -185,40 +185,55 @@ function handlePageSizeChange(s: number) {
   loadPosts()
 }
 
+const deleting = ref(false)
+const forceDelete = ref(false)
+
 function handleDelete(row: Post) {
+  forceDelete.value = false
   dialog.warning({
     title: '确认删除',
-    content: `确定删除文章「${row.title}」？`,
+    content: () => h('div', [
+      h('p', `确定删除文章「${row.title}」？`),
+      h(NCheckbox, { checked: forceDelete.value, 'onUpdate:checked': (v: boolean) => forceDelete.value = v }, { default: () => '彻底删除（同时删除封面和正文图片）' }),
+    ]),
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      if (deleting.value) return
+      deleting.value = true
       try {
-        await deletePost(row.id)
+        await deletePost(row.id, forceDelete.value)
         message.success('删除成功')
         loadPosts()
       } catch (e: any) {
         message.error(e.message || '删除失败')
-      }
+      } finally { deleting.value = false }
     },
   })
 }
 
 async function handleBatchDelete() {
   if (checkedRowKeys.value.length === 0) { message.warning('请先选择要删除的文章'); return }
+  forceDelete.value = false
   dialog.warning({
     title: '批量删除',
-    content: `确定要删除选中的 ${checkedRowKeys.value.length} 篇文章吗？此操作不可恢复！`,
+    content: () => h('div', [
+      h('p', `确定要删除选中的 ${checkedRowKeys.value.length} 篇文章？`),
+      h(NCheckbox, { checked: forceDelete.value, 'onUpdate:checked': (v: boolean) => forceDelete.value = v }, { default: () => '彻底删除（同时删除封面和正文图片）' }),
+    ]),
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      if (deleting.value) return
+      deleting.value = true
       try {
-        await batchDeletePosts(checkedRowKeys.value)
+        await batchDeletePosts(checkedRowKeys.value, forceDelete.value)
         message.success('批量删除成功')
         checkedRowKeys.value = []
         loadPosts()
       } catch (e: any) {
         message.error(e.message || '批量删除失败')
-      }
+      } finally { deleting.value = false }
     },
   })
 }

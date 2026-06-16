@@ -56,10 +56,10 @@ export function updatePost(id: number, data: any) {
   return request.put(`/post/${id}`, data)
 }
 
-export function deletePost(id: number) {
-  return request.delete(`/post/${id}`)
+export function deletePost(id: number, force = false) {
+  return request.delete(`/post/${id}${force ? '?force=1' : ''}`)
 }
 
-export function batchDeletePosts(ids: number[]) {
-  return request.post('/post/batch/delete', { ids })
+export function batchDeletePosts(ids: number[], force = false) {
+  return request.post('/post/batch/delete', { ids, force })
 }

@@ -160,8 +160,8 @@ export class PostController {
   }
 
   @Post('batch/delete')
-  async batchDelete(@Body() body: BatchIdsDto) {
-    await this.postService.batchDelete(body.ids);
+  async batchDelete(@Body() body: BatchIdsDto & { force?: boolean }) {
+    await this.postService.batchDelete(body.ids, body.force);
     return { success: true, message: '批量删除成功' };
   }
 
@@ -195,9 +195,9 @@ export class PostController {
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    await this.postService.remove(id);
-    return { success: true, message: '删除成功' };
+  async remove(@Param('id', ParseIntPipe) id: number, @Query('force') force?: string) {
+    await this.postService.remove(id, force === '1');
+    return { success: true, message: force === '1' ? '彻底删除成功' : '删除成功' };
   }
 
   // ===== 用户端：点赞/收藏（登录即可，方法级 @Roles() 空数组覆盖类级 admin 限制）=====
