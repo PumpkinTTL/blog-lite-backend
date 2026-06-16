@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, nextTick, computed, onBeforeUnmount } from 'vue'
+import { ref, reactive, nextTick, computed, onBeforeUnmount, watch } from 'vue'
 import {
   NIcon, NInput, NButton, NSelect, useMessage,
 } from 'naive-ui'
@@ -10,6 +10,7 @@ import {
 } from '@vicons/ionicons5'
 import { streamChat } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext } from '../../api/ai'
+import { getConversationByPostId, saveConversation } from '../../api/ai-conversation'
 import ToolCallCard from './ToolCallCard.vue'
 
 /** 文章 formValue 的最小契约（避免和 PostEditView 强耦合） */
@@ -23,6 +24,8 @@ interface ArticleForm {
 
 const props = defineProps<{
   formValue: { value: ArticleForm } | ArticleForm
+  /** 当前编辑的文章 ID（新增文章时为 null，不持久化） */
+  postId?: number | null
 }>()
 
 const message = useMessage()
@@ -219,13 +222,6 @@ function startDrag(e: MouseEvent) {
   e.preventDefault()
 }
 
-onBeforeUnmount(() => {
-  // 组件卸载时清理，防止监听泄漏 + 还原 userSelect
-  document.body.style.userSelect = ''
-  document.removeEventListener('mousemove', onDragMove)
-  document.removeEventListener('mouseup', stopDrag)
-})
-
 function togglePanel() {
   open.value = !open.value
   if (open.value) ensureDefaultPos()
@@ -339,6 +335,8 @@ async function handleSend() {
   } finally {
     sending.value = false
     await scrollToBottom()
+    // 一轮对话结束，防抖保存到 DB
+    scheduleSave()
   }
 }
 
@@ -347,7 +345,100 @@ function handleClear() {
   renderItems.value = []
   thinkExpanded.value.clear()
   itemSeq = 0
+  // 同步清空 DB 历史（静默，失败不阻断）
+  if (props.postId) {
+    saveConversation({ postId: props.postId, messages: [] }).catch(() => {})
+  }
 }
+
+// === 历史对话持久化（按 postId 加载/保存） ===
+const historyLoaded = ref(false)
+// 防抖保存：避免每条消息都打一次接口，聚合 1s 后写一次
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 从 DB 加载历史对话（postId 变化或首次打开时触发） */
+async function loadHistory() {
+  if (!props.postId) {
+    // 新增文章无 id，不加载历史
+    messages.value = []
+    renderItems.value = []
+    thinkExpanded.value.clear()
+    historyLoaded.value = true
+    return
+  }
+  try {
+    const res = await getConversationByPostId(props.postId)
+    const data = res.data
+    if (data && Array.isArray(data.messages) && data.messages.length > 0) {
+      messages.value = data.messages as AiChatMessage[]
+      // 把历史消息渲染到面板（只渲染 user/assistant 的文本，工具调用历史简化展示）
+      rebuildRenderFromHistory()
+    }
+  } catch {
+    // 加载失败静默，允许重新对话
+  } finally {
+    historyLoaded.value = true
+  }
+}
+
+/** 把 messages 历史重建为渲染项（历史对话不重放工具执行，仅展示文本） */
+function rebuildRenderFromHistory() {
+  renderItems.value = []
+  thinkExpanded.value.clear()
+  for (const m of messages.value) {
+    if (m.role === 'user') {
+      renderItems.value.push({ id: nextId(), kind: 'user', text: m.content })
+    } else if (m.role === 'assistant') {
+      renderItems.value.push({
+        id: nextId(), kind: 'assistant',
+        replyText: m.content || '',
+        streaming: false,
+      })
+    }
+    // tool 角色消息是工具结果回传，历史展示时跳过（避免噪音）
+  }
+}
+
+/** 防抖保存当前对话到 DB */
+function scheduleSave() {
+  const pid = props.postId
+  if (!pid) return // 新增文章不存
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveConversation({
+      postId: pid,
+      messages: messages.value,
+      model: selectedModel.value ?? undefined,
+    }).catch(() => {
+      // 保存失败静默，不阻断对话
+    })
+  }, 1000)
+}
+
+// postId 变化时重新加载历史
+watch(() => props.postId, () => {
+  historyLoaded.value = false
+  loadHistory()
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    // 卸载前最后存一次，确保不丢
+    const pid = props.postId
+    if (pid && messages.value.length > 0) {
+      saveConversation({
+        postId: pid,
+        messages: messages.value,
+        model: selectedModel.value ?? undefined,
+      }).catch(() => {})
+    }
+  }
+  // 还原拖拽相关
+  document.body.style.userSelect = ''
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', stopDrag)
+})
 
 function toggleThink(id: string) {
   if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)

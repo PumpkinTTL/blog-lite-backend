@@ -599,7 +599,7 @@ onMounted(async () => {
     </n-card>
 
     <!-- AI 写作助手（悬浮 + 可拖拽） -->
-    <AgentPanel :form-value="formValue" />
+    <AgentPanel :form-value="formValue" :post-id="isEdit ? Number(route.params.id) : null" />
   </div>
 </template>
 
