@@ -10,6 +10,7 @@ import { ArrowBackOutline, SaveOutline, CloudUploadOutline, TrashOutline, Sparkl
 import { getPost, createPost, updatePost } from '../../api/post'
 import { generateByAi } from '../../api/ai'
 import type { AiGenerateField } from '../../api/ai'
+import AgentPanel from '../../components/ai/AgentPanel.vue'
 import { getCategories } from '../../api/category'
 import { getTags } from '../../api/tag'
 import { getUsers } from '../../api/user'
@@ -596,6 +597,9 @@ onMounted(async () => {
     <n-card :bordered="false" v-else>
       <n-spin :show="true" description="加载中..." />
     </n-card>
+
+    <!-- AI 写作助手（悬浮 + 可拖拽） -->
+    <AgentPanel :form-value="formValue" />
   </div>
 </template>
 
@@ -657,6 +661,20 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   margin-top: 16px;
+}
+
+/* 约束 md-editor-v3 根节点，禁止其用 auto 高度撑高父容器：
+   编辑器占满 content-block，内容区内部滚动，不再无限增高 */
+.content-block :deep(.md-editor) {
+  height: 100% !important;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.content-block :deep(.md-editor .md-editor-content) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .editor-card {

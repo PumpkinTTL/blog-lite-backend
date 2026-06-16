@@ -40,3 +40,108 @@ export function generateByAi(data: AiGeneratePayload) {
     data,
   )
 }
+
+/* ============ Agent 对话（SSE 流式） ============ */
+
+/** 工具调用（已聚合） */
+export interface AiToolCall {
+  id: string
+  type: 'function'
+  function: { name: string; arguments: string }
+}
+
+/** 对话消息联合类型（与后端 AiChatMessage 对齐） */
+export type AiChatMessage =
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string | null; tool_calls?: AiToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string }
+
+/** 文章上下文快照（每轮注入 system 提示词） */
+export interface AiArticleContext {
+  title?: string
+  subtitle?: string
+  summary?: string
+  slug?: string
+  content?: string
+}
+
+/** streamChat 单步返回：本步是否产生工具调用 */
+export interface StreamChatResult {
+  content: string
+  toolCalls: AiToolCall[]
+  finishReason: string
+}
+
+/**
+ * 流式对话：调 POST /ai/chat，消费 SSE。
+ * 用原生 fetch（axios 不便处理 SSE 逐字流）。
+ *
+ * @param onToken 每个 token 片段回调（实时）
+ * @param onToolCalls 本步产生工具调用时回调（流末尾）
+ * @returns 本步聚合结果
+ */
+export async function streamChat(
+  messages: AiChatMessage[],
+  context: AiArticleContext | undefined,
+  onToken: (text: string) => void,
+  onToolCalls: (calls: AiToolCall[]) => void,
+  model?: string,
+): Promise<StreamChatResult> {
+  const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
+  const baseURL = import.meta.env.VITE_API_BASE_URL
+
+  const resp = await fetch(`${baseURL}/ai/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ messages, context, model }),
+  })
+
+  if (!resp.ok || !resp.body) {
+    const errText = await resp.text().catch(() => '')
+    throw new Error(`AI 对话请求失败 (${resp.status}): ${errText.slice(0, 200)}`)
+  }
+
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let content = ''
+  const toolCalls: AiToolCall[] = []
+  let finishReason = 'stop'
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      const s = line.trim()
+      if (!s.startsWith('data:')) continue
+      const payload = s.slice(5).trim()
+      if (!payload) continue
+      try {
+        const evt = JSON.parse(payload)
+        if (evt.type === 'token' && typeof evt.data?.text === 'string') {
+          content += evt.data.text
+          onToken(evt.data.text)
+        } else if (evt.type === 'tool_calls' && Array.isArray(evt.data?.calls)) {
+          toolCalls.push(...evt.data.calls)
+          onToolCalls(evt.data.calls)
+        } else if (evt.type === 'done') {
+          finishReason = evt.data?.finishReason ?? 'stop'
+        } else if (evt.type === 'error') {
+          throw new Error(evt.data?.message || 'AI 服务错误')
+        }
+      } catch (e) {
+        // error 类型已抛出；JSON 解析失败则跳过
+        if (e instanceof Error && e.message && !e.message.includes('JSON')) throw e
+      }
+    }
+  }
+
+  return { content, toolCalls, finishReason }
+}
