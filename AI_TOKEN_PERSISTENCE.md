@@ -58,7 +58,32 @@
 ALTER TABLE ai_conversations
   ADD COLUMN prompt_tokens INT NOT NULL DEFAULT 0 COMMENT '累计输入 token',
   ADD COLUMN completion_tokens INT NOT NULL DEFAULT 0 COMMENT '累计输出 token',
-  ADD COLUMN rounds INT NOT NULL DEFAULT 0 COMMENT '对话轮次';
+  ADD COLUMN rounds INT NOT NULL DEFAULT 0 COMMENT '对话轮次',
+  ADD COLUMN compaction_summary LONGTEXT NULL COMMENT '最新历史压缩摘要(覆盖式)',
+  ADD COLUMN compaction_messages LONGTEXT NULL COMMENT '压缩点之后的新对话JSON',
+  ADD COLUMN compaction_tokens INT NOT NULL DEFAULT 0 COMMENT '最近一次压缩释放的token',
+  ADD COLUMN compacted_at DATETIME NULL COMMENT '最近一次压缩时间';
 ```
 
 历史数据默认 0，下次该文章再对话时会被前端的全量累计值覆盖写回，无需回填。
+
+---
+
+## 问题 3：上下文压缩机制（业界标准实现）
+
+**现象**：长对话累积导致上下文逼近模型上限，无预警、无释放手段。
+
+**业界标准做法**（LangChain / Claude memory / LangGraph checkpoint 同款思路）：
+- **完整原始对话永久保留**（`messages` 列），供用户回看历史，永不删除
+- **压缩只生成"摘要视图"给模型用**：压缩时把已有对话总结成一段摘要存 `compaction_summary`，
+  此后发给模型网关的上下文 = `[system:摘要] + 压缩点之后的新对话`（`compaction_messages`），
+  不再把历史全文发出去 → 释放 token
+- **多轮压缩**：再次压缩时，把 `旧摘要 + 压缩点后新对话` 一起总结，覆盖 `compaction_summary`，
+  `compaction_messages` 清空重新累积。摘要永远只有最新一条。
+
+**进度条**：AgentPanel 底部显示 `当前累计 token / 模型 maxContextTokens`，
+达 80% 变红提示 `/compact`。token 用网关返回的真实值（已持久化），非估算。
+
+**关键**：去看 AI 对话历史管理页，看到的永远是完整 user/assistant 往返，
+摘要只是后台省 token 的手段，不破坏历史可见性。
+

@@ -93,6 +93,21 @@ const activeModelLabel = computed(() => {
   return m?.label ?? null
 })
 
+// === 上下文占用（进度条用）===
+// 上限 = 当前模型的 maxContextTokens；当前占用 = 累计 prompt+completion token（后端真实值）
+const contextLimit = computed(() => {
+  const p = activeProvider.value
+  if (!p || !selectedModel.value) return 0
+  return p.models?.find(m => m.modelId === selectedModel.value)?.maxContextTokens ?? 0
+})
+const contextUsed = computed(() => tokenStats.prompt + tokenStats.completion)
+const contextPercent = computed(() => {
+  if (contextLimit.value <= 0) return 0
+  return Math.min(100, Math.round((contextUsed.value / contextLimit.value) * 100))
+})
+// 80% 起预警，建议压缩
+const contextWarn = computed(() => contextLimit.value > 0 && contextPercent.value >= 80)
+
 function selectProvider(id: number) {
   selectedProviderId.value = id
   selectedModel.value = providers.value.find(p => p.id === id)?.models?.[0]?.modelId ?? null
@@ -153,6 +168,31 @@ function resetTokenStats() {
   tokenStats.completion = 0
   tokenStats.rounds = 0
   itemUsage.value = {}
+}
+
+// === 压缩状态（业界标准：摘要替换发网关的上下文，完整对话保留供回看）===
+// compactionSummary 非空表示已压缩过；之后发网关 = [system:摘要] + compactionMessages
+// 完整原始对话始终存在 messages.value 里，只用于渲染/回看，不再整段发给模型。
+const compactionSummary = ref<string | null>(null)
+const compactionMessages = ref<AiChatMessage[]>([])
+const compactionTokens = ref(0)
+const compactionReleasedAt = ref<string | null>(null)
+
+/** 发给网关的上下文：未压缩用全量 messages；压缩过用 [system:摘要] + 压缩点后新对话 */
+function buildGatewayMessages(): AiChatMessage[] {
+  if (compactionSummary.value) {
+    return [
+      { role: 'system', content: `[历史对话摘要]\n${compactionSummary.value}` },
+      ...compactionMessages.value,
+    ]
+  }
+  return messages.value
+}
+
+/** 计算压缩释放了多少 token（压缩前累计 - 压缩后基线） */
+function calcReleasedTokens(beforePrompt: number): number {
+  const after = tokenStats.prompt
+  return beforePrompt > after ? beforePrompt - after : 0
 }
 
 // 渲染用的消息列表
@@ -390,16 +430,23 @@ const MAX_LOOP = 8
 // === /compact 压缩历史 ===
 async function handleCompact() {
   if (compacting.value || sending.value) return
-  // 只压缩 user/assistant 对话（排除当前 system 注入）
-  const userTurns = messages.value.filter((m) => m.role === 'user' || m.role === 'assistant')
+  // 待压缩内容 = 压缩点之后的所有新对话（首次压缩就是全量 messages）
+  const toCompress = compactionSummary.value
+    ? [
+        { role: 'system' as const, content: `[历史对话摘要]\n${compactionSummary.value}` },
+        ...compactionMessages.value,
+      ]
+    : messages.value
+  const userTurns = toCompress.filter((m) => m.role === 'user' || m.role === 'assistant')
   if (userTurns.length < 2) {
     message.warning('对话太短，无需压缩')
     return
   }
+  const promptBefore = tokenStats.prompt
   compacting.value = true
   try {
     const res = await compactHistory({
-      messages: messages.value,
+      messages: toCompress as AiChatMessage[],
       model: selectedModel.value ?? undefined,
     })
     const summary = res.data?.summary
@@ -407,16 +454,15 @@ async function handleCompact() {
       message.error('压缩失败：未返回摘要')
       return
     }
-    // 用摘要替换历史：保留一条 system 摘要 + 空对话
-    messages.value = [
-      { role: 'system', content: `[历史对话摘要]\n${summary}` },
-      { role: 'assistant', content: '已压缩之前的对话历史。可以继续讨论。' },
-    ]
+    // 业界标准：摘要覆盖旧摘要，压缩点之后的新对话从空开始累积。
+    // 完整原始 messages 不删（供回看），只是不再整段发给模型。
+    compactionSummary.value = summary
+    compactionMessages.value = []
+    compactionTokens.value = calcReleasedTokens(promptBefore)
+    compactionReleasedAt.value = new Date().toISOString()
     rebuildRenderFromHistory()
-    resetTokenStats()
-    message.success('对话已压缩')
+    message.success(`对话已压缩，释放约 ${compactionTokens.value} token`)
     await scrollToBottom()
-    // 压缩改变了历史结构，立即落库（token 已重置为 0）
     void persistConversation()
   } catch (e) {
     message.error(e instanceof Error ? e.message : '压缩失败')
@@ -442,8 +488,11 @@ async function handleSend() {
   inputText.value = ''
   sending.value = true
 
-  // 1) 用户消息
-  messages.value.push({ role: 'user', content: text })
+  // 1) 用户消息：完整历史(messages)永远追加用于渲染/回看；
+  //    已压缩时同步追加到 compactionMessages（发网关用）。
+  const userMsg: AiChatMessage = { role: 'user', content: text }
+  messages.value.push(userMsg)
+  if (compactionSummary.value) compactionMessages.value.push(userMsg)
   const userItem = addRenderItem({ id: nextId(), kind: 'user', text })
   await scrollToBottom()
 
@@ -456,7 +505,7 @@ async function handleSend() {
       await scrollToBottom()
 
       const result = await streamChat(
-        messages.value,
+        buildGatewayMessages(),
         buildContext(),
         (tok) => {
           assistantItem.replyText = (assistantItem.replyText ?? '') + tok
@@ -487,11 +536,13 @@ async function handleSend() {
       currentAssistantItem = null
       thinkExpanded.value.delete(assistantItem.id)
 
-      messages.value.push({
+      const assistantMsg: AiChatMessage = {
         role: 'assistant',
         content: result.content || '',
         ...(result.toolCalls.length > 0 ? { tool_calls: result.toolCalls } : {}),
-      })
+      }
+      messages.value.push(assistantMsg)
+      if (compactionSummary.value) compactionMessages.value.push(assistantMsg)
 
       if (result.toolCalls.length === 0) break
 
@@ -509,7 +560,9 @@ async function handleSend() {
           if (item) { item.toolStatus = 'error'; item.toolResult = output }
           message.error(`工具执行失败：${call.function.name}`)
         }
-        messages.value.push({ role: 'tool', tool_call_id: call.id, content: output })
+        const toolMsg: AiChatMessage = { role: 'tool', tool_call_id: call.id, content: output } as AiChatMessage
+        messages.value.push(toolMsg)
+        if (compactionSummary.value) compactionMessages.value.push(toolMsg)
       }
     }
   } catch (e) {
@@ -523,14 +576,10 @@ async function handleSend() {
   } finally {
     sending.value = false
     await scrollToBottom()
-    // sending 从 true→false 会让 NInput 的 disabled 恢复，焦点会丢失，主动聚焦回来
     await nextTick()
     inputRef.value?.focus?.()
-    // 每轮结束自动落库：token 累计与对话历史都要持久化，
-    // 这样即使未点"保存文章"就关闭页面，下次打开也能恢复统计、避免上下文溢出无预警。
     void persistConversation()
   }
-  // 引用避免未使用告警
   void userItem
 }
 
@@ -565,6 +614,13 @@ async function loadHistory() {
       tokenStats.prompt = Number(data.promptTokens ?? 0) || 0
       tokenStats.completion = Number(data.completionTokens ?? 0) || 0
       tokenStats.rounds = Number(data.rounds ?? 0) || 0
+      // 恢复压缩状态：摘要 + 压缩点之后的新对话（发网关用）
+      compactionSummary.value = data.compactionSummary ?? null
+      compactionMessages.value = Array.isArray(data.compactionMessages)
+        ? (data.compactionMessages as AiChatMessage[])
+        : []
+      compactionTokens.value = Number(data.compactionTokens ?? 0) || 0
+      compactionReleasedAt.value = data.compactedAt ?? null
     }
   } catch { /* 静默 */ }
   finally {
@@ -601,7 +657,8 @@ async function persistConversation(newPostId?: number): Promise<void> {
   if (!pid) return
   if (messages.value.length === 0) return
   try {
-    // 一并落库累计 token 与轮次，保证下次打开能恢复，避免"重算"导致上下文溢出无预警。
+    // 一并落库累计 token、轮次与压缩状态。
+    // 压缩过才带 compactionSummary（null 表示未压缩，后端据此判断发网关口径）。
     await saveConversation({
       postId: pid,
       messages: messages.value,
@@ -609,6 +666,13 @@ async function persistConversation(newPostId?: number): Promise<void> {
       promptTokens: tokenStats.prompt,
       completionTokens: tokenStats.completion,
       rounds: tokenStats.rounds,
+      ...(compactionSummary.value
+        ? {
+            compactionSummary: compactionSummary.value,
+            compactionMessages: compactionMessages.value,
+            compactionTokens: compactionTokens.value,
+          }
+        : {}),
     })
   } catch { /* 静默 */ }
 }
@@ -806,6 +870,23 @@ function onInputKeydown(e: KeyboardEvent) {
             输入(prompt) {{ tokenStats.prompt }} · 输出(completion) {{ tokenStats.completion }}
           </n-tooltip>
         </div>
+
+        <!-- 上下文占用进度条 -->
+        <div v-if="contextLimit > 0 && tokenStats.rounds > 0" class="ctx-bar" :class="{ warn: contextWarn }">
+          <div class="ctx-bar-track">
+            <div class="ctx-bar-fill" :style="{ width: contextPercent + '%' }"></div>
+          </div>
+          <span class="ctx-bar-text">
+            {{ contextUsed }} / {{ contextLimit }}
+            <span class="ctx-bar-pct">{{ contextPercent }}%</span>
+          </span>
+        </div>
+        <div v-if="contextWarn" class="ctx-warn-hint">
+          上下文已用 {{ contextPercent }}%，建议输入 /compact 压缩历史释放空间
+        </div>
+        <div v-if="compactionSummary" class="ctx-compacted-hint">
+          已压缩 · 释放 {{ compactionTokens }} token
+        </div>
       </div>
     </div>
   </transition>
@@ -954,6 +1035,17 @@ function onInputKeydown(e: KeyboardEvent) {
 
 .token-stats { padding: 0 12px 6px; }
 .stat-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
+
+/* 上下文进度条 */
+.ctx-bar { display: flex; align-items: center; gap: 6px; padding: 0 12px 4px; }
+.ctx-bar-track { flex: 1; height: 4px; background: #e7e5e4; border-radius: 2px; overflow: hidden; }
+.ctx-bar-fill { height: 100%; background: #c15f3c; border-radius: 2px; transition: width 0.3s ease, background 0.2s; }
+.ctx-bar.warn .ctx-bar-fill { background: #dc2626; }
+.ctx-bar-text { font-size: 9.5px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; white-space: nowrap; }
+.ctx-bar.warn .ctx-bar-text { color: #dc2626; }
+.ctx-bar-pct { font-weight: 600; }
+.ctx-warn-hint { padding: 0 12px 4px; font-size: 10px; color: #dc2626; }
+.ctx-compacted-hint { padding: 0 12px 6px; font-size: 10px; color: #16a34a; }
 
 .panel-enter-active, .panel-leave-active { transition: opacity 0.25s cubic-bezier(0.16,1,0.3,1), transform 0.25s cubic-bezier(0.16,1,0.3,1); }
 .panel-enter-from, .panel-leave-to { opacity: 0; transform: translateY(16px) scale(0.94); }

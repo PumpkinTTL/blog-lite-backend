@@ -20,6 +20,16 @@ export interface AiConversation {
 /** 单条对话（getConversationByPostId 返回），messages 已 parse 为数组 */
 export interface AiConversationDetail extends AiConversation {
   messages: unknown[]
+  /** 最新历史压缩摘要（null 表示从未压缩） */
+  compactionSummary?: string | null
+  /** 压缩点之后的新对话（发给模型用），未压缩时为 null */
+  compactionMessages?: unknown[] | null
+  /** 最近一次压缩释放的 token */
+  compactionTokens?: number
+  /** 最近一次压缩时间 */
+  compactedAt?: string | null
+  /** 是否压缩过 */
+  hasCompaction?: boolean
 }
 
 /** 管理页分页列表（列表项已折叠 messages，轻量） */
@@ -37,7 +47,7 @@ export function getAiConversationById(id: number) {
   return request.get(`/ai-conversations/${id}`)
 }
 
-/** 保存/更新对话历史（upsert），同时持久化 token 累计与轮次 */
+/** 保存/更新对话历史（upsert），同时持久化 token 累计、轮次与压缩状态 */
 export function saveConversation(data: {
   postId: number
   messages: unknown[]
@@ -45,6 +55,9 @@ export function saveConversation(data: {
   promptTokens?: number
   completionTokens?: number
   rounds?: number
+  compactionSummary?: string | null
+  compactionMessages?: unknown[]
+  compactionTokens?: number
 }) {
   return request.post('/ai-conversations/save', data)
 }

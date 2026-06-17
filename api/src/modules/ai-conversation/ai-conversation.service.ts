@@ -45,6 +45,9 @@ export class AiConversationService {
         promptTokens: e.promptTokens ?? 0,
         completionTokens: e.completionTokens ?? 0,
         rounds: e.rounds ?? 0,
+        compactionTokens: e.compactionTokens ?? 0,
+        compactedAt: e.compactedAt ?? null,
+        hasCompaction: e.compactionSummary != null,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
         messageCount,
@@ -69,6 +72,23 @@ export class AiConversationService {
       item.promptTokens = dto.promptTokens ?? item.promptTokens ?? 0;
       item.completionTokens = dto.completionTokens ?? item.completionTokens ?? 0;
       item.rounds = dto.rounds ?? item.rounds ?? 0;
+      // 压缩字段
+      if (dto.compactionSummary !== undefined) {
+        item.compactionSummary = dto.compactionSummary ?? null;
+      }
+      if (dto.compactionMessages !== undefined) {
+        item.compactionMessages = JSON.stringify(dto.compactionMessages);
+      }
+      if (dto.compactionTokens !== undefined) {
+        item.compactionTokens = dto.compactionTokens ?? 0;
+      }
+      // 压缩时间：只要这次带了 compactionSummary 且与库里不同，认为发生了一次新压缩
+      if (
+        dto.compactionSummary !== undefined &&
+        dto.compactionSummary !== item.compactionSummary
+      ) {
+        item.compactedAt = new Date();
+      }
     } else {
       item = this.repo.create({
         postId: dto.postId,
@@ -77,6 +97,13 @@ export class AiConversationService {
         promptTokens: dto.promptTokens ?? 0,
         completionTokens: dto.completionTokens ?? 0,
         rounds: dto.rounds ?? 0,
+        compactionSummary: dto.compactionSummary ?? null,
+        compactionMessages: dto.compactionMessages
+          ? JSON.stringify(dto.compactionMessages)
+          : null,
+        compactionTokens: dto.compactionTokens ?? 0,
+        compactedAt:
+          dto.compactionSummary !== undefined ? new Date() : null,
       });
     }
     return this.repo.save(item);

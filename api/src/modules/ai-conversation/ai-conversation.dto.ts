@@ -30,6 +30,22 @@ export class SaveConversationDto {
   @Min(0)
   @IsOptional()
   rounds?: number;
+
+  /** 最新历史压缩摘要（覆盖式，null 表示从未压缩） */
+  @IsString()
+  @IsOptional()
+  compactionSummary?: string | null;
+
+  /** 压缩点之后的新对话（数组，service 内 JSON.stringify） */
+  @IsArray()
+  @IsOptional()
+  compactionMessages?: unknown[];
+
+  /** 最近一次压缩释放的 token */
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  compactionTokens?: number;
 }
 
 /** 管理页批量删除 */

@@ -18,6 +18,35 @@ import { Roles } from '../../common/decorators/roles.decorator';
 export class AiConversationController {
   constructor(private readonly service: AiConversationService) {}
 
+  /** entity → 详情 DTO（messages / compactionMessages 都 parse 成数组，前端直接用） */
+  private toDetail(item: any) {
+    let compactionMessages: unknown[] | null = null;
+    if (item.compactionMessages) {
+      try {
+        const arr = JSON.parse(item.compactionMessages);
+        if (Array.isArray(arr)) compactionMessages = arr;
+      } catch {
+        compactionMessages = null;
+      }
+    }
+    return {
+      id: item.id,
+      postId: item.postId,
+      model: item.model,
+      promptTokens: item.promptTokens ?? 0,
+      completionTokens: item.completionTokens ?? 0,
+      rounds: item.rounds ?? 0,
+      compactionSummary: item.compactionSummary ?? null,
+      compactionMessages,
+      compactionTokens: item.compactionTokens ?? 0,
+      compactedAt: item.compactedAt ?? null,
+      hasCompaction: item.compactionSummary != null,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      messages: JSON.parse(item.messages),
+    };
+  }
+
   /** 管理页分页列表 */
   @Get()
   async findAll(
@@ -38,38 +67,14 @@ export class AiConversationController {
   @Get(':id')
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const item = await this.service.findById(id);
-    const data = {
-      id: item.id,
-      postId: item.postId,
-      model: item.model,
-      promptTokens: item.promptTokens ?? 0,
-      completionTokens: item.completionTokens ?? 0,
-      rounds: item.rounds ?? 0,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-      messages: JSON.parse(item.messages),
-    };
-    return { success: true, data, message: '查询成功' };
+    return { success: true, data: this.toDetail(item), message: '查询成功' };
   }
 
   /** 按文章 ID 读取对话（AgentPanel 加载用） */
   @Get('post/:postId')
   async findByPostId(@Param('postId', ParseIntPipe) postId: number) {
     const item = await this.service.findByPostId(postId);
-    // messages 是 JSON 字符串，解析后返回；一并返回 token 累计与轮次（前端恢复统计）
-    const data = item
-      ? {
-          id: item.id,
-          postId: item.postId,
-          model: item.model,
-          promptTokens: item.promptTokens ?? 0,
-          completionTokens: item.completionTokens ?? 0,
-          rounds: item.rounds ?? 0,
-          createdAt: item.createdAt,
-          updatedAt: item.updatedAt,
-          messages: JSON.parse(item.messages),
-        }
-      : null;
+    const data = item ? this.toDetail(item) : null;
     return { success: true, data, message: item ? '查询成功' : '无对话历史' };
   }
 

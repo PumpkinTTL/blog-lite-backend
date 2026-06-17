@@ -55,6 +55,51 @@ export class AiConversationEntity {
   })
   rounds: number;
 
+  /**
+   * 最新历史压缩摘要（覆盖式）。
+   * 业界标准：发给模型的上下文 = [system:本摘要] + 压缩点之后的新对话，
+   * 而完整原始对话（messages）永不删除，供用户回看历史。
+   * 未压缩过则为 null。
+   */
+  @Column({
+    name: 'compaction_summary',
+    type: 'longtext',
+    nullable: true,
+    comment: '最新历史压缩摘要',
+  })
+  compactionSummary: string | null;
+
+  /**
+   * 压缩点之后的新对话（JSON 字符串，发给模型用）。
+   * 压缩时落库：[压缩前所有轮] 被摘要替换，这里从空数组开始累积新轮。
+   * 未压缩过则为 null（表示直接用 messages）。
+   */
+  @Column({
+    name: 'compaction_messages',
+    type: 'longtext',
+    nullable: true,
+    comment: '压缩点之后的新对话JSON',
+  })
+  compactionMessages: string | null;
+
+  /** 最近一次压缩时释放的 token（压缩前累计 - 压缩后基线） */
+  @Column({
+    name: 'compaction_tokens',
+    type: 'int',
+    default: 0,
+    comment: '最近一次压缩释放的token',
+  })
+  compactionTokens: number;
+
+  /** 最近一次压缩时间 */
+  @Column({
+    name: 'compacted_at',
+    type: 'datetime',
+    nullable: true,
+    comment: '最近一次压缩时间',
+  })
+  compactedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })
   createdAt: Date;
 
