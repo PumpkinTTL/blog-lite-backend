@@ -8,7 +8,7 @@ import {
   ArrayMinSize,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import type { AiProviderModel } from './ai-provider.entity';
 
 /** 单个模型的输入校验（嵌入 provider.models 数组） */
@@ -29,10 +29,12 @@ export class AiProviderModelDto {
   @IsOptional()
   maxOutputTokens?: number;
 
+  @Transform(({ value }) => value === true ? 1 : value === false ? 0 : value)
   @IsIn([0, 1])
   @IsOptional()
   supportsTools?: number;
 
+  @Transform(({ value }) => value === true ? 1 : value === false ? 0 : value)
   @IsIn([0, 1])
   @IsOptional()
   supportsThinking?: number;
