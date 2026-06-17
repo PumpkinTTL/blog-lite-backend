@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { NIcon, NButton, useMessage, NAvatar } from 'naive-ui'
+import { NSpin, NIcon, NButton, useMessage, NAvatar } from 'naive-ui'
 import {
   DocumentTextOutline, PaperPlaneOutline, FolderOutline, PricetagsOutline,
   PeopleOutline, ChatbubblesOutline, HeartOutline, StarOutline, EyeOutline,
@@ -76,9 +76,11 @@ async function loadStats() {
   loading.value = true
   try {
     const res = await getDashboardStats()
-    if (res.data) { stats.value = res.data; await nextTick(); renderCharts() }
+    if (res.data) stats.value = res.data
   } catch (e: any) { message.error(e?.message || '加载统计数据失败') }
   finally { loading.value = false }
+  await nextTick()
+  renderCharts()
 }
 
 function axisColor() { return isDark.value ? '#334155' : '#E2E8F0' }
@@ -207,13 +209,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-if="loading" class="dash-loading">
-      <div class="sk-grid">
-        <div v-for="i in 10" :key="i" class="sk-card" />
-      </div>
-    </div>
-
-    <div v-else class="dash-body">
+    <n-spin :show="loading">
+    <div class="dash-body">
 
       <!-- === Welcome Banner === -->
       <div class="welcome-banner">
@@ -329,6 +326,7 @@ onBeforeUnmount(() => {
       </div>
 
     </div>
+    </n-spin>
   </div>
 </template>
 
@@ -345,12 +343,6 @@ onBeforeUnmount(() => {
 .topbar-title { margin: 0; font-size: 22px; font-weight: 700; color: var(--n-text-color); letter-spacing: -0.02em; }
 .topbar-sub { margin: 3px 0 0; font-size: 12.5px; color: var(--n-text-color-3); }
 .topbar-actions { display: flex; gap: 4px; align-items: center; }
-
-/* === Skeleton Loading === */
-.dash-loading { padding: 10px 0; }
-.sk-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-.sk-card { height: 88px; border-radius: 12px; background: var(--n-fill-color); animation: sk-pulse 1.5s ease-in-out infinite; }
-@keyframes sk-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
 
 /* === Welcome Banner === */
 .welcome-banner {
