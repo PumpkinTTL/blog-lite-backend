@@ -11,6 +11,8 @@ import {
 import { streamChat, compactHistory } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext, AiUsage } from '../../api/ai'
 import { getConversationByPostId, saveConversation } from '../../api/ai-conversation'
+import { getActiveAiProviders } from '../../api/ai-provider'
+import type { AiProvider } from '../../api/ai-provider'
 import ToolCallCard from './ToolCallCard.vue'
 
 /** 文章 formValue 的最小契约（避免和 PostEditView 强耦合） */
@@ -56,6 +58,24 @@ const inputText = ref('')
 const sending = ref(false)
 const compacting = ref(false)
 const selectedModel = ref<string | null>(null)
+const providers = ref<AiProvider[]>([])
+const providerModelOptions = computed(() => {
+  const opts: { label: string; value: string; type: 'group'; children: { label: string; value: string }[] }[] = []
+  for (const p of providers.value) {
+    if (p.models?.length) {
+      opts.push({ label: p.name, value: p.name, type: 'group', children: p.models.map(m => ({ label: m.displayName || m.modelId, value: m.modelId })) })
+    }
+  }
+  return opts
+})
+
+async function loadProviders() {
+  try {
+    const res: any = await getActiveAiProviders()
+    const list = res.data || res
+    providers.value = Array.isArray(list) ? list : []
+  } catch { /* ignore */ }
+}
 
 // 当前登录用户名首字（用户头像）
 const userInitial = computed(() => {
@@ -69,14 +89,6 @@ const userInitial = computed(() => {
   }
   return 'U'
 })
-
-const modelOptions = [
-  { label: 'DeepSeek V4 Flash', value: 'cmc/deepseek/deepseek-v4-flash' },
-  { label: 'DeepSeek V4 Pro', value: 'cmc/deepseek/deepseek-v4-pro' },
-  { label: 'Qwen 3.6 Plus', value: 'cmc/Qwen/Qwen3.6-Plus' },
-  { label: 'GLM-5', value: 'cmc/zai-org/GLM-5' },
-  { label: 'Kimi K2.6', value: 'cmc/moonshotai/Kimi-K2.6' },
-]
 
 // === Token 统计 ===
 // 会话级累计
@@ -533,6 +545,7 @@ async function persistConversation(newPostId?: number): Promise<void> {
 defineExpose({ persistConversation })
 
 watch(() => props.postId, () => { historyLoaded.value = false; loadHistory() }, { immediate: true })
+watch(open, (v) => { if (v) loadProviders() })
 onBeforeUnmount(() => {
   document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDragMove)
@@ -582,7 +595,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
       <!-- 工具栏 -->
       <div class="panel-toolbar">
-        <n-select v-model:value="selectedModel" :options="modelOptions" size="small" placeholder="默认模型" clearable class="model-select" />
+        <n-select v-model:value="selectedModel" :options="providerModelOptions" size="small" placeholder="默认模型" clearable class="model-select" />
       </div>
 
       <!-- 消息流 -->

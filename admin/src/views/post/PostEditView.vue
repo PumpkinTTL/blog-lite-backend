@@ -10,6 +10,8 @@ import { ArrowBackOutline, SaveOutline, CloudUploadOutline, TrashOutline, Sparkl
 import { getPost, createPost, updatePost } from '../../api/post'
 import { generateByAi } from '../../api/ai'
 import type { AiGenerateField } from '../../api/ai'
+import { getActiveAiProviders } from '../../api/ai-provider'
+import type { AiProvider } from '../../api/ai-provider'
 import AgentPanel from '../../components/ai/AgentPanel.vue'
 
 const agentPanelRef = ref<InstanceType<typeof AgentPanel> | null>(null)
@@ -86,6 +88,27 @@ const isCoverPending = computed(() => formValue.value.coverImage.startsWith('dat
 /** AI 助手：复选框选中要生成哪些字段 */
 const aiFields = ref<AiGenerateField[]>(['summary'])
 const aiLoading = ref(false)
+const aiProviders = ref<AiProvider[]>([])
+const aiProviderId = ref<number | null>(null)
+const aiModelId = ref<string | null>(null)
+
+const activeProvider = computed(() => aiProviders.value.find(p => p.id === aiProviderId.value))
+const modelOptions = computed(() => {
+  if (!activeProvider.value) return []
+  return (activeProvider.value.models || []).map(m => ({ label: m.displayName || m.modelId, value: m.modelId }))
+})
+
+async function loadAiProviders() {
+  try {
+    const res: any = await getActiveAiProviders()
+    const list = res.data || []
+    aiProviders.value = list
+    if (list.length > 0) {
+      aiProviderId.value = list[0].id
+      if (list[0].models?.length > 0) aiModelId.value = list[0].models[0].modelId
+    }
+  } catch { /* ignore */ }
+}
 
 /** 调用后端 AI 模块，根据标题+正文生成勾选的内容（副标题/摘要/slug） */
 async function handleAiGenerate() {
@@ -104,6 +127,7 @@ async function handleAiGenerate() {
       title: formValue.value.title,
       content: formValue.value.content,
       fields: aiFields.value,
+      model: aiModelId.value || undefined,
     })
     const r = res.data
     if (r.subtitle) formValue.value.subtitle = r.subtitle
@@ -381,6 +405,7 @@ function handleStatusChange(val: string) {
 }
 
 onMounted(async () => {
+  loadAiProviders()
   await loadOptions()
   if (isEdit.value) {
     loadPost(Number(route.params.id))
@@ -445,7 +470,23 @@ onMounted(async () => {
                   <n-icon class="ai-spark-icon" :size="15"><SparklesOutline /></n-icon>
                   <span>AI 助手</span>
                 </div>
-                <span class="ai-panel-tag">DEEPSEEK</span>
+                <div class="ai-model-select">
+                  <n-select
+                    v-model:value="aiProviderId"
+                    :options="aiProviders.map(p => ({ label: p.name, value: p.id }))"
+                    size="tiny"
+                    placeholder="提供商"
+                    style="width: 90px"
+                    @update:value="(v: number) => { aiProviderId = v; aiModelId = aiProviders.find(p => p.id === v)?.models?.[0]?.modelId ?? null }"
+                  />
+                  <n-select
+                    v-model:value="aiModelId"
+                    :options="modelOptions"
+                    size="tiny"
+                    placeholder="模型"
+                    style="width: 130px"
+                  />
+                </div>
               </div>
               <n-checkbox-group v-model:value="aiFields" class="ai-fields">
                 <n-checkbox value="subtitle">副标题</n-checkbox>
