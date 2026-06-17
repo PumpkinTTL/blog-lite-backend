@@ -4,9 +4,9 @@ import {
   NIcon, NInput, useMessage, NTooltip,
 } from 'naive-ui'
 import {
-  ChatbubbleEllipsesOutline, RemoveOutline,
+  RemoveOutline,
   PaperPlaneOutline, BulbOutline, ChevronDownOutline,
-  SparklesOutline, ContractOutline,
+  SparklesOutline, ContractOutline, HappyOutline, ColorPaletteOutline, CubeOutline,
 } from '@vicons/ionicons5'
 import { streamChat, streamCompact } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext, AiUsage } from '../../api/ai'
@@ -100,7 +100,11 @@ const contextLimit = computed(() => {
   if (!p || !selectedModel.value) return 0
   return p.models?.find(m => m.modelId === selectedModel.value)?.maxContextTokens ?? 0
 })
-const contextUsed = computed(() => tokenStats.prompt + tokenStats.completion)
+// === 上下文占用（进度条用）===
+// 当前占用 = 最近一轮单次的 prompt+completion（= 网关 usage.total_tokens 语义）。
+// 这才是对齐模型上下文窗口(如 DeepSeek 200K)的口径：单次请求喂进去的全部 + 本轮输出。
+// 注意：不是累计！累计会把每轮重复发送的历史反复计入，数字虚高且不反映当前窗口占用。
+const contextUsed = computed(() => tokenStats.lastPrompt + tokenStats.lastCompletion)
 const contextPercent = computed(() => {
   if (contextLimit.value <= 0) return 0
   return Math.min(100, Math.round((contextUsed.value / contextLimit.value) * 100))
@@ -118,6 +122,15 @@ function selectModel(modelId: string) {
   selectedModel.value = modelId
   modelDropdownOpen.value = false
   persistSelection()
+}
+
+/** 模型选择弹窗里选一个模型（自动切到它所属的 provider） */
+function pickModelFromDialog(providerId: number, modelId: string) {
+  selectedProviderId.value = providerId
+  selectedModel.value = modelId
+  modelPickerOpen.value = false
+  persistSelection()
+  message.success(`已切换到 ${activeModelLabel.value || modelId}`)
 }
 
 async function loadProviders() {
@@ -159,15 +172,60 @@ const userInitial = computed(() => {
 })
 
 // === Token 统计 ===
-// 会话级累计
-const tokenStats = reactive({ prompt: 0, completion: 0, rounds: 0 })
+// 会话级 token 统计（两套口径，全部来自网关返回的真实 usage）：
+// - lastPrompt / lastCompletion：最近一轮网关返回值。进度条用这个对齐模型 maxContextTokens，
+//   不会虚高（累加会把每轮重复发送的历史反复计入）。压缩后下一轮的 lastPrompt 自动反映
+//   摘要化后的新基线，无需手动减。
+// - totalPrompt / totalCompletion：历史累加，供"累计消耗"展示与审计。
+const tokenStats = reactive({
+  lastPrompt: 0,
+  lastCompletion: 0,
+  totalPrompt: 0,
+  totalCompletion: 0,
+  rounds: 0,
+})
 // 单轮 token（按 renderItem id 记录，消息下方显示）
 const itemUsage = ref<Record<string, AiUsage>>({})
 function resetTokenStats() {
-  tokenStats.prompt = 0
-  tokenStats.completion = 0
+  tokenStats.lastPrompt = 0
+  tokenStats.lastCompletion = 0
+  tokenStats.totalPrompt = 0
+  tokenStats.totalCompletion = 0
   tokenStats.rounds = 0
   itemUsage.value = {}
+}
+
+/** 一轮 agent 内多步的 usage 缓冲 */
+let roundMaxPrompt = 0
+let roundSumCompletion = 0
+
+/**
+ * 记录单步网关 usage（agent 一轮内可能多步：调工具→再生成）。
+ * 只暂存到本轮缓冲 + itemUsage，不直接动 total/rounds。
+ * - prompt 取最大步：那步包含了最全的历史（上下文占用就用它，对齐模型窗口）
+ * - completion 累加所有步：每步生成的内容是独立的真实消耗
+ */
+function recordStepUsage(itemKey: string, usage: AiUsage) {
+  itemUsage.value[itemKey] = usage
+  if (usage.promptTokens > roundMaxPrompt) roundMaxPrompt = usage.promptTokens
+  roundSumCompletion += usage.completionTokens
+}
+
+/**
+ * 一轮对话结束（或压缩结束）时提交本轮代表 usage：
+ * - last 用本轮最大 prompt（最全上下文，进度条对齐模型窗口）
+ * - total 只累加本轮代表值一次（避免多步重复历史虚高）
+ * - rounds +1（一轮多步算 1 轮）
+ */
+function commitRoundUsage() {
+  if (roundMaxPrompt === 0 && roundSumCompletion === 0) return
+  tokenStats.lastPrompt = roundMaxPrompt
+  tokenStats.lastCompletion = roundSumCompletion
+  tokenStats.totalPrompt += roundMaxPrompt
+  tokenStats.totalCompletion += roundSumCompletion
+  tokenStats.rounds += 1
+  roundMaxPrompt = 0
+  roundSumCompletion = 0
 }
 
 // === 压缩状态（业界标准：摘要替换发网关的上下文，完整对话保留供回看）===
@@ -189,9 +247,9 @@ function buildGatewayMessages(): AiChatMessage[] {
   return messages.value
 }
 
-/** 计算压缩释放了多少 token（压缩前累计 - 压缩后基线） */
+/** 计算压缩释放了多少 token（压缩前最近一轮占用 - 压缩后最近一轮占用） */
 function calcReleasedTokens(beforePrompt: number): number {
-  const after = tokenStats.prompt
+  const after = tokenStats.lastPrompt
   return beforePrompt > after ? beforePrompt - after : 0
 }
 
@@ -223,6 +281,127 @@ const quickCmds: QuickCmd[] = [
   { label: '摘要', icon: BulbOutline, insert: '为这篇文章生成摘要', desc: '生成文章摘要' },
 ]
 
+// === 斜杠命令菜单（业界标准：输入 / 弹出内置命令，方向键选择，回车执行）===
+interface SlashCommand { name: string; desc: string; icon: any; insert?: string }
+const slashCommands: SlashCommand[] = [
+  { name: '/compact', desc: '压缩对话历史，释放上下文 token', icon: ContractOutline },
+  { name: '/model', desc: '切换 AI 模型', icon: CubeOutline },
+  { name: '/encourage', desc: '生成一段鼓励的话，给写作打打气', icon: HappyOutline, insert: '写一段鼓励创作者的话，温暖、真诚、有力量，3-4 句即可，中文' },
+  { name: '/idea', desc: '基于当前文章生成几个延展选题/灵感', icon: ColorPaletteOutline, insert: '基于当前文章的主题和内容，给我 5 个延展创作灵感或相关选题，每个一句话简述，适合做系列文章' },
+]
+// 模型选择弹窗
+const modelPickerOpen = ref(false)
+// 弹窗键盘导航：把所有 provider 的模型拍平成 [providerId, modelId, label] 列表
+const flatModels = computed(() => {
+  const out: { providerId: number; modelId: string; label: string }[] = []
+  for (const p of providers.value) {
+    for (const m of p.models || []) {
+      out.push({ providerId: p.id, modelId: m.modelId, label: m.displayName || m.modelId })
+    }
+  }
+  return out
+})
+const modelPickerIndex = ref(0)
+// 当前选中的扁平索引（根据已选 provider+model 反查）
+watch([modelPickerOpen, selectedProviderId, selectedModel], () => {
+  if (!modelPickerOpen.value) return
+  const idx = flatModels.value.findIndex(
+    f => f.providerId === selectedProviderId.value && f.modelId === selectedModel.value,
+  )
+  modelPickerIndex.value = idx >= 0 ? idx : 0
+})
+/** 由 (providerId, modelId) 算出在扁平列表里的索引，用于模板 active 判断 */
+function pickerFlatIndex(providerId: number, modelId: string): number {
+  return flatModels.value.findIndex(
+    f => f.providerId === providerId && f.modelId === modelId,
+  )
+}
+// 模型项 DOM 引用，用于键盘选中时自动滚动可见
+const pickerModelEls = ref<HTMLElement[]>([])
+watch(modelPickerIndex, async () => {
+  await nextTick()
+  const el = pickerModelEls.value[modelPickerIndex.value]
+  el?.scrollIntoView({ block: 'nearest' })
+})
+function onModelPickerKeydown(e: KeyboardEvent) {
+  if (!modelPickerOpen.value) return
+  const list = flatModels.value
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    modelPickerOpen.value = false
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    modelPickerIndex.value = (modelPickerIndex.value + 1) % Math.max(1, list.length)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    modelPickerIndex.value = (modelPickerIndex.value - 1 + list.length) % Math.max(1, list.length)
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    const target = list[modelPickerIndex.value]
+    if (target) pickModelFromDialog(target.providerId, target.modelId)
+  }
+}
+const slashMenuOpen = ref(false)
+const slashMenuIndex = ref(0)
+const slashMatches = computed(() => {
+  const v = inputText.value.trim()
+  if (!v.startsWith('/')) return []
+  // 输入 /xxx 时按前缀过滤
+  return slashCommands.filter(c => c.name.startsWith(v))
+})
+// 监听输入值，自动开关菜单
+watch(() => inputText.value, (v) => {
+  if (v.startsWith('/') && slashMatches.value.length > 0) {
+    slashMenuOpen.value = true
+    slashMenuIndex.value = 0
+  } else {
+    slashMenuOpen.value = false
+  }
+})
+function selectSlashCommand(cmd: SlashCommand) {
+  slashMenuOpen.value = false
+  inputText.value = ''
+  // /compact 是特殊操作（压缩历史），直接执行
+  if (cmd.name === '/compact') {
+    handleCompact()
+    return
+  }
+  // /model 弹出模型选择弹窗
+  if (cmd.name === '/model') {
+    modelPickerOpen.value = true
+    return
+  }
+  // 其他命令：填入预设 prompt，用户可直接回车发送或自己修改
+  inputText.value = cmd.insert ?? (cmd.name + ' ')
+  inputRef.value?.focus?.()
+}
+function onSlashMenuKeydown(e: KeyboardEvent): boolean {
+  // 返回 true 表示已处理（调用方不再走默认 Enter 发送逻辑）
+  if (!slashMenuOpen.value) return false
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    slashMenuIndex.value = (slashMenuIndex.value + 1) % slashMatches.value.length
+    return true
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    slashMenuIndex.value = (slashMenuIndex.value - 1 + slashMatches.value.length) % slashMatches.value.length
+    return true
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault()
+    const cmd = slashMatches.value[slashMenuIndex.value]
+    if (cmd) selectSlashCommand(cmd)
+    return true
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    slashMenuOpen.value = false
+    return true
+  }
+  return false
+}
+
 // === 工具边界值保护 ===
 function toInt(v: unknown, fallback: number): number {
   const n = typeof v === 'string' ? parseInt(v, 10) : typeof v === 'number' ? v : NaN
@@ -253,10 +432,17 @@ function executeTool(call: AiToolCall): string {
 
   switch (call.function.name) {
     case 'get_article':
+      // 只返回元数据 + 字数，不预览正文。
+      // 正文通过 get_content_section 按需分段读取，避免每次 get_article 都把 2000 字
+      // （~2800 token）塞进历史且每轮重发，造成 token 浪费。
       return JSON.stringify({
-        title: f.title, subtitle: f.subtitle, summary: f.summary, slug: f.slug,
+        title: f.title,
+        subtitle: f.subtitle,
+        summary: f.summary,
+        slug: f.slug,
         contentLength: f.content.length,
-        contentPreview: f.content.slice(0, 2000),
+        contentLines: f.content.split('\n').length,
+        hint: '正文较长，需要查看/修改正文请用 get_content_section 按行范围读取',
       })
     case 'get_content_section': {
       const lines = f.content.split('\n')
@@ -442,7 +628,7 @@ async function handleCompact() {
     message.warning('对话太短，无需压缩')
     return
   }
-  const promptBefore = tokenStats.prompt
+  const promptBefore = tokenStats.lastPrompt
   compacting.value = true
 
   // 流式压缩：用一条临时 assistant 项实时显示摘要生成过程（业界标准，压缩可见）
@@ -453,7 +639,7 @@ async function handleCompact() {
   await scrollToBottom()
 
   try {
-    const summary = await streamCompact(
+    const { summary, usage } = await streamCompact(
       toCompress as AiChatMessage[],
       selectedModel.value ?? undefined,
       (tok) => {
@@ -480,9 +666,28 @@ async function handleCompact() {
     // 完整原始 messages 不删（供回看），只是不再整段发给模型。
     compactionSummary.value = summary
     compactionMessages.value = []
-    compactionTokens.value = calcReleasedTokens(promptBefore)
+
+    // 释放量计算：压缩这次调用 usage.promptTokens = 被压缩的历史体积，
+    // summary 本身的体积 ≈ usage.completionTokens。
+    // 释放 = 被压缩历史体积 - 摘要体积（这就是上下文省下来的 token）。
+    if (usage) {
+      const released = Math.max(0, usage.promptTokens - usage.completionTokens)
+      compactionTokens.value = released
+      // 压缩是真实 token 消耗，计 1 轮，total 累加（审计用）
+      itemUsage.value[compactItem.id] = usage
+      tokenStats.totalPrompt += usage.promptTokens
+      tokenStats.totalCompletion += usage.completionTokens
+      tokenStats.rounds += 1
+      // 压缩后真实占用变小（下次对话只发 摘要+新对话），
+      // 用摘要体积作为 lastPrompt 的乐观估计，让进度条立刻反映释放效果。
+      // 下次真实对话的 usage 会用真实值覆盖它。
+      tokenStats.lastPrompt = usage.completionTokens
+      tokenStats.lastCompletion = 0
+    } else {
+      compactionTokens.value = calcReleasedTokens(promptBefore)
+    }
     compactionReleasedAt.value = new Date().toISOString()
-    // 临时项保留为压缩摘要展示（标记一下来源，便于用户理解这条是压缩结果）
+    // 临时项保留为压缩摘要展示
     compactItem.replyText = `✅ 已压缩历史（释放约 ${compactionTokens.value} token）\n\n${summary}`
     message.success(`对话已压缩，释放约 ${compactionTokens.value} token`)
     await scrollToBottom()
@@ -552,11 +757,8 @@ async function handleSend() {
           scrollToBottom()
         },
         (usage: AiUsage) => {
-          // 记录到该 assistant item（消息下方显示单轮 token）
-          itemUsage.value[assistantItem.id] = usage
-          tokenStats.prompt += usage.promptTokens
-          tokenStats.completion += usage.completionTokens
-          tokenStats.rounds += 1
+          // 记录单步真实 usage（agent 一轮可能多步，循环结束才提交本轮）
+          recordStepUsage(assistantItem.id, usage)
         },
       )
 
@@ -603,6 +805,9 @@ async function handleSend() {
     message.error(e instanceof Error ? e.message : 'AI 对话失败')
   } finally {
     sending.value = false
+    // 一轮对话结束（不管 agent 内部走了几步），统一用本轮最大 prompt 步提交。
+    // 避免多步重复历史被累加导致 total 虚高、rounds 虚高。
+    commitRoundUsage()
     await scrollToBottom()
     await nextTick()
     inputRef.value?.focus?.()
@@ -637,10 +842,13 @@ async function loadHistory() {
     if (data && Array.isArray(data.messages) && data.messages.length > 0) {
       messages.value = data.messages as AiChatMessage[]
       rebuildRenderFromHistory()
-      // 恢复累计 token / 轮次：避免重开后统计清零、却把历史原样带上网关，
-      // 导致前 N 轮 token 未计入而上下文实际已逼近上限（溢出风险）。
-      tokenStats.prompt = Number(data.promptTokens ?? 0) || 0
-      tokenStats.completion = Number(data.completionTokens ?? 0) || 0
+      // 恢复两套 token 口径 + 轮次：
+      // - total（审计）/ last（进度条当前占用），全部来自网关真实值。
+      // 避免重开后统计清零、却把历史原样带上网关，导致上下文实际已逼近上限而无预警。
+      tokenStats.totalPrompt = Number(data.promptTokens ?? 0) || 0
+      tokenStats.totalCompletion = Number(data.completionTokens ?? 0) || 0
+      tokenStats.lastPrompt = Number(data.lastPromptTokens ?? 0) || 0
+      tokenStats.lastCompletion = Number(data.lastCompletionTokens ?? 0) || 0
       tokenStats.rounds = Number(data.rounds ?? 0) || 0
       // 恢复压缩状态：摘要 + 压缩点之后的新对话（发网关用）
       compactionSummary.value = data.compactionSummary ?? null
@@ -685,14 +893,16 @@ async function persistConversation(newPostId?: number): Promise<void> {
   if (!pid) return
   if (messages.value.length === 0) return
   try {
-    // 一并落库累计 token、轮次与压缩状态。
-    // 压缩过才带 compactionSummary（null 表示未压缩，后端据此判断发网关口径）。
+    // 一并落库两套 token 口径、轮次与压缩状态。
+    // total（审计）/ last（进度条当前占用）都来自网关真实值。
     await saveConversation({
       postId: pid,
       messages: messages.value,
       model: selectedModel.value ?? undefined,
-      promptTokens: tokenStats.prompt,
-      completionTokens: tokenStats.completion,
+      promptTokens: tokenStats.totalPrompt,
+      completionTokens: tokenStats.totalCompletion,
+      lastPromptTokens: tokenStats.lastPrompt,
+      lastCompletionTokens: tokenStats.lastCompletion,
       rounds: tokenStats.rounds,
       ...(compactionSummary.value
         ? {
@@ -714,8 +924,10 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)
   document.removeEventListener('click', closeDropdowns)
+  // 离开页面/卸载前把当前对话落库，避免未点"保存文章"就关闭导致丢失
+  void persistConversation()
 })
-function closeDropdowns() { provDropdownOpen.value = false; modelDropdownOpen.value = false }
+function closeDropdowns() { provDropdownOpen.value = false; modelDropdownOpen.value = false; slashMenuOpen.value = false }
 
 function toggleThink(id: string) {
   if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)
@@ -726,6 +938,8 @@ async function scrollToBottom() {
   if (scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight
 }
 function onInputKeydown(e: KeyboardEvent) {
+  // 斜杠菜单打开时优先处理（方向键/回车/Tab/Esc），拦截默认 Enter 发送
+  if (onSlashMenuKeydown(e)) return
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
 }
 </script>
@@ -872,6 +1086,18 @@ function onInputKeydown(e: KeyboardEvent) {
         </div>
 
         <div class="panel-input">
+          <!-- 斜杠命令菜单（输入 / 触发，绝对定位于输入框上方） -->
+          <div v-if="slashMenuOpen && slashMatches.length > 0" class="slash-menu" @click.stop>
+            <div
+              v-for="(cmd, i) in slashMatches" :key="cmd.name"
+              class="slash-item" :class="{ active: i === slashMenuIndex }"
+              @click="selectSlashCommand(cmd)" @mouseenter="slashMenuIndex = i"
+            >
+              <n-icon :size="13" class="slash-icon"><component :is="cmd.icon" /></n-icon>
+              <span class="slash-name">{{ cmd.name }}</span>
+              <span class="slash-desc">{{ cmd.desc }}</span>
+            </div>
+          </div>
           <n-input
             ref="inputRef"
             v-model:value="inputText"
@@ -879,43 +1105,70 @@ function onInputKeydown(e: KeyboardEvent) {
             :autosize="{ minRows: 1, maxRows: 4 }"
             :placeholder="compacting ? '正在压缩历史…' : '输入指令，/ 查看命令，Enter 发送'"
             :disabled="sending || compacting"
-            @keydown="onInputKeydown"
+            @keydown.capture="onInputKeydown"
           />
           <button class="send-btn" :class="{ disabled: !inputText.trim() || sending || compacting }" :disabled="!inputText.trim() || sending || compacting" @click="handleSend">
             <n-icon :size="16"><PaperPlaneOutline /></n-icon>
           </button>
         </div>
 
-        <!-- 会话级 token 统计 -->
-        <div v-if="tokenStats.rounds > 0" class="token-stats">
-          <n-tooltip trigger="hover" :z-index="10010">
-            <template #trigger>
-              <span class="stat-chip">
-                <n-icon :size="11"><ChatbubbleEllipsesOutline /></n-icon>
-                {{ tokenStats.rounds }} 轮 · ↑{{ tokenStats.prompt }} ↓{{ tokenStats.completion }} = {{ tokenStats.prompt + tokenStats.completion }}
-              </span>
-            </template>
-            输入(prompt) {{ tokenStats.prompt }} · 输出(completion) {{ tokenStats.completion }}
-          </n-tooltip>
-        </div>
-
-        <!-- 上下文占用进度条 -->
-        <div v-if="contextLimit > 0 && tokenStats.rounds > 0" class="ctx-bar" :class="{ warn: contextWarn }">
-          <div class="ctx-bar-track">
-            <div class="ctx-bar-fill" :style="{ width: contextPercent + '%' }"></div>
-          </div>
-          <span class="ctx-bar-text">
-            {{ contextUsed }} / {{ contextLimit }}
-            <span class="ctx-bar-pct">{{ contextPercent }}%</span>
+        <!-- 会话级 token 统计 + 上下文占用进度条 -->
+        <div v-if="tokenStats.rounds > 0" class="ctx-foot">
+          <!-- 第一行：累计消耗（算钱用） -->
+          <span class="ctx-stat">
+            {{ tokenStats.rounds }}轮 · 累计 ↑{{ tokenStats.totalPrompt }} ↓{{ tokenStats.totalCompletion }} = {{ tokenStats.totalPrompt + tokenStats.totalCompletion }}
           </span>
-        </div>
-        <div v-if="contextWarn" class="ctx-warn-hint">
-          上下文已用 {{ contextPercent }}%，建议输入 /compact 压缩历史释放空间
-        </div>
-        <div v-if="compactionSummary" class="ctx-compacted-hint">
-          已压缩 · 释放 {{ compactionTokens }} token
+          <!-- 第二行：上下文占用进度条（防溢出用，对齐模型 maxContextTokens） -->
+          <div v-if="contextLimit > 0" class="ctx-progress" :class="{ warn: contextWarn }">
+            <span class="ctx-progress-label">上下文</span>
+            <div class="ctx-progress-bar">
+              <div class="ctx-progress-fill" :style="{ width: contextPercent + '%' }"></div>
+            </div>
+            <span class="ctx-progress-text">{{ contextUsed }} / {{ contextLimit }} ({{ contextPercent }}%)</span>
+          </div>
+          <span v-if="compactionSummary" class="ctx-tag-compacted" title="历史已压缩，释放约 token">已压缩</span>
         </div>
       </div>
+
+      <!-- /model 模型选择弹窗（面板内部，绝对定位覆盖面板区域） -->
+      <transition name="picker">
+        <div
+          v-if="modelPickerOpen"
+          class="picker-mask"
+          tabindex="-1"
+          @click.self="modelPickerOpen = false"
+          @keydown="onModelPickerKeydown"
+          @vue:mounted="($event as any).el?.focus?.()"
+        >
+          <div class="picker-dialog">
+            <div class="picker-head">
+              <span class="picker-title">选择模型</span>
+              <span class="picker-hint">↑↓ 选择 · Enter 确认 · Esc 关闭</span>
+              <button class="picker-close" @click="modelPickerOpen = false"><n-icon :size="16"><RemoveOutline /></n-icon></button>
+            </div>
+            <div class="picker-body">
+              <div v-for="p in providers" :key="p.id" class="picker-group">
+                <div class="picker-group-name">{{ p.name }}</div>
+                <div
+                  v-for="m in (p.models || [])" :key="p.id + '-' + m.modelId"
+                  ref="pickerModelEls"
+                  class="picker-model"
+                  :class="{ active: pickerFlatIndex(p.id, m.modelId) === modelPickerIndex }"
+                  @click="pickModelFromDialog(p.id, m.modelId)"
+                  @mouseenter="modelPickerIndex = pickerFlatIndex(p.id, m.modelId)"
+                >
+                  <div class="picker-model-name">
+                    {{ m.displayName || m.modelId }}
+                    <span v-if="m.maxContextTokens" class="picker-model-ctx">{{ m.maxContextTokens >= 1000 ? (m.maxContextTokens / 1000) + 'K' : m.maxContextTokens }}</span>
+                  </div>
+                  <div class="picker-model-id">{{ m.modelId }}</div>
+                </div>
+              </div>
+              <div v-if="providers.length === 0" class="picker-empty">暂无可用模型</div>
+            </div>
+          </div>
+        </div>
+      </transition>
     </div>
   </transition>
 </template>
@@ -1056,27 +1309,62 @@ function onInputKeydown(e: KeyboardEvent) {
 .quick-btn:hover { background: #f5f5f4; border-color: #d6d3d1; color: #1c1917; }
 .quick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.panel-input { display: flex; gap: 8px; padding: 8px 12px; align-items: flex-end; }
+.panel-input { display: flex; gap: 8px; padding: 8px 12px; align-items: flex-end; position: relative; }
+
+/* 斜杠命令菜单 */
+.slash-menu { position: absolute; bottom: calc(100% + 4px); left: 12px; right: 12px; background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; box-shadow: 0 8px 24px rgba(28,25,23,0.12); z-index: 10010; overflow: hidden; }
+.slash-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; transition: background 0.12s; border-left: 2px solid transparent; }
+.slash-item:hover { background: #f5f5f4; }
+.slash-item.active { background: rgba(193,95,60,0.08); color: #c15f3c; border-left-color: #c15f3c; }
+.slash-icon { flex-shrink: 0; color: #78716c; }
+.slash-item.active .slash-icon { color: #c15f3c; }
+.slash-name { font-size: 12px; font-weight: 600; color: #1c1917; white-space: nowrap; }
+.slash-desc { font-size: 11px; color: #a8a29e; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .send-btn { flex-shrink: 0; width: 34px; height: 34px; border: none; border-radius: 8px; background: #1c1917; color: #fafaf9; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, opacity 0.15s; }
 .send-btn:hover { background: #292524; }
 .send-btn.disabled { opacity: 0.3; cursor: not-allowed; }
 
-.token-stats { padding: 0 12px 6px; }
-.stat-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
-
-/* 上下文进度条 */
-.ctx-bar { display: flex; align-items: center; gap: 6px; padding: 0 12px 4px; }
-.ctx-bar-track { flex: 1; height: 4px; background: #e7e5e4; border-radius: 2px; overflow: hidden; }
-.ctx-bar-fill { height: 100%; background: #c15f3c; border-radius: 2px; transition: width 0.3s ease, background 0.2s; }
-.ctx-bar.warn .ctx-bar-fill { background: #dc2626; }
-.ctx-bar-text { font-size: 9.5px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; white-space: nowrap; }
-.ctx-bar.warn .ctx-bar-text { color: #dc2626; }
-.ctx-bar-pct { font-weight: 600; }
-.ctx-warn-hint { padding: 0 12px 4px; font-size: 10px; color: #dc2626; }
-.ctx-compacted-hint { padding: 0 12px 6px; font-size: 10px; color: #16a34a; }
+/* 底部 token 统计 + 上下文进度条 */
+.ctx-foot { padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 4px; }
+.ctx-stat { font-size: 10px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
+.ctx-progress { display: flex; align-items: center; gap: 6px; }
+.ctx-progress-label { font-size: 9.5px; color: #a8a29e; flex-shrink: 0; }
+.ctx-progress-bar { width: 90px; height: 5px; background: #e7e5e4; border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+.ctx-progress-fill { height: 100%; background: #c15f3c; border-radius: 3px; transition: width 0.3s ease, background 0.2s; }
+.ctx-progress.warn .ctx-progress-fill { background: #dc2626; }
+.ctx-progress-text { font-size: 9.5px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; white-space: nowrap; margin-left: auto; }
+.ctx-progress.warn .ctx-progress-text { color: #dc2626; }
+.ctx-tag-compacted { font-size: 9px; color: #16a34a; align-self: flex-start; }
 
 .panel-enter-active, .panel-leave-active { transition: opacity 0.25s cubic-bezier(0.16,1,0.3,1), transform 0.25s cubic-bezier(0.16,1,0.3,1); }
 .panel-enter-from, .panel-leave-to { opacity: 0; transform: translateY(16px) scale(0.94); }
 .msg { animation: msg-in 0.3s cubic-bezier(0.16,1,0.3,1); }
 @keyframes msg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* /model 模型选择弹窗 */
+.picker-mask { position: absolute; inset: 0; background: rgba(28,25,23,0.32); z-index: 10020; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
+.picker-dialog { width: 380px; max-height: 70vh; background: #fafaf9; border-radius: 12px; box-shadow: 0 16px 48px rgba(28,25,23,0.24); display: flex; flex-direction: column; overflow: hidden; }
+.picker-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #e7e5e4; }
+.picker-title { font-size: 13.5px; font-weight: 600; color: #1c1917; }
+.picker-hint { font-size: 10.5px; color: #a8a29e; flex: 1; text-align: center; }
+.picker-close { width: 26px; height: 26px; border: none; background: transparent; color: #78716c; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+.picker-close:hover { background: #e7e5e4; color: #1c1917; }
+.picker-body { flex: 1; overflow-y: auto; padding: 8px; }
+.picker-body::-webkit-scrollbar { width: 6px; }
+.picker-body::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
+.picker-group { margin-bottom: 4px; }
+.picker-group-name { font-size: 11px; font-weight: 600; color: #a8a29e; padding: 8px 10px 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+.picker-model { padding: 9px 10px; border-radius: 8px; cursor: pointer; transition: background 0.12s; }
+.picker-model:hover { background: #f5f5f4; }
+.picker-model.active { background: rgba(193,95,60,0.08); }
+.picker-model-name { font-size: 12.5px; font-weight: 500; color: #1c1917; display: flex; align-items: center; gap: 6px; }
+.picker-model.active .picker-model-name { color: #c15f3c; }
+.picker-model-ctx { font-size: 9.5px; color: #a8a29e; background: #e7e5e4; padding: 1px 5px; border-radius: 3px; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
+.picker-model-id { font-size: 10.5px; color: #a8a29e; margin-top: 2px; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
+.picker-empty { text-align: center; color: #a8a29e; padding: 32px 0; font-size: 13px; }
+
+.picker-enter-active, .picker-leave-active { transition: opacity 0.2s ease; }
+.picker-enter-from, .picker-leave-to { opacity: 0; }
+.picker-enter-active .picker-dialog, .picker-leave-active .picker-dialog { transition: transform 0.2s cubic-bezier(0.16,1,0.3,1); }
+.picker-enter-from .picker-dialog, .picker-leave-to .picker-dialog { transform: scale(0.96) translateY(8px); }
 </style>

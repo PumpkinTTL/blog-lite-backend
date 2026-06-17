@@ -46,6 +46,24 @@ export class AiConversationEntity {
   })
   completionTokens: number;
 
+  /** 最近一轮输入 token（网关单次值，进度条/当前占用用，对齐模型上下文窗口） */
+  @Column({
+    name: 'last_prompt_tokens',
+    type: 'int',
+    default: 0,
+    comment: '最近一轮输入 token',
+  })
+  lastPromptTokens: number;
+
+  /** 最近一轮输出 token */
+  @Column({
+    name: 'last_completion_tokens',
+    type: 'int',
+    default: 0,
+    comment: '最近一轮输出 token',
+  })
+  lastCompletionTokens: number;
+
   /** 对话轮次（每完成一轮 assistant 回复 +1） */
   @Column({
     name: 'rounds',

@@ -46,6 +46,8 @@ export function generateByAi(data: AiGeneratePayload) {
 /** 压缩历史返回 */
 export interface AiCompactResult {
   summary: string
+  /** 压缩这次调用消耗的 token（prompt = 被压缩历史体积，completion = 摘要体积） */
+  usage: AiUsage | null
 }
 
 /**
@@ -57,14 +59,14 @@ export interface AiCompactResult {
  *
  * @param onToken 每个摘要 token 片段回调（实时）
  * @param onThinking 可选：思考过程回调
- * @returns 完整摘要文本
+ * @returns { summary, usage } usage.promptTokens = 被压缩的历史体积
  */
 export async function streamCompact(
   messages: AiChatMessage[],
   model: string | undefined,
   onToken: (text: string) => void,
   onThinking?: (text: string) => void,
-): Promise<string> {
+): Promise<AiCompactResult> {
   const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
   const baseURL = import.meta.env.VITE_API_BASE_URL
 
@@ -86,6 +88,7 @@ export async function streamCompact(
   const decoder = new TextDecoder()
   let buffer = ''
   let summary = ''
+  let usage: AiUsage | null = null
 
   while (true) {
     const { done, value } = await reader.read()
@@ -105,6 +108,12 @@ export async function streamCompact(
         } else if (evt.type === 'token' && typeof evt.data?.text === 'string') {
           summary += evt.data.text
           onToken(evt.data.text)
+        } else if (evt.type === 'usage' && evt.data?.totalTokens != null) {
+          usage = {
+            promptTokens: evt.data.promptTokens ?? 0,
+            completionTokens: evt.data.completionTokens ?? 0,
+            totalTokens: evt.data.totalTokens ?? 0,
+          }
         } else if (evt.type === 'done' && typeof evt.data?.summary === 'string') {
           // 网关结束时的完整摘要，作为权威值（覆盖本地拼接，避免丢末尾）
           summary = evt.data.summary
@@ -117,7 +126,7 @@ export async function streamCompact(
     }
   }
 
-  return summary
+  return { summary, usage }
 }
 
 /**

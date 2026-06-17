@@ -44,6 +44,8 @@ export class AiConversationService {
         model: e.model,
         promptTokens: e.promptTokens ?? 0,
         completionTokens: e.completionTokens ?? 0,
+        lastPromptTokens: e.lastPromptTokens ?? 0,
+        lastCompletionTokens: e.lastCompletionTokens ?? 0,
         rounds: e.rounds ?? 0,
         compactionTokens: e.compactionTokens ?? 0,
         compactedAt: e.compactedAt ?? null,
@@ -68,9 +70,11 @@ export class AiConversationService {
     if (item) {
       item.messages = messagesJson;
       if (dto.model !== undefined) item.model = dto.model;
-      // token / 轮次：前端传全量累计值直接覆盖（前端是唯一写入方）
+      // token / 轮次：前端传全量值直接覆盖（前端是唯一写入方）
       item.promptTokens = dto.promptTokens ?? item.promptTokens ?? 0;
       item.completionTokens = dto.completionTokens ?? item.completionTokens ?? 0;
+      item.lastPromptTokens = dto.lastPromptTokens ?? item.lastPromptTokens ?? 0;
+      item.lastCompletionTokens = dto.lastCompletionTokens ?? item.lastCompletionTokens ?? 0;
       item.rounds = dto.rounds ?? item.rounds ?? 0;
       // 压缩字段
       if (dto.compactionSummary !== undefined) {
@@ -96,6 +100,8 @@ export class AiConversationService {
         model: dto.model ?? null,
         promptTokens: dto.promptTokens ?? 0,
         completionTokens: dto.completionTokens ?? 0,
+        lastPromptTokens: dto.lastPromptTokens ?? 0,
+        lastCompletionTokens: dto.lastCompletionTokens ?? 0,
         rounds: dto.rounds ?? 0,
         compactionSummary: dto.compactionSummary ?? null,
         compactionMessages: dto.compactionMessages

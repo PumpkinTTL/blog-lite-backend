@@ -174,53 +174,6 @@ export class AiService {
   }
 
   /**
-   * Agent 单步调用：聚合 content 与 tool_calls（按 index 聚合分片增量）。
-   * 返回 { content, toolCalls, finishReason }，供前端判断是出文本还是执行工具。
-   * 仅供 /ai/chat 的 agent 流程使用，不影响现有 generate* 方法。
-   */
-  async chatOnce(
-    messages: AiChatMessage[],
-    options?: { tools?: boolean; model?: string },
-  ): Promise<{
-    content: string;
-    toolCalls: AiToolCall[];
-    finishReason: string;
-  }> {
-    const cfg = await this.getConfig();
-    const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-    const usedModel = options?.model ?? cfg.defaultModel;
-    const useTools = options?.tools ?? true;
-    const body: Record<string, unknown> = {
-      model: usedModel,
-      messages,
-      stream: true,
-    };
-    if (useTools) {
-      body.tools = POST_AGENT_TOOLS;
-      body.tool_choice = 'auto';
-    }
-    try {
-      const { data } = await firstValueFrom(
-        this.httpService.post<Readable>(url, body, {
-          headers: {
-            Authorization: `Bearer ${cfg.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          responseType: 'stream',
-        }),
-      );
-      return await this.aggregateStreamWithTools(data);
-    } catch (e) {
-      if (e instanceof BadGatewayException) throw e;
-      const err = e as AxiosError;
-      this.logger.error(
-        `AI agent 调用失败 model=${usedModel} status=${err.response?.status} body=${this.describeErrBody(err.response?.data)}`,
-      );
-      throw new BadGatewayException('AI 服务调用失败，请稍后重试');
-    }
-  }
-
-  /**
    * 获取原始 SSE 流（供 controller 直接流式转发给前端）。
    * 返回 Readable，上层自行解析 delta.content。
    * 仅供 /ai/chat 的流式 token 输出使用。
@@ -281,8 +234,11 @@ export class AiService {
       role: 'system',
       content: POST_AGENT_SYSTEM_PROMPT + ctxText,
     };
-    // system 永远放最前，history 其余按原序
-    return [systemMsg, ...history.filter((m) => m.role !== 'system')];
+    // 在最前加自己的 system prompt（身份+文章context），保留 history 原样。
+    // 注意：history 里可能含压缩后的 system 摘要（前端 buildGatewayMessages 注入），
+    // 不能过滤掉它，否则压缩摘要会丢失、模型完全不知道之前聊过什么。
+    // OpenAI 兼容协议允许多个 system 消息，按顺序生效。
+    return [systemMsg, ...history];
   }
 
   /**
@@ -312,75 +268,6 @@ export class AiService {
       }
     }
     return full.trim();
-  }
-
-  /**
-   * 双通道聚合 SSE 流：同时累加 content 与按 index 聚合 tool_calls 分片增量。
-   * OpenAI 流式 tool_calls 是分片返回的（每个 chunk 只给 arguments 的一截），
-   * 需按 delta.tool_calls[].index 拼接，最终解析出完整工具调用列表。
-   */
-  private async aggregateStreamWithTools(stream: Readable): Promise<{
-    content: string;
-    toolCalls: AiToolCall[];
-    finishReason: string;
-  }> {
-    let buffer = '';
-    let full = '';
-    let finishReason = 'stop';
-    // 按 index 聚合 tool_call 分片
-    const slots: Record<number, AiToolCall> = {};
-
-    for await (const chunk of stream) {
-      buffer += chunk.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        const s = line.trim();
-        if (!s.startsWith('data:')) continue;
-        const payload = s.slice(5).trim();
-        if (payload === '[DONE]' || payload === '') continue;
-        try {
-          const json = JSON.parse(payload);
-          const choice = json.choices?.[0];
-          if (!choice) continue;
-          if (choice.finish_reason) finishReason = choice.finish_reason;
-          const delta = choice.delta;
-
-          // 1) 文本通道
-          if (typeof delta?.content === 'string') full += delta.content;
-
-          // 2) 工具调用通道：按 index 聚合分片
-          const tcs = delta?.tool_calls;
-          if (Array.isArray(tcs)) {
-            for (const tc of tcs) {
-              const idx = typeof tc.index === 'number' ? tc.index : 0;
-              const slot = (slots[idx] ??= {
-                id: '',
-                type: 'function' as const,
-                function: { name: '', arguments: '' },
-              });
-              if (tc.id) slot.id = tc.id;
-              if (tc.function?.name) slot.function.name += tc.function.name;
-              if (tc.function?.arguments) slot.function.arguments += tc.function.arguments;
-            }
-          }
-        } catch {
-          // 单行解析失败时跳过
-        }
-      }
-    }
-
-    const toolCalls = Object.keys(slots)
-      .map((k) => Number(k))
-      .sort((a, b) => a - b)
-      .map((k) => slots[k])
-      .filter((tc) => tc.function.name); // 过滤掉无名空槽
-
-    return {
-      content: full.trim(),
-      toolCalls,
-      finishReason,
-    };
   }
 
   /** 生成一句话副标题（≤ 50 字） */

@@ -35,6 +35,8 @@ export class AiConversationController {
       model: item.model,
       promptTokens: item.promptTokens ?? 0,
       completionTokens: item.completionTokens ?? 0,
+      lastPromptTokens: item.lastPromptTokens ?? 0,
+      lastCompletionTokens: item.lastCompletionTokens ?? 0,
       rounds: item.rounds ?? 0,
       compactionSummary: item.compactionSummary ?? null,
       compactionMessages,

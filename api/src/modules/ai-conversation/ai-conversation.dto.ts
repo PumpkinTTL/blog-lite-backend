@@ -13,7 +13,7 @@ export class SaveConversationDto {
   @IsOptional()
   model?: string;
 
-  /** 累计输入 token（持久化，重开不重算） */
+  /** 累计输入 token（持久化，重开不重算，审计用） */
   @IsInt()
   @Min(0)
   @IsOptional()
@@ -24,6 +24,18 @@ export class SaveConversationDto {
   @Min(0)
   @IsOptional()
   completionTokens?: number;
+
+  /** 最近一轮输入 token（进度条/当前占用用，对齐模型上下文窗口） */
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  lastPromptTokens?: number;
+
+  /** 最近一轮输出 token */
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  lastCompletionTokens?: number;
 
   /** 对话轮次 */
   @IsInt()

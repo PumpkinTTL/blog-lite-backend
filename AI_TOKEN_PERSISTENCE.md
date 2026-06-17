@@ -56,8 +56,10 @@
 
 ```sql
 ALTER TABLE ai_conversations
-  ADD COLUMN prompt_tokens INT NOT NULL DEFAULT 0 COMMENT '累计输入 token',
+  ADD COLUMN prompt_tokens INT NOT NULL DEFAULT 0 COMMENT '累计输入 token(审计用)',
   ADD COLUMN completion_tokens INT NOT NULL DEFAULT 0 COMMENT '累计输出 token',
+  ADD COLUMN last_prompt_tokens INT NOT NULL DEFAULT 0 COMMENT '最近一轮输入 token(进度条当前占用)',
+  ADD COLUMN last_completion_tokens INT NOT NULL DEFAULT 0 COMMENT '最近一轮输出 token',
   ADD COLUMN rounds INT NOT NULL DEFAULT 0 COMMENT '对话轮次',
   ADD COLUMN compaction_summary LONGTEXT NULL COMMENT '最新历史压缩摘要(覆盖式)',
   ADD COLUMN compaction_messages LONGTEXT NULL COMMENT '压缩点之后的新对话JSON',
@@ -86,4 +88,44 @@ ALTER TABLE ai_conversations
 
 **关键**：去看 AI 对话历史管理页，看到的永远是完整 user/assistant 往返，
 摘要只是后台省 token 的手段，不破坏历史可见性。
+
+## 问题 4：压缩超时 / 循环引用 / 摘要丢失（三连修复）
+
+压缩机制上线后连续暴露三个 bug，已全部修复：
+
+1. **压缩 10s 超时**：`compactHistory` 走全局 axios 实例（timeout=10000），大历史压缩来不及返回被掐断。
+   - 修复：`compactHistory` 单独传 `timeout: 180000`；后端 `chat()` 加 `timeout: 300000` 上限。
+   - 后续压缩改为 SSE 流式（见问题 5），不再受 axios 超时影响。
+
+2. **Converting circular structure to JSON**：stream 模式下 `err.response.data` 是未消费的 Readable（含 TLSSocket 引用），catch 块 `JSON.stringify` 它触发循环引用，异常逃出 catch 变成 500。
+   - 修复：新增 `describeErrBody()` 安全描述响应体，stream/不可序列化对象不再 stringify。
+   - 影响：`chat()` / `chatOnce()` 两处 catch（chatOnce 已删，见下）。
+
+3. **压缩后 AI 失忆（严重）**：后端 `buildAgentMessages` 用 `history.filter(m => m.role !== 'system')` 把前端注入的压缩摘要（system 角色）整个过滤掉了。
+   - 修复：后端不再过滤 history 里的 system，保留原样（OpenAI 兼容允许多 system 按顺序生效）。
+
+## 问题 5：压缩流式化 + 结构化摘要 + token 浪费优化
+
+对齐 opencode / Claude 的 session summary 体验：
+
+1. **压缩改为 SSE 流式可见**：`/ai/compact` 从非流式改为流式转发 token/thinking，前端 `streamCompact` 用 fetch 消费 SSE，实时显示压缩生成过程（不再是黑盒等待）。后端 `openStream` 加 `withTools` 参数，压缩传 `false`（纯文本生成不调工具）。
+
+2. **结构化压缩 prompt**：`ai.prompts.ts` 新增 `CONVERSATION_COMPACT_SYSTEM_PROMPT`，摘要按 目标/已完成/进行中/受阻/关键决策/下一步/关键上下文 分节输出。高信息密度，第二人称。
+
+3. **token 口径修正（两套分离）**：
+   - 进度条/防溢出 = 最近一轮 `usage.total_tokens`（对齐模型 maxContextTokens）
+   - 累计消耗/算钱 = 跨轮累加 total
+   - agent 一轮多步只算 1 轮（`commitRoundUsage` 取最大 prompt 步 + 累加 completion）
+   - 详见 `CONTEXT_TOKEN_CALC.md`
+
+4. **token 浪费优化**：`get_article` 去掉正文前 2000 字预览（~2800 token，每次调用都留在历史重发），改为只返回元数据+字数，AI 要看正文主动调 `get_content_section` 分段读。
+
+5. **斜杠命令菜单**：输入框打 `/` 弹出内置命令（业界标准），方向键选择，回车/Tab 执行，Esc 关闭。`slashCommands` 数组可扩展。当前命令：
+   - `/compact` —— 直接压缩历史（特殊操作）
+   - `/model` —— 弹出模型选择弹窗（面板内部 absolute 定位，按 provider 分组，显示上下文长度标签），切换后本地持久化
+   - `/encourage` —— 填入"生成鼓励话术"预设 prompt
+   - `/idea` —— 填入"生成延展选题"预设 prompt
+
+6. **清理**：删除死代码 `chatOnce` + `aggregateStreamWithTools`（controller 改用 openStream 后无调用方）。`onBeforeUnmount` 补 `persistConversation()` 避免关闭丢轮。
+
 

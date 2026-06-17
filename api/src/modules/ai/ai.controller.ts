@@ -88,6 +88,16 @@ export class AiController {
           if (payload === '[DONE]' || payload === '') continue;
           try {
             const json = JSON.parse(payload);
+            // usage 帧（流末尾，choices 可能为空，单独解析）。
+            // 这是压缩这次调用的真实 token：prompt_tokens 就是"被压缩的历史体积"，
+            // 前端用它减去摘要体积，得到真正释放的 token。
+            if (json.usage) {
+              writeEvent('usage', {
+                promptTokens: json.usage.prompt_tokens ?? 0,
+                completionTokens: json.usage.completion_tokens ?? 0,
+                totalTokens: json.usage.total_tokens ?? 0,
+              });
+            }
             const delta = json.choices?.[0]?.delta;
             // 实时转发摘要 token
             if (typeof delta?.content === 'string' && delta.content) {

@@ -7,10 +7,14 @@ export interface AiConversation {
   /** 消息条数（列表接口已解析，前端不再自己 Array.isArray 判断） */
   messageCount?: number
   model: string | null
-  /** 累计输入 token */
+  /** 累计输入 token（审计用） */
   promptTokens?: number
   /** 累计输出 token */
   completionTokens?: number
+  /** 最近一轮输入 token（进度条/当前占用用，对齐模型上下文窗口） */
+  lastPromptTokens?: number
+  /** 最近一轮输出 token */
+  lastCompletionTokens?: number
   /** 对话轮次 */
   rounds?: number
   createdAt: string
@@ -54,6 +58,8 @@ export function saveConversation(data: {
   model?: string
   promptTokens?: number
   completionTokens?: number
+  lastPromptTokens?: number
+  lastCompletionTokens?: number
   rounds?: number
   compactionSummary?: string | null
   compactionMessages?: unknown[]
