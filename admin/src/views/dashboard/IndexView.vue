@@ -41,29 +41,6 @@ const username = computed(() => {
   return 'Admin'
 })
 
-// === 快捷指标 ===
-interface StatCard {
-  label: string; key: keyof DashboardStats; icon: any
-  color: string; bg: string; link?: string
-}
-const statCards: StatCard[] = [
-  { label: '文章总数', key: 'postCount', icon: DocumentTextOutline, color: '#2563EB', bg: 'rgba(37,99,235,0.08)', link: '/posts' },
-  { label: '已发布', key: 'publishedCount', icon: PaperPlaneOutline, color: '#0891B2', bg: 'rgba(8,145,178,0.08)', link: '/posts' },
-  { label: '草稿', key: 'draftCount', icon: CreateOutline, color: '#6B7280', bg: 'rgba(107,114,128,0.08)', link: '/posts' },
-  { label: '分类', key: 'categoryCount', icon: FolderOutline, color: '#7C3AED', bg: 'rgba(124,58,237,0.08)' },
-  { label: '标签', key: 'tagCount', icon: PricetagsOutline, color: '#D97706', bg: 'rgba(217,119,6,0.08)' },
-  { label: '用户', key: 'userCount', icon: PeopleOutline, color: '#DB2777', bg: 'rgba(219,39,119,0.08)' },
-  { label: '待审评论', key: 'pendingCommentCount', icon: ChatbubblesOutline, color: '#DC2626', bg: 'rgba(220,38,38,0.08)', link: '/comments' },
-  { label: '总点赞', key: 'likeCount', icon: HeartOutline, color: '#E11D48', bg: 'rgba(225,29,72,0.08)' },
-  { label: '总收藏', key: 'favoriteCount', icon: StarOutline, color: '#CA8A04', bg: 'rgba(202,138,4,0.08)' },
-  { label: '总阅读', key: 'totalViews', icon: EyeOutline, color: '#059669', bg: 'rgba(5,150,105,0.08)' },
-]
-
-const donation = computed(() => {
-  const list = stats.value.donationTotalAmount || []
-  return list.find((d: any) => d.currency === 'CNY') || list[0] || null
-})
-
 // === ECharts refs ===
 let trendChart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
@@ -115,6 +92,11 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(h / 24)} 天前`
 }
 
+const donation = computed(() => {
+  const list = stats.value.donationTotalAmount || []
+  return list.find((d: any) => d.currency === 'CNY') || list[0] || null
+})
+
 // === 图表 ===
 function renderTrendChart() {
   if (!trendEl.value) return
@@ -124,7 +106,7 @@ function renderTrendChart() {
   trendChart.setOption({
     animation: true, animationDuration: 600,
     tooltip: { trigger: 'axis', backgroundColor: tooltipBg(), borderColor: '#E2E8F0', textStyle: { color: '#1E293B', fontSize: 12 }, extraCssText: 'border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.08);' },
-    legend: { data: ['点赞', '收藏'], top: 4, right: 4, itemGap: 16, textStyle: { color: tc, fontSize: 11 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
+    legend: { data: ['点赞', '收藏'], top: 4, right: 4, itemGap: 12, textStyle: { color: tc, fontSize: 11 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
     grid: { left: 36, right: 16, top: 36, bottom: 24 },
     xAxis: { type: 'category', data: trend.map((t: any) => t.date.slice(5)), axisLine: { lineStyle: { color: axisColor() } }, axisLabel: { color: tc, fontSize: 10 }, axisTick: { show: false } },
     yAxis: { type: 'value', minInterval: 1, axisLine: { show: false }, axisLabel: { color: tc, fontSize: 10 }, splitLine: { lineStyle: { color: axisColor(), type: 'dashed' } } },
@@ -160,7 +142,7 @@ function renderDonChart() {
   donChart.setOption({
     animation: true, animationDuration: 600,
     tooltip: { trigger: 'axis', backgroundColor: tooltipBg(), borderColor: '#E2E8F0', textStyle: { color: '#1E293B', fontSize: 12 }, extraCssText: 'border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.08);' },
-    legend: { data: ['金额', '笔数'], top: 4, right: 4, itemGap: 16, textStyle: { color: tc, fontSize: 11 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
+    legend: { data: ['金额', '笔数'], top: 4, right: 4, itemGap: 12, textStyle: { color: tc, fontSize: 11 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
     grid: { left: 40, right: 44, top: 36, bottom: 24 },
     xAxis: { type: 'category', data: data.map((t: any) => t.date.slice(5)), axisLine: { lineStyle: { color: axisColor() } }, axisLabel: { color: tc, fontSize: 10 }, axisTick: { show: false } },
     yAxis: [
@@ -187,272 +169,275 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="dash" :class="{ 'is-dark': isDark }">
-
-    <!-- === Top Bar === -->
-    <div class="dash-topbar">
-      <div>
-        <h1 class="topbar-title">仪表盘</h1>
-        <p class="topbar-sub">{{ getTodayDate() }}</p>
-      </div>
-      <div class="topbar-actions">
-        <n-button size="small" quaternary @click="router.push('/posts/create')">
-          <template #icon><n-icon size="16"><CreateOutline /></n-icon></template>
-          写文章
-        </n-button>
-        <n-button size="small" quaternary @click="router.push('/membership')">
-          <template #icon><n-icon size="16"><GiftOutline /></n-icon></template>
-          会员
-        </n-button>
-        <n-button size="small" :loading="loading" @click="loadStats" quaternary>
-          <template #icon><n-icon size="16"><RefreshOutline /></n-icon></template>
-        </n-button>
-      </div>
-    </div>
-
     <n-spin :show="loading">
-    <div class="dash-body">
+      <div class="dash-body">
 
-      <!-- === Welcome Banner === -->
-      <div class="welcome-banner">
-        <div class="wb-left">
-          <p class="wb-greeting">{{ getGreeting() }}，{{ username }}</p>
-          <p class="wb-desc">欢迎回到管理后台。共有 <b>{{ stats.postCount }}</b> 篇文章，<b>{{ stats.userCount }}</b> 位用户。</p>
-        </div>
-        <div class="wb-right">
-          <div class="wb-stat">
-            <span class="wbs-val">{{ fmtNum(stats.totalViews) }}</span>
-            <span class="wbs-label">总阅读量</span>
+        <!-- === Compact Header === -->
+        <div class="compact-header">
+          <div class="ch-left">
+            <h1 class="ch-title">仪表盘</h1>
+            <span class="ch-greeting">{{ getGreeting() }}，{{ username }}</span>
+            <span class="ch-date">{{ getTodayDate() }}</span>
           </div>
-          <div class="wb-stat">
-            <span class="wbs-val">{{ fmtNum(stats.likeCount) }}</span>
-            <span class="wbs-label">总互动</span>
+          <div class="ch-actions">
+            <n-button size="small" quaternary @click="router.push('/posts/create')">
+              <template #icon><n-icon size="14"><CreateOutline /></n-icon></template>
+              写文章
+            </n-button>
+            <n-button size="small" quaternary @click="router.push('/membership')">
+              <template #icon><n-icon size="14"><GiftOutline /></n-icon></template>
+              会员
+            </n-button>
+            <n-button size="small" :loading="loading" @click="loadStats" quaternary>
+              <template #icon><n-icon size="14"><RefreshOutline /></n-icon></template>
+            </n-button>
           </div>
         </div>
-      </div>
 
-      <!-- === KPI Cards === -->
-      <div class="kpi-grid">
-        <div
-          v-for="c in statCards" :key="c.key"
-          class="kpi-card"
-          :class="{ clickable: !!c.link }"
-          @click="c.link && router.push(c.link)"
-        >
-          <div class="kpi-top">
-            <span class="kpi-label">{{ c.label }}</span>
-            <div class="kpi-icon" :style="{ color: c.color, background: c.bg }">
-              <n-icon size="16"><component :is="c.icon" /></n-icon>
+        <!-- === Compact Stats Grid (4 columns) === -->
+        <div class="stats-grid">
+          <!-- Row 1: Core content stats -->
+          <div class="stat-box clickable" @click="router.push('/posts')">
+            <div class="sb-icon" style="color:#2563EB;background:rgba(37,99,235,0.1)"><n-icon size="16"><DocumentTextOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.postCount) }}</span>
+              <span class="sb-label">文章</span>
             </div>
           </div>
-          <div class="kpi-value">{{ fmtNum((stats as any)[c.key]) }}</div>
-        </div>
-      </div>
+          <div class="stat-box clickable" @click="router.push('/posts')">
+            <div class="sb-icon" style="color:#0891B2;background:rgba(8,145,178,0.1)"><n-icon size="16"><PaperPlaneOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.publishedCount) }}</span>
+              <span class="sb-label">已发布</span>
+            </div>
+          </div>
+          <div class="stat-box clickable" @click="router.push('/posts')">
+            <div class="sb-icon" style="color:#6B7280;background:rgba(107,114,128,0.1)"><n-icon size="16"><CreateOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.draftCount) }}</span>
+              <span class="sb-label">草稿</span>
+            </div>
+          </div>
+          <div class="stat-box">
+            <div class="sb-icon" style="color:#7C3AED;background:rgba(124,58,237,0.1)"><n-icon size="16"><FolderOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.categoryCount) }}</span>
+              <span class="sb-label">分类</span>
+            </div>
+          </div>
 
-      <!-- === Donation Hero (only if has donations) === -->
-      <div v-if="donation && stats.donationCount > 0" class="donation-hero" @click="router.push('/donations')">
-        <div class="dh-icon">
-          <n-icon size="22"><CashOutline /></n-icon>
-        </div>
-        <div class="dh-body">
-          <span class="dh-amount">{{ donation.currency === 'CNY' ? '¥' : '$' }}{{ donation.amount.toLocaleString('zh-CN', { minimumFractionDigits: donation.amount % 1 === 0 ? 0 : 2 }) }}</span>
-          <span class="dh-label">累计捐赠</span>
-        </div>
-        <div class="dh-divider" />
-        <div class="dh-body">
-          <span class="dh-amount">{{ stats.donationCount }}</span>
-          <span class="dh-label">捐赠笔数</span>
-        </div>
-      </div>
+          <!-- Row 2: User & interaction -->
+          <div class="stat-box">
+            <div class="sb-icon" style="color:#D97706;background:rgba(217,119,6,0.1)"><n-icon size="16"><PricetagsOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.tagCount) }}</span>
+              <span class="sb-label">标签</span>
+            </div>
+          </div>
+          <div class="stat-box clickable" @click="router.push('/users')">
+            <div class="sb-icon" style="color:#DB2777;background:rgba(219,39,119,0.1)"><n-icon size="16"><PeopleOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.userCount) }}</span>
+              <span class="sb-label">用户</span>
+            </div>
+          </div>
+          <div class="stat-box clickable" @click="router.push('/comments')">
+            <div class="sb-icon" style="color:#DC2626;background:rgba(220,38,38,0.1)"><n-icon size="16"><ChatbubblesOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.pendingCommentCount) }}</span>
+              <span class="sb-label">待审</span>
+            </div>
+          </div>
+          <div class="stat-box">
+            <div class="sb-icon" style="color:#059669;background:rgba(5,150,105,0.1)"><n-icon size="16"><EyeOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.totalViews) }}</span>
+              <span class="sb-label">阅读</span>
+            </div>
+          </div>
 
-      <!-- === Charts Row === -->
-      <div class="section-title">数据趋势</div>
-      <div class="chart-row">
-        <div class="chart-card">
-          <div class="chart-hd">
-            <span class="chart-title">7 天互动</span>
+          <!-- Row 3: Engagement -->
+          <div class="stat-box">
+            <div class="sb-icon" style="color:#E11D48;background:rgba(225,29,72,0.1)"><n-icon size="16"><HeartOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.likeCount) }}</span>
+              <span class="sb-label">点赞</span>
+            </div>
           </div>
-          <div ref="trendEl" class="chart-box" />
-        </div>
-        <div class="chart-card">
-          <div class="chart-hd">
-            <span class="chart-title">文章状态</span>
-            <span class="chart-sub">共 {{ stats.postCount }} 篇</span>
+          <div class="stat-box">
+            <div class="sb-icon" style="color:#CA8A04;background:rgba(202,138,4,0.1)"><n-icon size="16"><StarOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ fmtNum(stats.favoriteCount) }}</span>
+              <span class="sb-label">收藏</span>
+            </div>
           </div>
-          <div ref="pieEl" class="chart-box" />
-        </div>
-        <div class="chart-card" v-if="stats.donationTrend.length > 0">
-          <div class="chart-hd">
-            <span class="chart-title">捐赠趋势</span>
+          <div v-if="donation && stats.donationCount > 0" class="stat-box clickable" @click="router.push('/donations')">
+            <div class="sb-icon" style="color:#059669;background:rgba(5,150,105,0.1)"><n-icon size="16"><CashOutline /></n-icon></div>
+            <div class="sb-body">
+              <span class="sb-val">{{ donation.currency === 'CNY' ? '¥' : '$' }}{{ donation.amount }}</span>
+              <span class="sb-label">捐赠</span>
+            </div>
           </div>
-          <div ref="donEl" class="chart-box" />
+          <div v-else class="stat-box empty"></div>
         </div>
-      </div>
 
-      <!-- === Bottom Row: Top Posts + Recent Users === -->
-      <div class="bottom-grid">
-        <!-- 热门文章 -->
-        <div class="chart-card">
-          <div class="chart-hd">
-            <span class="chart-title">热门文章</span>
-            <span class="chart-sub link" @click="router.push('/posts')">全部 →</span>
+        <!-- === Charts Row === -->
+        <div class="charts-row">
+          <div class="chart-box">
+            <div class="chart-hd"><span>7天互动</span></div>
+            <div ref="trendEl" class="chart-canvas" />
           </div>
-          <div v-if="stats.topPosts.length === 0" class="empty-row">暂无数据</div>
-          <div v-for="(p, i) in stats.topPosts.slice(0, 5)" :key="p.id" class="post-row" @click="router.push(`/posts/${p.id}/edit`)">
-            <span class="pr-rank" :class="'rank-' + (i + 1)">{{ i + 1 }}</span>
-            <div class="pr-info">
-              <span class="pr-title">{{ p.title }}</span>
-              <span class="pr-meta">
-                <n-icon size="11"><EyeOutline /></n-icon> {{ fmtNum(p.viewCount) }}
-                <n-icon size="11" style="margin-left:8px"><HeartOutline /></n-icon> {{ fmtNum(p.likeCount) }}
-              </span>
+          <div class="chart-box">
+            <div class="chart-hd"><span>文章状态</span></div>
+            <div ref="pieEl" class="chart-canvas" />
+          </div>
+          <div v-if="stats.donationTrend.length > 0" class="chart-box">
+            <div class="chart-hd"><span>捐赠趋势</span></div>
+            <div ref="donEl" class="chart-canvas" />
+          </div>
+        </div>
+
+        <!-- === Bottom Lists === -->
+        <div class="lists-row">
+          <div class="list-box">
+            <div class="list-hd"><span>热门文章</span><a @click="router.push('/posts')">全部</a></div>
+            <div v-if="stats.topPosts.length === 0" class="list-empty">暂无数据</div>
+            <div v-for="(p, i) in stats.topPosts.slice(0, 5)" :key="p.id" class="list-item" @click="router.push(`/posts/${p.id}/edit`)">
+              <span class="li-rank" :class="'r'+(i+1)">{{ i+1 }}</span>
+              <span class="li-title">{{ p.title }}</span>
+              <span class="li-meta"><n-icon size="10"><EyeOutline /></n-icon>{{ fmtNum(p.viewCount) }}</span>
+            </div>
+          </div>
+          <div class="list-box">
+            <div class="list-hd"><span>最近注册</span></div>
+            <div v-if="stats.recentUsers.length === 0" class="list-empty">暂无数据</div>
+            <div v-for="u in stats.recentUsers.slice(0, 5)" :key="u.id" class="list-item">
+              <n-avatar :size="24" round :style="{ background: 'var(--n-fill-color)', fontSize: '12px' }">
+                {{ (u.nickname || u.username).charAt(0).toUpperCase() }}
+              </n-avatar>
+              <span class="li-name">{{ u.nickname || u.username }}</span>
+              <span class="li-time">{{ timeAgo(u.createdAt) }}</span>
             </div>
           </div>
         </div>
 
-        <!-- 新用户 -->
-        <div class="chart-card">
-          <div class="chart-hd">
-            <span class="chart-title">最近注册</span>
-          </div>
-          <div v-if="stats.recentUsers.length === 0" class="empty-row">暂无数据</div>
-          <div v-for="u in stats.recentUsers.slice(0, 5)" :key="u.id" class="user-row">
-            <n-avatar :size="28" round :style="{ background: 'var(--n-fill-color)', fontSize: '13px' }">
-              {{ (u.nickname || u.username).charAt(0).toUpperCase() }}
-            </n-avatar>
-            <span class="ur-name">{{ u.nickname || u.username }}</span>
-            <span class="ur-time">{{ timeAgo(u.createdAt) }}</span>
-          </div>
-        </div>
       </div>
-
-    </div>
     </n-spin>
   </div>
 </template>
 
 <style scoped>
-/* === Base === */
-.dash { min-height: 100%; padding-bottom: 40px; }
-.dash-body { display: flex; flex-direction: column; gap: 16px; }
+.dash { min-height: 100%; }
+.dash-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 
-/* === Top Bar === */
-.dash-topbar {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  margin-bottom: 20px;
-}
-.topbar-title { margin: 0; font-size: 22px; font-weight: 700; color: var(--n-text-color); letter-spacing: -0.02em; }
-.topbar-sub { margin: 3px 0 0; font-size: 12.5px; color: var(--n-text-color-3); }
-.topbar-actions { display: flex; gap: 4px; align-items: center; }
-
-/* === Welcome Banner === */
-.welcome-banner {
+/* === Compact Header === */
+.compact-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 24px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(37,99,235,0.05) 0%, rgba(139,92,246,0.03) 100%);
+  padding: 8px 0;
+}
+.ch-left { display: flex; align-items: baseline; gap: 16px; }
+.ch-title { margin: 0; font-size: 18px; font-weight: 700; color: var(--n-text-color); }
+.ch-greeting { font-size: 13px; color: var(--n-text-color-2); }
+.ch-date { font-size: 12px; color: var(--n-text-color-3); }
+.ch-actions { display: flex; gap: 4px; }
+
+/* === Stats Grid (4 columns, tight) === */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.stat-box {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--n-card-color);
   border: 1px solid var(--n-border-color);
 }
-.is-dark .welcome-banner {
-  background: linear-gradient(135deg, rgba(37,99,235,0.1) 0%, rgba(139,92,246,0.06) 100%);
+.stat-box.clickable { cursor: pointer; }
+.stat-box.clickable:hover { border-color: var(--n-primary-color); }
+.stat-box.empty { background: transparent; border: none; }
+.sb-icon {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
-.wb-left { display: flex; flex-direction: column; gap: 4px; }
-.wb-greeting { margin: 0; font-size: 17px; font-weight: 700; color: var(--n-text-color); }
-.wb-desc { margin: 0; font-size: 13px; color: var(--n-text-color-3); }
-.wb-desc b { color: var(--n-text-color-2); }
-.wb-right { display: flex; gap: 28px; }
-.wb-stat { text-align: center; }
-.wbs-val { display: block; font-size: 18px; font-weight: 700; color: var(--n-text-color); }
-.wbs-label { display: block; font-size: 11px; color: var(--n-text-color-3); margin-top: 2px; }
+.sb-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sb-val { font-size: 18px; font-weight: 700; color: var(--n-text-color); line-height: 1; }
+.sb-label { font-size: 11px; color: var(--n-text-color-3); }
 
-@media (max-width: 600px) {
-  .welcome-banner { flex-direction: column; align-items: flex-start; gap: 14px; }
-  .wb-right { width: 100%; justify-content: flex-start; }
-}
-
-/* === KPI Grid === */
-.kpi-grid {
+/* === Charts === */
+.charts-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
-.kpi-card {
-  padding: 14px 16px;
-  border-radius: 12px;
+.chart-box {
   background: var(--n-card-color);
   border: 1px solid var(--n-border-color);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  border-radius: 10px;
+  padding: 12px;
 }
-.kpi-card.clickable { cursor: pointer; }
-.kpi-card.clickable:hover { border-color: var(--n-primary-color); box-shadow: 0 2px 12px rgba(37,99,235,0.06); }
-.kpi-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.kpi-label { font-size: 12px; font-weight: 500; color: var(--n-text-color-3); }
-.kpi-icon { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
-.kpi-value { font-size: 24px; font-weight: 700; color: var(--n-text-color); line-height: 1; }
-
-/* === Donation Hero === */
-.donation-hero {
-  display: flex; align-items: center; gap: 18px;
-  padding: 16px 20px; border-radius: 12px;
-  background: linear-gradient(135deg, rgba(5,150,105,0.06) 0%, rgba(52,211,153,0.03) 100%);
-  border: 1px solid rgba(5,150,105,0.15);
-  cursor: pointer; transition: border-color 0.2s;
+.chart-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px; font-weight: 600; color: var(--n-text-color);
 }
-.donation-hero:hover { border-color: rgba(5,150,105,0.35); }
-.dh-icon { width: 40px; height: 40px; border-radius: 10px; background: rgba(5,150,105,0.1); color: #059669; display: flex; align-items: center; justify-content: center; }
-.dh-divider { width: 1px; height: 32px; background: rgba(5,150,105,0.1); }
-.dh-body { display: flex; flex-direction: column; gap: 2px; }
-.dh-amount { font-size: 20px; font-weight: 700; color: var(--n-text-color); }
-.dh-label { font-size: 11px; color: var(--n-text-color-3); }
+.chart-canvas { width: 100%; height: 200px; }
 
-/* === Section Title === */
-.section-title { font-size: 14px; font-weight: 600; color: var(--n-text-color-2); padding-top: 4px; }
-
-/* === Chart Card === */
-.chart-card {
+/* === Lists === */
+.lists-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 12px;
+}
+.list-box {
   background: var(--n-card-color);
-  border-radius: 12px; padding: 18px;
   border: 1px solid var(--n-border-color);
+  border-radius: 10px;
+  padding: 12px;
 }
-.chart-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.chart-title { font-size: 13.5px; font-weight: 600; color: var(--n-text-color); }
-.chart-sub { font-size: 11px; color: var(--n-text-color-3); }
-.chart-sub.link { color: #2563EB; cursor: pointer; }
-.chart-sub.link:hover { text-decoration: underline; }
-.chart-box { width: 100%; height: 220px; }
-
-/* === Chart Row === */
-.chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
-
-/* === Bottom Grid === */
-.bottom-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
-@media (max-width: 900px) { .bottom-grid { grid-template-columns: 1fr; } }
-
-/* === Post Row === */
-.post-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px; border-radius: 8px;
-  cursor: pointer; transition: background 0.15s;
+.list-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px; font-weight: 600; color: var(--n-text-color);
 }
-.post-row:hover { background: var(--n-fill-color); }
-.pr-rank { width: 22px; height: 22px; border-radius: 6px; background: var(--n-fill-color); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #6B7280; flex-shrink: 0; }
-.pr-rank.rank-1 { background: #FEF3C7; color: #B45309; }
-.pr-rank.rank-2 { background: #F1F5F9; color: #64748B; }
-.pr-rank.rank-3 { background: #FEF2F2; color: #B45309; }
-.pr-info { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.pr-title { font-size: 12.5px; color: var(--n-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pr-meta { font-size: 11px; color: var(--n-text-color-3); display: flex; align-items: center; gap: 2px; }
-
-/* === User Row === */
-.user-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; transition: background 0.15s; }
-.user-row:hover { background: var(--n-fill-color); }
-.ur-name { font-size: 13px; color: var(--n-text-color); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ur-time { font-size: 11px; color: var(--n-text-color-3); flex-shrink: 0; }
-
-/* === Empty === */
-.empty-row { padding: 32px 12px; text-align: center; font-size: 12.5px; color: var(--n-text-color-3); }
+.list-hd a { font-size: 11px; color: #2563EB; cursor: pointer; }
+.list-hd a:hover { text-decoration: underline; }
+.list-empty { padding: 20px 0; text-align: center; font-size: 12px; color: var(--n-text-color-3); }
+.list-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--n-border-color);
+  cursor: pointer;
+}
+.list-item:last-child { border-bottom: none; }
+.list-item:hover { background: var(--n-fill-color); margin: 0 -12px; padding: 8px 12px; border-radius: 6px; }
+.li-rank {
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  background: var(--n-fill-color);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600; color: #6B7280;
+  flex-shrink: 0;
+}
+.li-rank.r1 { background: #FEF3C7; color: #B45309; }
+.li-rank.r2 { background: #E5E7EB; color: #374151; }
+.li-rank.r3 { background: #FEF2F2; color: #991B1B; }
+.li-title { flex: 1; min-width: 0; font-size: 12px; color: var(--n-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li-meta { font-size: 10px; color: var(--n-text-color-3); display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.li-name { flex: 1; min-width: 0; font-size: 12px; color: var(--n-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li-time { font-size: 10px; color: var(--n-text-color-3); flex-shrink: 0; }
 
 /* === Responsive === */
-@media (max-width: 1600px) { .kpi-grid { grid-template-columns: repeat(5, 1fr); } }
-@media (max-width: 1200px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 700px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 1200px) {
+  .stats-grid { grid-template-columns: repeat(3, 1fr); }
+  .charts-row { grid-template-columns: 1fr; }
+  .lists-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .compact-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
 </style>
