@@ -961,7 +961,9 @@ function rebuildRenderFromHistory() {
     if (m.role === 'user') {
       addRenderItem({ id: nextId(), kind: 'user', text: m.content })
     } else if (m.role === 'assistant') {
-      addRenderItem({ id: nextId(), kind: 'assistant', replyText: m.content || '', streaming: false })
+      // 纯工具调用轮（content 为空）：不渲染空 assistant 占位，否则留出空头像行导致工具卡片失去对齐参照
+      const hasText = !!(m.content && m.content.trim())
+      if (hasText) addRenderItem({ id: nextId(), kind: 'assistant', replyText: m.content || '', streaming: false })
       if (m.tool_calls) {
         for (const tc of m.tool_calls) {
           const result = toolResults.get(tc.id)
@@ -1112,10 +1114,14 @@ function onInputKeydown(e: KeyboardEvent) {
             </div>
           </div>
 
-          <!-- 工具调用 -->
-          <!-- 工具调用 -->
+          <!-- 工具调用：带头像，与 AI 文本气泡结构一致（avatar + content） -->
           <div v-else class="msg msg-tool">
-            <ToolCallCard :call="item.toolCall!" :status="item.toolStatus || 'pending'" :result="item.toolResult" :progress="item.toolProgress" />
+            <div class="avatar avatar-ai avatar-tool">
+              <n-icon :size="13"><SparklesOutline /></n-icon>
+            </div>
+            <div class="tool-card-wrap">
+              <ToolCallCard :call="item.toolCall!" :status="item.toolStatus || 'pending'" :result="item.toolResult" :progress="item.toolProgress" />
+            </div>
           </div>
         </template>
       </div>
@@ -1352,13 +1358,14 @@ function onInputKeydown(e: KeyboardEvent) {
 .empty-tips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .tip-chip { font-size: 11px; padding: 3px 9px; border-radius: 6px; background: #f5f5f4; border: 1px solid #e7e5e4; color: #57534e; }
 
-.msg { display: flex; gap: 7px; max-width: 100%; }
+.msg { display: flex; gap: 7px; max-width: 100%; align-items: flex-start; }
 /* 用户消息靠右 */
 .msg-user { justify-content: flex-end; }
 /* AI 消息靠左 */
 .msg-ai { justify-content: flex-start; }
-/* 工具调用：和 AI 气泡一样左对齐，留出头像宽度+gap 的缩进 */
-.msg-tool { justify-content: stretch; padding-left: 31px; box-sizing: border-box; }
+/* 工具调用：和 AI 消息一样 avatar + content 左对齐，不再用 padding-left 硬缩进 */
+.msg-tool { justify-content: flex-start; }
+.tool-card-wrap { flex: 1; min-width: 0; }
 
 .bubble-wrap { display: flex; align-items: flex-end; max-width: 80%; }
 .ai-bubble-wrap { flex-direction: column; align-items: flex-start; }
@@ -1378,7 +1385,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .item-usage { font-size: 10px; color: #a8a29e; margin-top: 3px; padding: 0 4px; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
 
 /* 思考折叠块 */
-.think-block { width: 100%; border-radius: 8px; background: #f5f5f4; border: 1px solid #e7e5e4; overflow: hidden; margin-bottom: 5px; }
+.think-block { width: 100%; border-radius: 8px; border-top-left-radius: 4px; background: #f5f5f4; border: 1px solid #e7e5e4; overflow: hidden; margin-bottom: 5px; }
 .think-head { display: flex; align-items: center; gap: 5px; padding: 6px 10px; cursor: pointer; user-select: none; font-size: 11px; color: #78716c; }
 .think-icon { color: #c15f3c; }
 .think-label { font-weight: 500; }
