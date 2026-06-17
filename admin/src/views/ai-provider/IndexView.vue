@@ -66,33 +66,33 @@ function removeModel(idx: number) {
 
 const columns: DataTableColumns<AiProvider> = [
   selectionColumn,
-  { title: 'ID', key: 'id', width: 70 },
-  { title: '名称', key: 'name', width: 120 },
-  { title: 'Base URL', key: 'baseUrl', width: 240, ellipsis: { tooltip: true } },
+  { title: 'ID', key: 'id', width: 60 },
+  { title: '名称', key: 'name', width: 110 },
+  { title: 'Base URL', key: 'baseUrl', width: 200, ellipsis: { tooltip: true } },
   {
-    title: 'API Key', key: 'apiKey', width: 160, ellipsis: { tooltip: true },
+    title: 'API Key', key: 'apiKey', width: 120, ellipsis: { tooltip: true },
     render: (row) => {
       const k = row.apiKey || ''
-      const masked = k.length > 12 ? k.slice(0, 8) + '••••' + k.slice(-4) : '••••'
-      return masked
+      return k.length > 12 ? k.slice(0, 8) + '••••' + k.slice(-4) : '••••'
     },
   },
   {
-    title: '模型', key: 'models', width: 200, ellipsis: { tooltip: true },
+    title: '模型', key: 'models', width: 180, ellipsis: { tooltip: true },
     render: (row) => {
-      const count = row.models?.length ?? 0
-      return count > 0 ? `${count} 个模型` : '—'
+      const models = row.models
+      if (!Array.isArray(models) || models.length === 0) return '—'
+      return models.map((m: any) => m.displayName || m.modelId).join(', ')
     },
   },
-  { title: '备注', key: 'remark', width: 160, ellipsis: { tooltip: true } },
+  { title: '备注', key: 'remark', width: 120, ellipsis: { tooltip: true } },
   {
-    title: '状态', key: 'status', width: 80,
+    title: '状态', key: 'status', width: 60,
     render: (row) => h(NTag, { type: row.status === 1 ? 'success' : 'default', size: 'small' }, { default: () => row.status === 1 ? '启用' : '禁用' }),
   },
-  { title: '创建时间', key: 'createdAt', width: 170 },
+  { title: '创建时间', key: 'createdAt', width: 160, render: (r) => new Date(r.createdAt).toLocaleDateString('zh-CN') },
   {
-    title: '操作', key: 'actions', width: 140, fixed: 'right',
-    render: (row) => h(NSpace, { size: 'small', wrap: false }, {
+    title: '操作', key: 'actions', width: 100, fixed: 'right',
+    render: (row) => h(NSpace, { size: 'small' }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, baseUrl: r.baseUrl, apiKey: r.apiKey, protocol: r.protocol, models: r.models ?? [], remark: r.remark ?? '', status: r.status } as any)) }, {
           default: () => '编辑', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
@@ -134,7 +134,7 @@ const columns: DataTableColumns<AiProvider> = [
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1100" :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1200" :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
