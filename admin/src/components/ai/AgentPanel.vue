@@ -112,6 +112,24 @@ const contextPercent = computed(() => {
 // 80% 起预警，建议压缩
 const contextWarn = computed(() => contextLimit.value > 0 && contextPercent.value >= 80)
 
+/** token 数格式化为 K 单位（与 picker-model-ctx 一致）：1234 → 1.2K，<1000 原样 */
+function formatTokens(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0'
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K'
+  return String(n)
+}
+/** ISO 时间 → 相对时间（如「3分钟前」），失败回落为日期 */
+function formatCompactTime(iso: string | null): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return ''
+  const diff = Date.now() - t
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3600_000) return Math.floor(diff / 60_000) + '分钟前'
+  if (diff < 86_400_000) return Math.floor(diff / 3600_000) + '小时前'
+  return Math.floor(diff / 86_400_000) + '天前'
+}
+
 function selectProvider(id: number) {
   selectedProviderId.value = id
   selectedModel.value = providers.value.find(p => p.id === id)?.models?.[0]?.modelId ?? null
@@ -278,7 +296,6 @@ interface QuickCmd { label: string; icon: any; insert: string; desc: string }
 const quickCmds: QuickCmd[] = [
   { label: '压缩', icon: ContractOutline, insert: '/compact', desc: '压缩对话历史，释放 token' },
   { label: '润色', icon: SparklesOutline, insert: '帮我润色当前正文', desc: '优化正文表达' },
-  { label: '摘要', icon: BulbOutline, insert: '为这篇文章生成摘要', desc: '生成文章摘要' },
 ]
 
 // === 斜杠命令菜单（业界标准：输入 / 弹出内置命令，方向键选择，回车执行）===
@@ -768,7 +785,9 @@ async function handleSend() {
 
       const assistantMsg: AiChatMessage = {
         role: 'assistant',
-        content: result.content || '',
+        // OpenAI 协议规范：assistant 带 tool_calls 时 content 应为 null，不是空串。
+        // 部分国产网关对空 content 严格校验，发 '' 会报 "zero-length empty document" 500。
+        content: result.content || null,
         ...(result.toolCalls.length > 0 ? { tool_calls: result.toolCalls } : {}),
       }
       messages.value.push(assistantMsg)
@@ -972,41 +991,6 @@ function onInputKeydown(e: KeyboardEvent) {
         </div>
       </div>
 
-      <!-- 工具栏 -->
-      <div class="panel-toolbar">
-        <!-- 提供商下拉 -->
-        <div class="custom-select" @click.stop="provDropdownOpen = !provDropdownOpen">
-          <div class="cs-trigger">
-            <span class="cs-text">{{ activeProvider?.name || '提供商' }}</span>
-            <n-icon :size="12"><ChevronDownOutline /></n-icon>
-          </div>
-          <div v-if="provDropdownOpen" class="cs-menu" @click.stop>
-            <div
-              v-for="p in providers" :key="p.id"
-              class="cs-option"
-              :class="{ active: selectedProviderId === p.id }"
-              @click.stop="selectProvider(p.id)"
-            >{{ p.name }}</div>
-          </div>
-        </div>
-        <!-- 模型下拉 -->
-        <div class="custom-select model-select" @click.stop="modelDropdownOpen = !modelDropdownOpen">
-          <div class="cs-trigger">
-            <span class="cs-text">{{ activeModelLabel || '模型' }}</span>
-            <n-icon :size="12"><ChevronDownOutline /></n-icon>
-          </div>
-          <div v-if="modelDropdownOpen" class="cs-menu" @click.stop>
-            <div
-              v-for="m in modelOptions" :key="m.value"
-              class="cs-option"
-              :class="{ active: selectedModel === m.value }"
-              @click.stop="selectModel(m.value)"
-            >{{ m.label }}</div>
-            <div v-if="modelOptions.length === 0" class="cs-option disabled">无可用模型</div>
-          </div>
-        </div>
-      </div>
-
       <!-- 消息流 -->
       <div ref="scrollBody" class="panel-body">
         <div v-if="renderItems.length === 0" class="empty-hint">
@@ -1072,7 +1056,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
       <!-- 底部：快捷指令 + token统计 + 输入 -->
       <div class="panel-footer">
-        <!-- 快捷指令按钮 -->
+        <!-- 快捷指令按钮 + 模型选择下拉（同一行） -->
         <div class="quick-cmds">
           <n-tooltip v-for="cmd in quickCmds" :key="cmd.label" trigger="hover" :z-index="10010">
             <template #trigger>
@@ -1083,6 +1067,37 @@ function onInputKeydown(e: KeyboardEvent) {
             </template>
             {{ cmd.desc }}
           </n-tooltip>
+          <!-- 提供商下拉 -->
+          <div class="custom-select" @click.stop="provDropdownOpen = !provDropdownOpen">
+            <div class="cs-trigger">
+              <span class="cs-text">{{ activeProvider?.name || '提供商' }}</span>
+              <n-icon :size="12"><ChevronDownOutline /></n-icon>
+            </div>
+            <div v-if="provDropdownOpen" class="cs-menu" @click.stop>
+              <div
+                v-for="p in providers" :key="p.id"
+                class="cs-option"
+                :class="{ active: selectedProviderId === p.id }"
+                @click.stop="selectProvider(p.id)"
+              >{{ p.name }}</div>
+            </div>
+          </div>
+          <!-- 模型下拉 -->
+          <div class="custom-select model-select" @click.stop="modelDropdownOpen = !modelDropdownOpen">
+            <div class="cs-trigger">
+              <span class="cs-text">{{ activeModelLabel || '模型' }}</span>
+              <n-icon :size="12"><ChevronDownOutline /></n-icon>
+            </div>
+            <div v-if="modelDropdownOpen" class="cs-menu" @click.stop>
+              <div
+                v-for="m in modelOptions" :key="m.value"
+                class="cs-option"
+                :class="{ active: selectedModel === m.value }"
+                @click.stop="selectModel(m.value)"
+              >{{ m.label }}</div>
+              <div v-if="modelOptions.length === 0" class="cs-option disabled">无可用模型</div>
+            </div>
+          </div>
         </div>
 
         <div class="panel-input">
@@ -1125,8 +1140,15 @@ function onInputKeydown(e: KeyboardEvent) {
               <div class="ctx-progress-fill" :style="{ width: contextPercent + '%' }"></div>
             </div>
             <span class="ctx-progress-text">{{ contextUsed }} / {{ contextLimit }} ({{ contextPercent }}%)</span>
+            <!-- 压缩胶囊：嵌在进度条行末尾，不独占行 -->
+            <span
+              v-if="compactionSummary"
+              class="ctx-pill-compacted"
+              :title="`历史已摘要化（释放约 ${formatTokens(compactionTokens)} token）${compactionReleasedAt ? ' · ' + formatCompactTime(compactionReleasedAt) : ''}`"
+            >
+              摘要-{{ formatTokens(compactionTokens) }}
+            </span>
           </div>
-          <span v-if="compactionSummary" class="ctx-tag-compacted" title="历史已压缩，释放约 token">已压缩</span>
         </div>
       </div>
 
@@ -1208,14 +1230,28 @@ function onInputKeydown(e: KeyboardEvent) {
 .head-btn:hover { background: #e7e5e4; color: #1c1917; }
 .head-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.panel-toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e7e5e4; align-items: center; background: #fafaf9; }
-
-/* 自定义下拉 */
-.custom-select { position: relative; min-width: 0; }
-.custom-select:not(.model-select) { width: 110px; }
+/* 自定义下拉（现在位于快捷键行末尾，和按键并排） */
+.custom-select { position: relative; min-width: 0; flex-shrink: 0; }
+/* 供应商：宽度自适应内容，给个上下限避免太短/太长 */
+.custom-select:not(.model-select) { width: auto; min-width: 72px; max-width: 110px; }
+/* 模型：flex:1 撑到行尾，吸收剩余空间 */
 .custom-select.model-select { flex: 1; }
-.cs-trigger { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 4px 10px; border: 1px solid #e7e5e4; border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: #1c1917; line-height: 1.4; white-space: nowrap; overflow: hidden; }
-.cs-trigger:hover { border-color: #d6d3d1; }
+.cs-trigger {
+  display: flex; align-items: center; gap: 3px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px; color: #57534e;
+  line-height: 1.4;
+  white-space: nowrap; overflow: hidden;
+  height: 26px; box-sizing: border-box;
+  transition: background 0.15s, color 0.15s;
+}
+.cs-trigger:hover { background: #f5f5f4; color: #1c1917; }
+/* 展开状态下保持 hover 态,避免点开菜单后触发器"消失" */
+.custom-select:has(.cs-menu) .cs-trigger { background: #f5f5f4; color: #1c1917; }
 .cs-text { overflow: hidden; text-overflow: ellipsis; }
 .cs-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; box-shadow: 0 8px 24px rgba(28,25,23,0.12); z-index: 10010; max-height: 200px; overflow-y: auto; }
 .cs-option { padding: 7px 12px; font-size: 12px; color: #1c1917; cursor: pointer; transition: background 0.12s; }
@@ -1304,8 +1340,8 @@ function onInputKeydown(e: KeyboardEvent) {
 
 /* 底部 */
 .panel-footer { border-top: 1px solid #e7e5e4; background: #fafaf9; border-radius: 0 0 12px 12px; }
-.quick-cmds { display: flex; gap: 6px; padding: 8px 12px 0; }
-.quick-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #e7e5e4; background: #ffffff; color: #57534e; font-size: 11px; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+.quick-cmds { display: flex; gap: 6px; padding: 8px 12px 0; align-items: center; }
+.quick-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #e7e5e4; background: #ffffff; color: #57534e; font-size: 11px; border-radius: 6px; cursor: pointer; transition: all 0.15s; flex-shrink: 0; height: 26px; box-sizing: border-box; }
 .quick-btn:hover { background: #f5f5f4; border-color: #d6d3d1; color: #1c1917; }
 .quick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -1334,7 +1370,22 @@ function onInputKeydown(e: KeyboardEvent) {
 .ctx-progress.warn .ctx-progress-fill { background: #dc2626; }
 .ctx-progress-text { font-size: 9.5px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; white-space: nowrap; margin-left: auto; }
 .ctx-progress.warn .ctx-progress-text { color: #dc2626; }
-.ctx-tag-compacted { font-size: 9px; color: #16a34a; align-self: flex-start; }
+
+/* 压缩胶囊：嵌在进度条行末尾，不独占行 */
+.ctx-pill-compacted {
+  flex-shrink: 0;
+  font-size: 9px;
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.1);
+  border: 1px solid rgba(22, 163, 74, 0.25);
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 4px;
+  white-space: nowrap;
+  cursor: help;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  line-height: 1.4;
+}
 
 .panel-enter-active, .panel-leave-active { transition: opacity 0.25s cubic-bezier(0.16,1,0.3,1), transform 0.25s cubic-bezier(0.16,1,0.3,1); }
 .panel-enter-from, .panel-leave-to { opacity: 0; transform: translateY(16px) scale(0.94); }

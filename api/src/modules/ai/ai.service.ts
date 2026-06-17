@@ -22,6 +22,18 @@ interface AiConfig {
 }
 
 /**
+ * 网关 SSE 流内下发的错误。
+ * 网关不返回 HTTP 500，而是作为流的一帧 `data: {"error":{...}}` 发出。
+ * 用专门的 Error 子类，便于上层 catch 区分（不能被 aggregateStream 的 JSON.parse catch 吞掉）。
+ */
+class GatewayStreamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GatewayStreamError';
+  }
+}
+
+/**
  * AI 模块核心服务：封装 OpenAI 兼容协议调用。
  *
  * 设计目标：独立、可被任意模块注入复用。
@@ -58,6 +70,83 @@ export class AiService {
       const name = (data as any)?.constructor?.name ?? 'stream';
       return `(不可序列化的 ${name})`;
     }
+  }
+
+  /**
+   * 从网关返回的 SSE error chunk 里提取人类可读的错误信息。
+   *
+   * 网关报错时（如 "zero-length empty document"），不返回 HTTP 500，
+   * 而是作为 SSE 流的一帧 `data: {"error":{"code":"500","message":"..."}}` 发出。
+   * 不同网关字段嵌套层级不一，这里按优先级逐层尝试提取 message：
+   *   {error:{message}} / {error:{error}} / {message} / 原样 stringify
+   *
+   * public：controller 的流式转发循环也要用同一套逻辑识别错误帧。
+   */
+  extractGatewayError(json: unknown): string | null {
+    if (!json || typeof json !== 'object') return null;
+    const j = json as Record<string, unknown>;
+    const err = j.error as Record<string, unknown> | undefined;
+    if (err) {
+      if (typeof err.message === 'string' && err.message) {
+        // message 可能本身又是一层 JSON 字符串（如 DeepSeek："{\"error\":\"...\"}"）
+        return this.tryUnwrapJsonMessage(err.message);
+      }
+      if (typeof err.error === 'string' && err.error) return err.error;
+    }
+    if (typeof j.message === 'string' && j.message) return j.message;
+    return null;
+  }
+
+  /** 尝试把可能是 JSON 字符串的 message 再解一层，提取最内层 message */
+  private tryUnwrapJsonMessage(msg: string): string {
+    const trimmed = msg.trim();
+    if (!trimmed.startsWith('{')) return msg;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object') {
+        const p = parsed as Record<string, unknown>;
+        if (typeof p.message === 'string') return p.message;
+        if (typeof p.error === 'string') return p.error;
+      }
+    } catch {
+      /* 不是合法 JSON，原样返回 */
+    }
+    return msg;
+  }
+
+  /**
+   * 规范化发给网关的 messages，避免网关对 "empty document" / "zero-length content" 报 500。
+   *
+   * OpenAI 兼容协议里 assistant 带 tool_calls 时 content 应为 null（不是空串），
+   * 但前端历史或不同网关返回的可能是 '' 或 undefined。部分国产网关对空 content 严格校验，
+   * 直接抛 "Input is a zero-length, empty document"。
+   *
+   * 处理：
+   * 1. assistant 带 tool_calls 且 content 为空 → content 设为 null（协议规范）
+   * 2. assistant 无 tool_calls 且 content 为空 → 丢弃（无效消息，无文本无工具）
+   * 3. system/user/tool 的 content 为空 → 丢弃（空 system/user 会让某些网关报错）
+   */
+  private sanitizeMessages(messages: AiChatMessage[]): AiChatMessage[] {
+    const out: AiChatMessage[] = [];
+    for (const m of messages) {
+      if (m.role === 'assistant') {
+        const hasTools = Array.isArray(m.tool_calls) && m.tool_calls.length > 0;
+        const content = m.content ?? '';
+        if (hasTools) {
+          // 带工具调用的 assistant：content 规范化为 null（OpenAI 标准）
+          out.push({ ...m, content: content.trim() ? content : null });
+        } else if (content.trim()) {
+          // 无工具但有文本：保留
+          out.push(m);
+        }
+        // 无工具且无文本：丢弃
+        continue;
+      }
+      // system / user / tool：content 必须非空才保留
+      const c = m.content ?? '';
+      if (c.trim()) out.push(m);
+    }
+    return out;
   }
 
   constructor(
@@ -164,6 +253,12 @@ export class AiService {
       return text;
     } catch (e) {
       if (e instanceof BadGatewayException) throw e;
+      // 网关在 SSE 流里下发的错误：透传真实 message，而不是泛化的"调用失败"
+      // 让前端能看到诸如 "Input is a zero-length, empty document" 这样的根因
+      if (e instanceof GatewayStreamError) {
+        this.logger.error(`AI 网关返回错误 url=${url} model=${usedModel} msg=${e.message}`);
+        throw new BadGatewayException(`AI 网关错误：${e.message}`);
+      }
       const err = e as AxiosError;
       const status = err.response?.status;
       this.logger.error(
@@ -190,9 +285,15 @@ export class AiService {
     const cfg = await this.getConfig();
     const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
     const usedModel = model ?? cfg.defaultModel;
+    // 规范化：assistant 带 tool_calls 时 content 设 null，过滤空内容消息。
+    // 否则部分网关会报 "Input is a zero-length, empty document" 500。
+    const sanitized = this.sanitizeMessages(messages);
+    if (sanitized.length === 0) {
+      throw new GatewayStreamError('消息内容为空，无法调用 AI');
+    }
     const body: Record<string, unknown> = {
       model: usedModel,
-      messages,
+      messages: sanitized,
       stream: true,
       // 请求网关在流末尾返回 usage（prompt/completion/total tokens）
       stream_options: { include_usage: true },
@@ -244,6 +345,10 @@ export class AiService {
   /**
    * 聚合 OpenAI 兼容 SSE 流，返回拼接后的完整文本。
    * 解析形如 `data: {...}\n\n` 的事件，累加 choices[0].delta.content。
+   *
+   * 若流中出现网关错误帧 `data: {"error":{...}}`，抛 GatewayStreamError
+   * （携带提取后的人类可读 message），由上层 catch 透传给前端，
+   * 而不是吞掉变成 "AI 返回内容为空"。
    */
   private async aggregateStream(stream: Readable): Promise<string> {
     let buffer = '';
@@ -260,9 +365,16 @@ export class AiService {
         if (payload === '[DONE]' || payload === '') continue;
         try {
           const json = JSON.parse(payload);
+          // 网关错误帧：流内以 error 字段下发，不返回 HTTP 500
+          const errMsg = this.extractGatewayError(json);
+          if (errMsg) {
+            throw new GatewayStreamError(errMsg);
+          }
           const delta = json.choices?.[0]?.delta?.content;
           if (typeof delta === 'string') full += delta;
-        } catch {
+        } catch (e) {
+          // GatewayStreamError 必须向上抛，不能被这里吞掉
+          if (e instanceof GatewayStreamError) throw e;
           // 单行解析失败时跳过，不中断整条流
         }
       }

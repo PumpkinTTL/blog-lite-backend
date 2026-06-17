@@ -88,6 +88,14 @@ export class AiController {
           if (payload === '[DONE]' || payload === '') continue;
           try {
             const json = JSON.parse(payload);
+
+            // 网关错误帧检测（同 /ai/chat）
+            const errMsg = this.aiService.extractGatewayError(json);
+            if (errMsg) {
+              writeEvent('error', { message: `AI 网关错误：${errMsg}` });
+              return res.end();
+            }
+
             // usage 帧（流末尾，choices 可能为空，单独解析）。
             // 这是压缩这次调用的真实 token：prompt_tokens 就是"被压缩的历史体积"，
             // 前端用它减去摘要体积，得到真正释放的 token。
@@ -181,6 +189,15 @@ export class AiController {
           if (payload === '[DONE]' || payload === '') continue;
           try {
             const json = JSON.parse(payload);
+
+            // 网关在流里下发错误帧 `data: {"error":{...}}`，
+            // 不返回 HTTP 500。这里识别后立刻转发给前端并中止流，
+            // 避免吞掉错误让前端看到无意义的 "AI 调用失败"。
+            const errMsg = this.aiService.extractGatewayError(json);
+            if (errMsg) {
+              writeEvent('error', { message: `AI 网关错误：${errMsg}` });
+              return res.end();
+            }
 
             // usage 帧（流末尾，choices 可能为空数组，单独解析）
             // 网关在 stream_options.include_usage=true 时返回
