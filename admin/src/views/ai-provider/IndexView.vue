@@ -94,7 +94,7 @@ const columns: DataTableColumns<AiProvider> = [
     title: '操作', key: 'actions', width: 100, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small' }, {
       default: () => [
-        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, baseUrl: r.baseUrl, apiKey: r.apiKey, protocol: r.protocol, models: r.models ?? [], remark: r.remark ?? '', status: r.status } as any)) }, {
+        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, baseUrl: r.baseUrl, apiKey: r.apiKey, protocol: r.protocol, models: (r.models ?? []).map((m: any) => ({ ...m, supportsTools: !!m.supportsTools, supportsThinking: !!m.supportsThinking })), remark: r.remark ?? '', status: r.status } as any)) }, {
           default: () => '编辑', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
         }),
         h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
