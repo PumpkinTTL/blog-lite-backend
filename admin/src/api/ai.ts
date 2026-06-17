@@ -41,7 +41,7 @@ export function generateByAi(data: AiGeneratePayload) {
   )
 }
 
-/* ============ 历史压缩 ============ */
+/* ============ 历史压缩（SSE 流式） ============ */
 
 /** 压缩历史返回 */
 export interface AiCompactResult {
@@ -49,11 +49,80 @@ export interface AiCompactResult {
 }
 
 /**
- * 压缩对话历史：把多轮历史交给后端 AI 总结成摘要。
- * 前端用返回的摘要替换旧历史，释放上下文 token。
+ * 流式压缩对话历史：POST /ai/compact，消费 SSE。
+ * 把多轮历史交给后端 AI 总结成结构化摘要，边生成边回调 token，
+ * 前端能实时看到压缩进度（与 streamChat 体验一致）。
  *
- * 单独放宽超时到 180s：压缩要把整段历史发给 AI 总结，内容大时网关响应慢，
- * 不能用全局默认的 10s（会直接掐断，导致"压缩总是超时"）。
+ * 用原生 fetch（axios 不便处理 SSE 逐字流，且会受全局 10s 超时影响）。
+ *
+ * @param onToken 每个摘要 token 片段回调（实时）
+ * @param onThinking 可选：思考过程回调
+ * @returns 完整摘要文本
+ */
+export async function streamCompact(
+  messages: AiChatMessage[],
+  model: string | undefined,
+  onToken: (text: string) => void,
+  onThinking?: (text: string) => void,
+): Promise<string> {
+  const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
+  const baseURL = import.meta.env.VITE_API_BASE_URL
+
+  const resp = await fetch(`${baseURL}/ai/compact`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ messages, model }),
+  })
+
+  if (!resp.ok || !resp.body) {
+    const errText = await resp.text().catch(() => '')
+    throw new Error(`压缩请求失败 (${resp.status}): ${errText.slice(0, 200)}`)
+  }
+
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let summary = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      const s = line.trim()
+      if (!s.startsWith('data:')) continue
+      const payload = s.slice(5).trim()
+      if (!payload) continue
+      try {
+        const evt = JSON.parse(payload)
+        if (evt.type === 'thinking' && typeof evt.data?.text === 'string') {
+          onThinking?.(evt.data.text)
+        } else if (evt.type === 'token' && typeof evt.data?.text === 'string') {
+          summary += evt.data.text
+          onToken(evt.data.text)
+        } else if (evt.type === 'done' && typeof evt.data?.summary === 'string') {
+          // 网关结束时的完整摘要，作为权威值（覆盖本地拼接，避免丢末尾）
+          summary = evt.data.summary
+        } else if (evt.type === 'error') {
+          throw new Error(evt.data?.message || '压缩服务错误')
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message && !e.message.includes('JSON')) throw e
+      }
+    }
+  }
+
+  return summary
+}
+
+/**
+ * @deprecated 已被 streamCompact 取代（流式版）。保留仅为兼容。
+ * 压缩对话历史：把多轮历史交给后端 AI 总结成摘要。
  */
 export function compactHistory(data: { messages: AiChatMessage[]; model?: string }) {
   return request.post<AiApiResponse<AiCompactResult>, AiApiResponse<AiCompactResult>>(

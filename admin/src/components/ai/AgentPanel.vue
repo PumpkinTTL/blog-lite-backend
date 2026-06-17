@@ -8,7 +8,7 @@ import {
   PaperPlaneOutline, BulbOutline, ChevronDownOutline,
   SparklesOutline, ContractOutline,
 } from '@vicons/ionicons5'
-import { streamChat, compactHistory } from '../../api/ai'
+import { streamChat, streamCompact } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext, AiUsage } from '../../api/ai'
 import { getConversationByPostId, saveConversation } from '../../api/ai-conversation'
 import { getActiveAiProviders } from '../../api/ai-provider'
@@ -444,27 +444,55 @@ async function handleCompact() {
   }
   const promptBefore = tokenStats.prompt
   compacting.value = true
+
+  // 流式压缩：用一条临时 assistant 项实时显示摘要生成过程（业界标准，压缩可见）
+  const compactItem = addRenderItem({
+    id: nextId(), kind: 'assistant', text: '', replyText: '', thinkText: '',
+    streaming: true,
+  })
+  await scrollToBottom()
+
   try {
-    const res = await compactHistory({
-      messages: toCompress as AiChatMessage[],
-      model: selectedModel.value ?? undefined,
-    })
-    const summary = res.data?.summary
-    if (!summary) {
+    const summary = await streamCompact(
+      toCompress as AiChatMessage[],
+      selectedModel.value ?? undefined,
+      (tok) => {
+        compactItem.replyText = (compactItem.replyText ?? '') + tok
+        scrollToBottom()
+      },
+      (think) => {
+        compactItem.thinkText = (compactItem.thinkText ?? '') + think
+        thinkExpanded.value.add(compactItem.id)
+        scrollToBottom()
+      },
+    )
+    compactItem.streaming = false
+    thinkExpanded.value.delete(compactItem.id)
+
+    if (!summary.trim()) {
+      // 没生成出内容，移除临时项
+      renderItems.value = renderItems.value.filter((r) => r.id !== compactItem.id)
       message.error('压缩失败：未返回摘要')
       return
     }
+
     // 业界标准：摘要覆盖旧摘要，压缩点之后的新对话从空开始累积。
     // 完整原始 messages 不删（供回看），只是不再整段发给模型。
     compactionSummary.value = summary
     compactionMessages.value = []
     compactionTokens.value = calcReleasedTokens(promptBefore)
     compactionReleasedAt.value = new Date().toISOString()
-    rebuildRenderFromHistory()
+    // 临时项保留为压缩摘要展示（标记一下来源，便于用户理解这条是压缩结果）
+    compactItem.replyText = `✅ 已压缩历史（释放约 ${compactionTokens.value} token）\n\n${summary}`
     message.success(`对话已压缩，释放约 ${compactionTokens.value} token`)
     await scrollToBottom()
     void persistConversation()
   } catch (e) {
+    compactItem.streaming = false
+    thinkExpanded.value.delete(compactItem.id)
+    if (!compactItem.replyText && !compactItem.thinkText) {
+      renderItems.value = renderItems.value.filter((r) => r.id !== compactItem.id)
+    }
     message.error(e instanceof Error ? e.message : '压缩失败')
   } finally {
     compacting.value = false

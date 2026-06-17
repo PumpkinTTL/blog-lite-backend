@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import type { AxiosError } from 'axios';
 import type { Readable } from 'stream';
 import type { AiGenerateField, AiChatMessage, AiToolCall } from './ai.dto';
-import { POST_AGENT_SYSTEM_PROMPT, POST_AGENT_TOOLS } from './ai.prompts';
+import { POST_AGENT_SYSTEM_PROMPT, POST_AGENT_TOOLS, CONVERSATION_COMPACT_SYSTEM_PROMPT } from './ai.prompts';
 import { AiProviderService } from '../ai-provider/ai-provider.service';
 
 /** 统一生成返回结构：只有被请求的字段才会有值 */
@@ -83,17 +83,13 @@ export class AiService {
   }
 
   /**
-   * 压缩对话历史：让 AI 把多轮历史总结成一段摘要。
-   * 前端收到摘要后，用 [system:摘要] 替换掉旧历史，释放上下文 token。
-   *
-   * 入参 history 是扁平的对话记录（user/assistant/tool），会原样喂给 AI。
-   * 返回摘要文本（纯文本，可直接作为 system 消息）。
+   * 构造压缩用的消息数组（system prompt + 可读化的历史 transcript）。
+   * 抽出来供 summarizeHistory（非流式）和 controller 的流式压缩共用，
+   * 保证两者用同一套 prompt 与 transcript 格式。
    */
-  async summarizeHistory(
+  buildCompactMessages(
     history: AiChatMessage[],
-    model?: string,
-  ): Promise<string> {
-    // 把历史拼成可读文本，让 AI 总结
+  ): Array<{ role: 'system' | 'user'; content: string }> {
     const transcript = history
       .map((m) => {
         if (m.role === 'tool') return `[工具结果 ${m.tool_call_id}]: ${m.content}`;
@@ -104,23 +100,24 @@ export class AiService {
       })
       .join('\n\n');
 
-    const summarizeMessages: Array<{
-      role: 'system' | 'user';
-      content: string;
-    }> = [
-      {
-        role: 'system',
-        content:
-          '你是对话压缩器。把下面的多轮对话历史总结成一段紧凑的摘要，' +
-          '保留关键决策、已执行的操作、文章的当前状态和待办事项。' +
-          '用第二人称（"你"）描述。只输出摘要正文，不要多余解释。',
-      },
-      {
-        role: 'user',
-        content: `请压缩以下对话历史：\n\n${transcript}`,
-      },
+    return [
+      { role: 'system', content: CONVERSATION_COMPACT_SYSTEM_PROMPT },
+      { role: 'user', content: `请压缩以下对话历史：\n\n${transcript}` },
     ];
+  }
 
+  /**
+   * 压缩对话历史：让 AI 把多轮历史总结成一段摘要。
+   * 前端收到摘要后，用 [system:摘要] 替换掉旧历史，释放上下文 token。
+   *
+   * 入参 history 是扁平的对话记录（user/assistant/tool），会原样喂给 AI。
+   * 返回摘要文本（纯文本，可直接作为 system 消息）。
+   */
+  async summarizeHistory(
+    history: AiChatMessage[],
+    model?: string,
+  ): Promise<string> {
+    const summarizeMessages = this.buildCompactMessages(history);
     return this.chat(summarizeMessages, model);
   }
 
@@ -231,30 +228,34 @@ export class AiService {
   async openStream(
     messages: AiChatMessage[],
     model?: string,
+    /**
+     * 是否携带 Agent 工具声明。默认 true（对话用）。
+     * 压缩历史是纯文本生成，不需要工具，传 false 避免模型在压缩时调用工具。
+     */
+    withTools = true,
   ): Promise<Readable> {
     const cfg = await this.getConfig();
     const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
     const usedModel = model ?? cfg.defaultModel;
+    const body: Record<string, unknown> = {
+      model: usedModel,
+      messages,
+      stream: true,
+      // 请求网关在流末尾返回 usage（prompt/completion/total tokens）
+      stream_options: { include_usage: true },
+    };
+    if (withTools) {
+      body.tools = POST_AGENT_TOOLS;
+      body.tool_choice = 'auto';
+    }
     const { data } = await firstValueFrom(
-      this.httpService.post<Readable>(
-        url,
-        {
-          model: usedModel,
-          messages,
-          stream: true,
-          // 请求网关在流末尾返回 usage（prompt/completion/total tokens）
-          stream_options: { include_usage: true },
-          tools: POST_AGENT_TOOLS,
-          tool_choice: 'auto',
+      this.httpService.post<Readable>(url, body, {
+        headers: {
+          Authorization: `Bearer ${cfg.apiKey}`,
+          'Content-Type': 'application/json',
         },
-        {
-          headers: {
-            Authorization: `Bearer ${cfg.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          responseType: 'stream',
-        },
-      ),
+        responseType: 'stream',
+      }),
     );
     return data;
   }

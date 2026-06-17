@@ -42,22 +42,79 @@ export class AiController {
   }
 
   /**
-   * 压缩对话历史：POST /ai/compact
-   * 把多轮历史交给 AI 总结成摘要，前端用摘要替换旧历史，释放上下文 token。
-   * 非流式（压缩是后台操作，无需逐字）。
+   * 压缩对话历史：POST /ai/compact（SSE 流式）。
+   * 把多轮历史交给 AI 总结成结构化摘要，边生成边推 token，
+   * 前端能实时看到压缩进度（与 /ai/chat 体验一致）。
+   * 流末尾下发 done，data.summary 为完整摘要。
    */
   @Post('compact')
   async compact(
     @Body() body: { messages: AiChatMessage[]; model?: string },
+    @Res() res: Response,
   ) {
     if (!body.messages || body.messages.length === 0) {
       throw new BadRequestException('消息不能为空');
     }
-    const summary = await this.aiService.summarizeHistory(
-      body.messages,
-      body.model,
-    );
-    return { success: true, data: { summary }, message: '历史已压缩' };
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const writeEvent = (type: string, data: unknown) => {
+      res.write(`data: ${JSON.stringify({ type, data })}\n\n`);
+    };
+
+    try {
+      // 压缩是纯文本生成，不带 tools（withTools=false）
+      const compactMessages = this.aiService.buildCompactMessages(body.messages);
+      const stream = await this.aiService.openStream(
+        compactMessages as AiChatMessage[],
+        body.model,
+        false,
+      );
+
+      let full = '';
+      let buffer = '';
+      for await (const chunk of stream) {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const s = line.trim();
+          if (!s.startsWith('data:')) continue;
+          const payload = s.slice(5).trim();
+          if (payload === '[DONE]' || payload === '') continue;
+          try {
+            const json = JSON.parse(payload);
+            const delta = json.choices?.[0]?.delta;
+            // 实时转发摘要 token
+            if (typeof delta?.content === 'string' && delta.content) {
+              full += delta.content;
+              writeEvent('token', { text: delta.content });
+            }
+            // 转发思考过程（部分模型压缩时也会给 reasoning）
+            if (
+              typeof delta?.reasoning_content === 'string' &&
+              delta.reasoning_content
+            ) {
+              writeEvent('thinking', { text: delta.reasoning_content });
+            }
+          } catch {
+            // 单行解析失败跳过
+          }
+        }
+      }
+
+      writeEvent('done', { summary: full.trim() });
+    } catch (e) {
+      writeEvent('error', {
+        message: e instanceof Error ? e.message : '压缩失败',
+      });
+    } finally {
+      res.end();
+    }
   }
 
   /**
