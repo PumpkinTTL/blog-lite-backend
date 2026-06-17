@@ -74,6 +74,12 @@ const showModal = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref<FormInst | null>(null)
 const formLoading = ref(false)
+/** 状态切换中的捐赠 id（确认/取消确认按钮 loading） */
+const togglingId = ref<number | null>(null)
+/** 展示切换中的捐赠 id（眼睛按钮 loading） */
+const togglingVisibleId = ref<number | null>(null)
+/** 导出 CSV 中（导出按钮 loading） */
+const exporting = ref(false)
 const formData = ref<Omit<CreateDonationData, 'status'> & { status: number }>({
   donorName: '', amount: 0, currency: 'CNY', payMethod: 'wechat', status: 1, isVisible: 1, sortOrder: 0,
 })
@@ -197,12 +203,13 @@ async function handleSubmit() {
 }
 
 function handleDelete(row: Donation) {
-  dialog.warning({
+  const d = dialog.warning({
     title: '确认删除', content: `确定删除「${row.donorName}」的捐赠记录？`,
     positiveText: '删除', negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try { await deleteDonation(row.id); message.success('删除成功'); loadList(); loadStats() }
-      catch (e: any) { message.error(e.message || '删除失败') }
+      catch (e: any) { message.error(e.message || '删除失败'); return false }
     },
   })
 }
@@ -212,19 +219,61 @@ function handleBatchDelete() {
     message.warning('请先选择要删除的记录')
     return
   }
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量删除',
     content: `确定删除选中的 ${checkedRowKeys.value.length} 条捐赠记录?此操作不可恢复!`,
     positiveText: '删除', negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await batchDeleteDonations(checkedRowKeys.value)
         message.success('批量删除成功')
         checkedRowKeys.value = []
         loadList(); loadStats()
-      } catch (e: any) { message.error(e?.message || '批量删除失败') }
+      } catch (e: any) { message.error(e?.message || '批量删除失败'); return false }
     },
   })
+}
+
+/** 状态切换（确认/取消确认） */
+async function handleToggleStatus(row: Donation) {
+  if (togglingId.value !== null) return
+  togglingId.value = row.id
+  try {
+    await toggleDonationStatus(row.id)
+    loadList(); loadStats()
+  } catch (e: any) {
+    message.error(e?.message || '操作失败')
+  } finally {
+    togglingId.value = null
+  }
+}
+
+/** 展示切换 */
+async function handleToggleVisible(row: Donation) {
+  if (togglingVisibleId.value !== null) return
+  togglingVisibleId.value = row.id
+  try {
+    await toggleDonationVisible(row.id)
+    loadList()
+  } catch (e: any) {
+    message.error(e?.message || '操作失败')
+  } finally {
+    togglingVisibleId.value = null
+  }
+}
+
+/** 导出 CSV */
+async function handleExport() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    await exportDonations()
+  } catch (e: any) {
+    message.error(e?.message || '导出失败')
+  } finally {
+    exporting.value = false
+  }
 }
 
 // ── 表格列 ──
@@ -281,7 +330,8 @@ const columns: DataTableColumns<Donation> = [
     title: '展示', key: 'isVisible', width: 55, align: 'center',
     render: (row) => h(NButton, {
       size: 'tiny', quaternary: true, type: row.isVisible ? 'success' : 'default',
-      onClick: () => toggleDonationVisible(row.id).then(() => { loadList() }),
+      loading: togglingVisibleId.value === row.id,
+      onClick: () => handleToggleVisible(row),
     }, {
       default: () => h(NIcon, { size: 16 }, { default: () => h(row.isVisible ? EyeOutline : EyeOffOutline) }),
     }),
@@ -305,7 +355,8 @@ const columns: DataTableColumns<Donation> = [
         h(NButton, {
           size: 'tiny', quaternary: true,
           type: row.status === 'confirmed' ? 'warning' : 'success',
-          onClick: async () => { await toggleDonationStatus(row.id); loadList(); loadStats() },
+          loading: togglingId.value === row.id,
+          onClick: () => handleToggleStatus(row),
         }, { default: () => row.status === 'confirmed' ? '取消确认' : '确认' }),
         h(NButton, {
           size: 'tiny', quaternary: true, type: 'error',
@@ -375,7 +426,7 @@ onMounted(() => { loadList(); loadStats() })
           <template #icon><n-icon><AddOutline /></n-icon></template>
           新增
         </n-button>
-        <n-button @click="exportDonations">
+        <n-button :loading="exporting" @click="handleExport">
           <template #icon><n-icon><DownloadOutline /></n-icon></template>
           导出CSV
         </n-button>

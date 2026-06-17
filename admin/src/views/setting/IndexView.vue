@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import {
   NCard, NForm, NFormItem, NInput, NButton, NSpace, NSpin,
-  NModal, NSelect, NPopconfirm, NIcon, useMessage,
+  NModal, NSelect, NIcon, useMessage, useDialog,
 } from 'naive-ui'
 import { TrashOutline } from '@vicons/ionicons5'
 import {
@@ -11,6 +11,7 @@ import {
 import type { SettingItem } from '../../api/setting'
 
 const message = useMessage()
+const dialog = useDialog()
 const loading = ref(false)
 const saving = ref(false)
 const groups = ref<Record<string, SettingItem[]>>({})
@@ -107,14 +108,24 @@ async function handleCreate() {
   }
 }
 
-async function handleDelete(item: SettingItem) {
-  try {
-    await deleteSetting(item.id)
-    message.success('删除成功')
-    await loadSettings()
-  } catch (e: any) {
-    message.error(e.message || '删除失败')
-  }
+function handleDelete(item: SettingItem) {
+  const d = dialog.warning({
+    title: '确认删除',
+    content: `确定删除配置「${item.description || item.key}」？`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      d.loading = true
+      try {
+        await deleteSetting(item.id)
+        message.success('删除成功')
+        await loadSettings()
+      } catch (e: any) {
+        message.error(e.message || '删除失败')
+        return false
+      }
+    },
+  })
 }
 
 onMounted(loadSettings)
@@ -159,10 +170,7 @@ onMounted(loadSettings)
                 <td><n-input v-model:value="a.description" size="small" /></td>
                 <td><n-input v-model:value="a.value" size="small" /></td>
                 <td>
-                  <n-popconfirm @positive-click="handleDelete(a)">
-                    <template #trigger><n-button type="error" size="tiny" quaternary><template #icon><n-icon><TrashOutline /></n-icon></template></n-button></template>
-                    确定删除「{{ a.description || a.key }}」？
-                  </n-popconfirm>
+                  <n-button type="error" size="tiny" quaternary @click="handleDelete(a)"><template #icon><n-icon><TrashOutline /></n-icon></template></n-button>
                 </td>
                 <td></td>
                 <template v-if="b">
@@ -170,10 +178,7 @@ onMounted(loadSettings)
                   <td><n-input v-model:value="b.description" size="small" /></td>
                   <td><n-input v-model:value="b.value" size="small" /></td>
                   <td>
-                    <n-popconfirm @positive-click="handleDelete(b)">
-                      <template #trigger><n-button type="error" size="tiny" quaternary><template #icon><n-icon><TrashOutline /></n-icon></template></n-button></template>
-                      确定删除「{{ b.description || b.key }}」？
-                    </n-popconfirm>
+                    <n-button type="error" size="tiny" quaternary @click="handleDelete(b)"><template #icon><n-icon><TrashOutline /></n-icon></template></n-button>
                   </td>
                 </template>
                 <template v-else>

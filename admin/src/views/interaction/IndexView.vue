@@ -95,18 +95,20 @@ function handlePageSizeChange(s: number) {
 }
 
 function handleDelete(row: AdminInteraction) {
-  dialog.warning({
+  const d = dialog.warning({
     title: '确认删除',
     content: `确定删除这条 ${typeLabelMap[row.type]} 记录？（用户 ${row.user?.nickname || row.user?.username || '#' + row.userId} → ${entityTypeLabelMap[row.entityType] || row.entityType} #${row.entityId}）删除后冗余计数会自动同步。`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await deleteInteraction(row.id)
         message.success('已删除')
         loadList()
       } catch (e: any) {
         message.error(e?.message || '删除失败')
+        return false
       }
     },
   })
@@ -117,18 +119,20 @@ function handleBatchDelete() {
     message.warning('请先选择要操作的记录')
     return
   }
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量删除',
     content: `确定批量删除 ${checkedRowKeys.value.length} 条互动记录？此操作不可撤销。`,
     positiveText: '确认',
     negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await batchDeleteInteractions(checkedRowKeys.value)
         message.success('批量删除成功')
         loadList()
       } catch (e: any) {
         message.error(e?.message || '批量删除失败')
+        return false
       }
     },
   })

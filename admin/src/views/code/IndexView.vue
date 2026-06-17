@@ -315,26 +315,28 @@ function handlePageSizeChange(s: number) {
 
 async function handleBatchDisable() {
   if (checkedRowKeys.value.length === 0) { message.warning('请先选择要禁用的激活码'); return }
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量禁用',
     content: `确定要禁用选中的 ${checkedRowKeys.value.length} 个激活码吗？`,
     positiveText: '确认', negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try { await batchDisableCodes(checkedRowKeys.value); message.success('批量禁用成功'); checkedRowKeys.value = []; loadList() }
-      catch (e: any) { message.error(e.message || '批量禁用失败') }
+      catch (e: any) { message.error(e.message || '批量禁用失败'); return false }
     },
   })
 }
 
 async function handleBatchDelete() {
   if (checkedRowKeys.value.length === 0) { message.warning('请先选择要删除的激活码'); return }
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量删除',
     content: `确定要删除选中的 ${checkedRowKeys.value.length} 个激活码吗？此操作不可恢复！`,
     positiveText: '删除', negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try { await batchDeleteCodes(checkedRowKeys.value); message.success('批量删除成功'); checkedRowKeys.value = []; loadList() }
-      catch (e: any) { message.error(e.message || '批量删除失败') }
+      catch (e: any) { message.error(e.message || '批量删除失败'); return false }
     },
   })
 }

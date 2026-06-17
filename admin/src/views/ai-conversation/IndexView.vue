@@ -49,31 +49,43 @@ function handlePageChange(p: number) { page.value = p; loadData() }
 function handlePageSizeChange(s: number) { pageSize.value = s; page.value = 1; loadData() }
 
 async function handleDelete(row: AiConversation) {
-  dialog.warning({
+  const d = dialog.warning({
     title: '确认删除',
     content: `确定删除文章 #${row.postId} 的对话历史？`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await deleteAiConversation(row.id)
-      message.success('已删除')
-      loadData()
+      d.loading = true
+      try {
+        await deleteAiConversation(row.id)
+        message.success('已删除')
+        loadData()
+      } catch (e: any) {
+        message.error(e?.message || '删除失败')
+        return false
+      }
     },
   })
 }
 
 async function handleBatchDelete() {
   if (checkedRowKeys.value.length === 0) return
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量删除',
     content: `确定删除选中的 ${checkedRowKeys.value.length} 条对话？`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await batchDeleteAiConversations(checkedRowKeys.value)
-      message.success('批量删除成功')
-      checkedRowKeys.value = []
-      loadData()
+      d.loading = true
+      try {
+        await batchDeleteAiConversations(checkedRowKeys.value)
+        message.success('批量删除成功')
+        checkedRowKeys.value = []
+        loadData()
+      } catch (e: any) {
+        message.error(e?.message || '批量删除失败')
+        return false
+      }
     },
   })
 }

@@ -30,7 +30,9 @@ const message = useMessage()
 const formRef = ref<FormInst | null>(null)
 const editorRef = ref<ExposeParam | null>(null)
 const saving = ref(false)
-const loading = ref(false)
+// 初始 true：编辑模式进入即显示 loading（loadPost 回来前显示加载态，避免白屏）；
+// 新建模式在 onMounted 末尾立即设为 false（isEdit=false 不等 loadPost）。
+const loading = ref(true)
 const coverUploadFileList = ref<UploadFileInfo[]>([])
 const coverDragOver = ref(false)
 const settingsVisible = ref(false)
@@ -410,6 +412,9 @@ onMounted(async () => {
   await loadOptions()
   if (isEdit.value) {
     loadPost(Number(route.params.id))
+  } else {
+    // 新建模式：无 loadPost，立即结束 loading 显示空表单
+    loading.value = false
   }
 })
 </script>
@@ -656,9 +661,9 @@ onMounted(async () => {
     </div>
 
     <!-- 加载中 -->
-    <n-card :bordered="false" v-if="loading">
+    <div v-if="loading" class="loading-wrap">
       <n-spin :show="true" description="加载中..." />
-    </n-card>
+    </div>
 
     <!-- AI 写作助手（悬浮 + 可拖拽） -->
     <AgentPanel ref="agentPanelRef" :form-value="formValue" :post-id="isEdit ? Number(route.params.id) : null" />
@@ -677,6 +682,15 @@ onMounted(async () => {
 
 .page-header {
   flex-shrink: 0;
+}
+
+/* 加载态：撑满编辑区剩余空间，水平垂直居中 */
+.loading-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .editor-layout {

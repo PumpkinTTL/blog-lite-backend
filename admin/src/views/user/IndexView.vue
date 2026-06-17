@@ -20,6 +20,8 @@ const pageSize = ref(5)
 
 // Extra search field
 const searchStatus = ref<string | null>(null)
+/** 启/禁用中的用户 id（n-switch loading） */
+const togglingId = ref<number | null>(null)
 
 const userStatusOptions = [
   { label: '全部', value: null },
@@ -176,12 +178,16 @@ function handlePageSizeChange(s: number) {
 }
 
 async function handleToggleStatus(row: User) {
+  if (togglingId.value !== null) return
+  togglingId.value = row.id
   try {
     await toggleUserStatus(row.id)
     message.success(row.status === 'active' ? '已禁用用户' : '已启用用户')
     _handleSearch()
   } catch (e: any) {
     message.error(e.message || '操作失败')
+  } finally {
+    togglingId.value = null
   }
 }
 
@@ -234,11 +240,11 @@ const columns: DataTableColumns<User> = [
     key: 'status',
     width: 100,
     render: (row) =>
-      h(NSwitch, {
-        value: row.status === 'active',
-        loading: false,
-        onUpdateValue: () => handleToggleStatus(row),
-      }),
+h(NSwitch, {
+  value: row.status === 'active',
+  loading: togglingId.value === row.id,
+  onUpdateValue: () => handleToggleStatus(row),
+}),
   },
   { title: '创建时间', key: 'createdAt', width: 170, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') },
   {

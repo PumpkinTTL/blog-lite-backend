@@ -124,18 +124,21 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
   }
 
   function handleDelete(row: T) {
-    dialog.warning({
+    const d = dialog.warning({
       title: '确认删除',
       content: options.deleteContent(row),
       positiveText: '删除',
       negativeText: '取消',
       onPositiveClick: async () => {
+        // d.loading 让确认按钮转圈且不可重复点击，防止异步删除期间重复触发
+        d.loading = true
         try {
           await options.deleteApi(row.id)
           message.success(options.deleteSuccessMessage || '删除成功')
           loadList()
         } catch (e: any) {
           message.error(e.message || '删除失败')
+          return false // 失败不关弹窗（d.loading 随 hide 自动重置）
         }
       },
     })
@@ -147,12 +150,13 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
       message.warning('请先选择要删除的项')
       return
     }
-    dialog.warning({
+    const d = dialog.warning({
       title: '批量删除',
       content: (options.batchDeleteContent || ((n) => `确定删除选中的 ${n} 项?此操作不可恢复!`))(checkedRowKeys.value.length),
       positiveText: '删除',
       negativeText: '取消',
       onPositiveClick: async () => {
+        d.loading = true
         try {
           await options.batchDeleteApi!(checkedRowKeys.value)
           message.success(options.batchDeleteSuccessMessage || '批量删除成功')
@@ -160,6 +164,7 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
           loadList()
         } catch (e: any) {
           message.error(e?.message || '批量删除失败')
+          return false
         }
       },
     })

@@ -15,6 +15,8 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const checkedRowKeys = ref<number[]>([])
+/** 行内审核中的评论 id（通过/拒绝按钮 loading） */
+const moderatingId = ref<number | null>(null)
 
 const searchId = ref('')
 const searchKeyword = ref('')
@@ -90,12 +92,16 @@ function handlePageSizeChange(s: number) {
 }
 
 async function handleModerate(row: Comment, status: 'approved' | 'rejected') {
+  if (moderatingId.value !== null) return
+  moderatingId.value = row.id
   try {
     await moderateComment(row.id, status)
     message.success(status === 'approved' ? '已通过' : '已拒绝')
     loadList()
   } catch (e: any) {
     message.error(e?.message || '操作失败')
+  } finally {
+    moderatingId.value = null
   }
 }
 
@@ -104,18 +110,20 @@ async function handleBatchModerate(status: 'approved' | 'rejected') {
     message.warning('请先选择要操作的评论')
     return
   }
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量操作',
     content: `确定批量${status === 'approved' ? '通过' : '拒绝'} ${checkedRowKeys.value.length} 条评论？`,
     positiveText: '确认',
     negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await batchModerateComment(checkedRowKeys.value, status)
         message.success('批量操作成功')
         loadList()
       } catch (e: any) {
         message.error(e?.message || '批量操作失败')
+        return false
       }
     },
   })
@@ -126,36 +134,40 @@ async function handleBatchDeleteComments() {
     message.warning('请先选择要删除的评论')
     return
   }
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量删除',
     content: `确定要删除选中的 ${checkedRowKeys.value.length} 条评论吗？此操作不可恢复！`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await batchDeleteComments(checkedRowKeys.value)
         message.success('批量删除成功')
         loadList()
       } catch (e: any) {
         message.error(e?.message || '批量删除失败')
+        return false
       }
     },
   })
 }
 
 function handleDelete(row: Comment) {
-  dialog.warning({
+  const d = dialog.warning({
     title: '确认删除',
     content: `确定删除评论 #${row.id}？一级评论删除会连带其下二级回复。`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await deleteComment(row.id)
         message.success('已删除')
         loadList()
       } catch (e: any) {
         message.error(e?.message || '删除失败')
+        return false
       }
     },
   })
@@ -215,6 +227,7 @@ const columns: DataTableColumns<Comment> = [
         row.status !== 'approved'
           ? h(NButton, {
             size: 'small', quaternary: true, type: 'success',
+            loading: moderatingId.value === row.id,
             onClick: () => handleModerate(row, 'approved'),
           }, { default: () => '通过', icon: () => h(NIcon, null, { default: () => h(CheckmarkOutline) }) })
           : null,
@@ -222,6 +235,7 @@ const columns: DataTableColumns<Comment> = [
         row.status !== 'rejected'
           ? h(NButton, {
             size: 'small', quaternary: true, type: 'warning',
+            loading: moderatingId.value === row.id,
             onClick: () => handleModerate(row, 'rejected'),
           }, { default: () => '拒绝', icon: () => h(NIcon, null, { default: () => h(CloseOutline) }) })
           : null,

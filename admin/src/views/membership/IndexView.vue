@@ -163,18 +163,20 @@ async function handlePlanSave() {
 }
 
 function handlePlanDelete(plan: Plan) {
-  dialog.warning({
+  const d = dialog.warning({
     title: '确认删除',
     content: `确定删除套餐「${plan.name}」？已开通此套餐的用户订阅不受影响。`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await deletePlan(plan.id)
         message.success('删除成功')
         loadPlans()
       } catch (e: any) {
         message.error(e.message || '删除失败')
+        return false
       }
     },
   })
@@ -185,12 +187,13 @@ function handlePlanBatchDelete() {
     message.warning('请先选择要删除的套餐')
     return
   }
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量删除',
     content: `确定删除选中的 ${planCheckedRowKeys.value.length} 个套餐?此操作不可恢复!`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await batchDeletePlans(planCheckedRowKeys.value)
         message.success('批量删除成功')
@@ -198,6 +201,7 @@ function handlePlanBatchDelete() {
         loadPlans()
       } catch (e: any) {
         message.error(e?.message || '批量删除失败')
+        return false
       }
     },
   })
@@ -389,36 +393,40 @@ async function handleGrant() {
 }
 
 function handleMemberCancel(row: Membership) {
-  dialog.warning({
+  const d = dialog.warning({
     title: '确认取消',
     content: `确定取消「${row.user?.nickname || row.userId}」的「${row.plan?.name || row.planId}」订阅？`,
     positiveText: '取消订阅',
     negativeText: '保留',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await updateMembership(row.id, { status: 'cancelled' })
         message.success('已取消')
         loadMembers()
       } catch (e: any) {
         message.error(e.message || '操作失败')
+        return false
       }
     },
   })
 }
 
 function handleMemberDelete(row: Membership) {
-  dialog.warning({
+  const d = dialog.warning({
     title: '确认删除',
     content: `确定删除会员记录 #${row.id}？此操作不可恢复。`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await deleteMembership(row.id)
         message.success('删除成功')
         loadMembers()
       } catch (e: any) {
         message.error(e.message || '删除失败')
+        return false
       }
     },
   })
@@ -429,12 +437,13 @@ function handleMemberBatchDelete() {
     message.warning('请先选择要删除的会员记录')
     return
   }
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量删除',
     content: `确定删除选中的 ${memberCheckedRowKeys.value.length} 条会员记录?此操作不可恢复!`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      d.loading = true
       try {
         await batchDeleteMemberships(memberCheckedRowKeys.value)
         message.success('批量删除成功')
@@ -442,6 +451,7 @@ function handleMemberBatchDelete() {
         loadMembers()
       } catch (e: any) {
         message.error(e?.message || '批量删除失败')
+        return false
       }
     },
   })

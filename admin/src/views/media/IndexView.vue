@@ -19,6 +19,8 @@ const pageSize = ref(10)
 const checkedRowKeys = ref<number[]>([])
 const uploadFileList = ref<UploadFileInfo[]>([])
 const uploading = ref(false)
+/** 备注保存中的 media id（保存按钮 loading） */
+const savingNoteId = ref<number | null>(null)
 
 /**
  * 备注列编辑状态：Map<mediaId, draftValue>
@@ -123,6 +125,8 @@ async function commitEditNote(row: Media) {
     noteDrafts.delete(row.id)
     return
   }
+  if (savingNoteId.value !== null) return
+  savingNoteId.value = row.id
   try {
     await updateMedia(row.id, { note })
     row.note = note || null
@@ -130,6 +134,8 @@ async function commitEditNote(row: Media) {
     message.success(note ? '备注已更新' : '备注已清空')
   } catch (e: any) {
     message.error(e.message || '更新备注失败')
+  } finally {
+    savingNoteId.value = null
   }
 }
 
@@ -183,20 +189,20 @@ function handleDelete(item: Media) {
       await deleteMedia(item.id)
     }
   }
-  dialog.warning({
+  const d = dialog.warning({
     title: '确认删除',
     content: `确定删除文件「${item.originalName}」？`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      loading.value = true
+      d.loading = true
       try {
         await doDelete()
         message.success('删除成功')
         await loadMedia()
       } catch (e: any) {
         message.error(e.message || '删除失败')
-        loading.value = false
+        return false
       }
     },
   })
@@ -204,12 +210,12 @@ function handleDelete(item: Media) {
 
 async function handleBatchDelete() {
   if (checkedRowKeys.value.length === 0) { message.warning('请先选择要删除的文件'); return }
-  dialog.warning({
+  const d = dialog.warning({
     title: '批量删除',
     content: `确定要删除选中的 ${checkedRowKeys.value.length} 个文件吗？`,
     positiveText: '删除', negativeText: '取消',
     onPositiveClick: async () => {
-      loading.value = true
+      d.loading = true
       try {
         const selectedItems = mediaList.value.filter((m) => checkedRowKeys.value.includes(m.id))
         const allR2 = selectedItems.length > 0 && selectedItems.every((m) => m.ossPlatform === 'cloudflare' && m.storageType === 'oss')
@@ -223,7 +229,7 @@ async function handleBatchDelete() {
         await loadMedia()
       } catch (e: any) {
         message.error(e.message || '批量删除失败')
-        loading.value = false
+        return false
       }
     },
   })
@@ -325,6 +331,7 @@ const columns: DataTableColumns<Media> = [
           quaternary: true,
           type: 'success',
           class: 'note-action',
+          loading: savingNoteId.value === row.id,
           onClick: () => commitEditNote(row),
         }, { default: () => h(NIcon, null, { default: () => h(CheckmarkOutline) }) }),
         h(NButton, {
