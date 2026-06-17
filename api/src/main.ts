@@ -16,6 +16,14 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 5100);
 
+  // 调高 JSON body 上限。Express 默认 100kb，AI 对话（长文 + 多轮历史）
+  // 与富文本长文会轻松超过，触发 'request entity too large' (413)。
+  // 用 NestExpressApplication.useBodyParser 覆盖默认 limit，
+  // 可经 BODY_LIMIT 环境变量调整，默认 10mb。
+  app.useBodyParser('json', {
+    limit: configService.get<string>('BODY_LIMIT', '10mb'),
+  });
+
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
   app.useLogger(app.get(Logger));
   app.useGlobalFilters(new AllExceptionsFilter());

@@ -170,7 +170,7 @@ function toggleDark() {
       />
     </n-layout-sider>
 
-    <n-layout>
+    <n-layout class="admin-main">
       <!-- 顶栏 -->
       <n-layout-header bordered class="admin-header">
         <div class="header-left">
@@ -331,6 +331,18 @@ function toggleDark() {
 .admin-content > div {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 贯通高度链（修编辑器无限增高/工具栏滚走/同步滚动失联的根因）：
+   naive-ui 的 .n-layout-scroll-container 默认 display:block（仅 has-sider 时才提升为 flex）。
+   这会让内层 n-layout 的 scroll-container → header + 内容区 的高度分配失效，
+   子页面的 .page-wrapper{flex:1} 拿不到确定高度，编辑器退化为内容驱动高度，
+   外层整体滚动，富文本工具栏随之滚走、scrollAuto 同步滚动失联。
+   把这个 scroll-container 提升为 flex column 后，header(56px) + .admin-content(flex:1)
+   拿到确定视口高度，下游所有依赖 flex 撑满的页面（如文章编辑页）才能正常内部滚动。 */
+.admin-main :deep(.n-layout-scroll-container) {
   display: flex;
   flex-direction: column;
 }

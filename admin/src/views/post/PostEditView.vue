@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NCard, NForm, NFormItem, NInput, NButton, NSelect, NSpace, NIcon, NUpload, NTag, NCheckbox, NCheckboxGroup, useMessage } from 'naive-ui'
+import { NCard, NForm, NFormItem, NInput, NButton, NSelect, NSpace, NIcon, NUpload, NTag, NCheckbox, NCheckboxGroup, NDrawer, NDrawerContent, useMessage } from 'naive-ui'
 import type { FormInst, FormRules, UploadFileInfo } from 'naive-ui'
 import type { ExposeParam, UploadImgCallBack } from 'md-editor-v3'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
-import { ArrowBackOutline, SaveOutline, CloudUploadOutline, TrashOutline, SparklesOutline } from '@vicons/ionicons5'
+import { ArrowBackOutline, SaveOutline, CloudUploadOutline, TrashOutline, SparklesOutline, SettingsOutline } from '@vicons/ionicons5'
 import { getPost, createPost, updatePost } from '../../api/post'
 import { generateByAi } from '../../api/ai'
 import type { AiGenerateField } from '../../api/ai'
@@ -33,6 +33,7 @@ const saving = ref(false)
 const loading = ref(false)
 const coverUploadFileList = ref<UploadFileInfo[]>([])
 const coverDragOver = ref(false)
+const settingsVisible = ref(false)
 const isEdit = computed(() => !!route.params.id)
 
 const formValue = ref({
@@ -423,6 +424,10 @@ onMounted(async () => {
         <h2 class="page-title">{{ isEdit ? '编辑文章' : '新建文章' }}</h2>
       </n-space>
       <n-space>
+        <n-button @click="settingsVisible = true">
+          <template #icon><n-icon><SettingsOutline /></n-icon></template>
+          文章设置
+        </n-button>
         <n-button type="primary" :loading="saving" @click="handleSave">
           <template #icon><n-icon><SaveOutline /></n-icon></template>
           保存
@@ -431,38 +436,45 @@ onMounted(async () => {
     </div>
 
     <div class="editor-layout" v-if="!loading">
-      <!-- 左侧编辑器 -->
+      <!-- 编辑器（全宽占位，内部滚动） -->
       <div class="editor-main">
         <n-form ref="formRef" :model="formValue" :rules="rules">
           <n-card :bordered="false" class="editor-card">
-            <n-form-item label="标题" path="title">
-              <n-input v-model:value="formValue.title" placeholder="请输入文章标题" size="large" />
-            </n-form-item>
-
-            <n-form-item label="副标题" path="subtitle">
-              <n-input v-model:value="formValue.subtitle" placeholder="一句话副标题（可选）" />
-            </n-form-item>
-
-            <div class="content-block">
-              <div class="field-label">内容</div>
-              <MdEditor
-                ref="editorRef"
-                v-model="formValue.content"
-                :theme="isDark ? 'dark' : 'light'"
-                style="height: 100%"
-                placeholder="开始编写 Markdown 内容...（支持拖拽 / 粘贴图片）"
-                :on-upload-img="onEditorUploadImg"
-                :on-drop="onEditorDrop"
-              />
-            </div>
+            <MdEditor
+              ref="editorRef"
+              v-model="formValue.content"
+              :theme="isDark ? 'dark' : 'light'"
+              class="post-md-editor"
+              style="height: 100%"
+              placeholder="开始编写 Markdown 内容...（支持拖拽 / 粘贴图片）"
+              :on-upload-img="onEditorUploadImg"
+              :on-drop="onEditorDrop"
+            />
           </n-card>
-        </n-form>
-      </div>
 
-      <!-- 右侧设置面板 -->
-      <div class="editor-sidebar">
-        <n-card :bordered="false" class="side-card" title="文章设置">
-          <n-space vertical :size="16">
+          <!-- 文章设置抽屉：
+               1. 默认不 teleport（to 为空时 VLazyTeleport 就地渲染），让标题/副标题的
+                  n-form-item 留在 form DOM 子树内，formRef.validate() 才能校验到它们。
+               2. 关闭 trap-focus / auto-focus：naive-ui drawer 默认 trapFocus+autoFocus=true，
+                  会用 VFocusTrap 把焦点锁在抽屉里，导致打开抽屉后点击抽屉外的输入框
+                  （编辑器、AI 写作面板）焦点被强制拉回抽屉、且「设置」按钮一直保持聚焦。
+                  关掉后抽屉与编辑器可自由切换焦点。 -->
+          <n-drawer
+            v-model:show="settingsVisible"
+            :width="380"
+            placement="right"
+            :trap-focus="false"
+            :auto-focus="false"
+          >
+            <n-drawer-content title="文章设置" closable>
+              <n-space vertical :size="16">
+                <n-form-item label="标题" path="title">
+                  <n-input v-model:value="formValue.title" placeholder="请输入文章标题" size="large" />
+                </n-form-item>
+
+                <n-form-item label="副标题" path="subtitle">
+                  <n-input v-model:value="formValue.subtitle" placeholder="一句话副标题（可选）" />
+                </n-form-item>
             <!-- AI 助手：勾选要生成的内容，一次调用生成多项 -->
             <div class="ai-panel" :class="{ 'is-loading': aiLoading }">
               <div class="ai-panel-header">
@@ -637,12 +649,14 @@ onMounted(async () => {
               />
             </div>
           </n-space>
-        </n-card>
+            </n-drawer-content>
+          </n-drawer>
+        </n-form>
       </div>
     </div>
 
     <!-- 加载中 -->
-    <n-card :bordered="false" v-else>
+    <n-card :bordered="false" v-if="loading">
       <n-spin :show="true" description="加载中..." />
     </n-card>
 
@@ -668,14 +682,13 @@ onMounted(async () => {
 .editor-layout {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  grid-template-rows: minmax(0, 1fr); /* 关键：强制 row 撑满，不允许由内容决定 */
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
 }
 
-/* === 左侧编辑器：grid item 自动撑满 row === */
+/* 编辑器单栏：撑满 .editor-layout，内部各自滚动 */
 .editor-main {
+  flex: 1;
   min-height: 0;
   overflow: hidden;
   display: flex;
@@ -701,51 +714,37 @@ onMounted(async () => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* 清零 n-card 默认 padding，编辑器自身已有边框/圆角，避免双层留白 */
+  padding: 0 !important;
 }
 
-.content-block {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  margin-top: 16px;
-}
+/* md-editor-v3 高度链全链路强制。
+   库自带内部滚动模型（不要破坏滚动行为，只补全高度传递）：
+   - .md-editor → .md-editor-content → .md-editor-content-wrapper → input/preview-wrapper → cm-editor/cm-scroller
+   scrollAuto 同步滚动监听的是 .cm-scroller 与 preview-wrapper（真正的滚动容器）。
 
-/* 约束 md-editor-v3 根节点，禁止其用 auto 高度撑高父容器：
-   编辑器占满 content-block，内容区内部滚动，不再无限增高 */
-.content-block :deep(.md-editor) {
-  height: 100% !important;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.content-block :deep(.md-editor .md-editor-content) {
+   两个关键库默认值会破坏"撑满父容器"：
+   1. .md-editor { height: 500px } 硬编码 → 内容少时只占 500px，下方留白
+   2. CodeMirror 6 的 .cm-editor/.cm-scroller 内容少时按内容收缩，不撑满
+
+   解决：inline style="height:100%" 设在 MdEditor 根元素（见 template，优先级最高，
+   压过库的 height:500px），再用 :deep 把 100% 高度逐层传到 cm-scroller，
+   并给每一环 min-height:0 防止内容多时反向撑高外层（保持内部滚动）。 */
+.editor-card :deep(.md-editor) {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+}
+.editor-card :deep(.md-editor-content),
+.editor-card :deep(.md-editor-content-wrapper),
+.editor-card :deep(.md-editor-input-wrapper),
+.editor-card :deep(.md-editor-preview-wrapper),
+.editor-card :deep(.md-editor .cm-editor),
+.editor-card :deep(.md-editor .cm-scroller) {
+  min-height: 0;
 }
 
 .editor-card {
   border-radius: 12px;
-}
-
-/* === 右侧侧栏 === */
-.editor-sidebar {
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.side-card {
-  border-radius: 12px;
-}
-
-.editor-sidebar :deep(.n-space) {
-  width: 100%;
-}
-
-.editor-sidebar :deep(.n-space-item) {
-  width: 100%;
 }
 
 .field-label {
@@ -947,20 +946,5 @@ onMounted(async () => {
 .cover-empty:hover .cover-empty-hint,
 .cover-empty.is-dragover .cover-empty-hint {
   color: #818CF8;
-}
-
-@media (max-width: 1024px) {
-  .page-wrapper {
-    height: auto;
-    overflow: visible;
-  }
-  .editor-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: none;
-  }
-  .editor-main,
-  .editor-sidebar {
-    overflow: visible;
-  }
 }
 </style>
