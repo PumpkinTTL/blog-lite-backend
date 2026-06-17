@@ -60,10 +60,10 @@ const compacting = ref(false)
 const selectedModel = ref<string | null>(null)
 const providers = ref<AiProvider[]>([])
 const providerModelOptions = computed(() => {
-  const opts: { label: string; value: string; type: 'group'; children: { label: string; value: string }[] }[] = []
+  const opts: { label: string; key: string; type: 'group'; children: { label: string; value: string }[] }[] = []
   for (const p of providers.value) {
     if (p.models?.length) {
-      opts.push({ label: p.name, value: p.name, type: 'group', children: p.models.map(m => ({ label: m.displayName || m.modelId, value: m.modelId })) })
+      opts.push({ label: p.name, key: `provider-${p.id}`, type: 'group', children: p.models.map(m => ({ label: m.displayName || m.modelId, value: m.modelId })) })
     }
   }
   return opts
