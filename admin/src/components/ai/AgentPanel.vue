@@ -5,10 +5,11 @@ import {
 } from 'naive-ui'
 import {
   RemoveOutline,
-  PaperPlaneOutline, BulbOutline, ChevronDownOutline,
+  SendOutline, BulbOutline, ChevronDownOutline,
   SparklesOutline, ContractOutline, HappyOutline, ColorPaletteOutline, CubeOutline,
+  StopOutline,
 } from '@vicons/ionicons5'
-import { streamChat, streamCompact } from '../../api/ai'
+import { streamChat, streamCompact, streamWebSearch } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext, AiUsage } from '../../api/ai'
 import { getConversationByPostId, saveConversation } from '../../api/ai-conversation'
 import { getActiveAiProviders } from '../../api/ai-provider'
@@ -57,6 +58,8 @@ const messages = ref<AiChatMessage[]>([])
 const inputText = ref('')
 const sending = ref(false)
 const compacting = ref(false)
+/** 对话中断控制器：sending 期间用户点"停止"时 abort，终止 streamChat fetch */
+let abortController: AbortController | null = null
 const selectedProviderId = ref<number | null>(null)
 const selectedModel = ref<string | null>(null)
 const providers = ref<AiProvider[]>([])
@@ -282,6 +285,8 @@ interface RenderItem {
   toolCall?: AiToolCall
   toolStatus?: 'pending' | 'running' | 'success' | 'error'
   toolResult?: string
+  /** 流式工具的进度文本（如 web_search 的"正在搜索…"），仅 running 期间显示 */
+  toolProgress?: string
 }
 const renderItems = ref<RenderItem[]>([])
 const scrollBody = ref<HTMLElement | null>(null)
@@ -440,7 +445,15 @@ function sanitizeSlug(v: string): string {
 const fail = (error: string) => JSON.stringify({ ok: false, error })
 
 // === 工具执行器 ===
-function executeTool(call: AiToolCall): string {
+/**
+ * 工具执行器。
+ * 异步：web_search 需要发网络请求（流式 SSE），其他工具仍同步 return（在 async 里天然兼容）。
+ * @param onProgress 流式进度回调（web_search 用），更新工具卡片的进度文本
+ */
+async function executeTool(
+  call: AiToolCall,
+  onProgress?: (msg: string) => void,
+): Promise<string> {
   let args: any = {}
   try { args = JSON.parse(call.function.arguments || '{}') } catch {
     return fail(`参数不是合法 JSON: ${call.function.arguments.slice(0, 100)}`)
@@ -570,6 +583,34 @@ function executeTool(call: AiToolCall): string {
         subtitleLength: f.subtitle.length,
         summaryLength: f.summary.length,
       })
+    }
+    case 'web_search': {
+      const query = toStr(args.query, 400)
+      if (!query.trim()) return fail('query 不能为空')
+      const maxResults = clamp(toInt(args.max_results ?? args.maxResults, 5), 1, 10)
+      // 流式搜索：onProgress 多次触发更新工具卡片进度
+      // 精简结果再返回，避免把过长的 content 全塞进 messages 浪费后续 token
+      const res = await streamWebSearch(
+        query.trim(),
+        (p) => {
+          const extra = p.responseTime != null ? ` · ${p.responseTime.toFixed(1)}s` : ''
+          onProgress?.(`${p.message}${extra}`)
+        },
+        maxResults,
+      )
+      // 精简：每条 content 截断到 500 字，避免历史膨胀
+      const slim = {
+        query: res.query,
+        answer: res.answer,
+        results: res.results.map((r) => ({
+          title: r.title,
+          url: r.url,
+          content: r.content.length > 500 ? r.content.slice(0, 500) + '…' : r.content,
+          score: r.score,
+        })),
+        responseTime: Number(res.responseTime.toFixed(2)),
+      }
+      return JSON.stringify(slim)
     }
     default:
       return fail(`未知工具: ${call.function.name}`)
@@ -723,6 +764,13 @@ async function handleCompact() {
   }
 }
 
+/** 主动终止正在进行的 AI 流式回复（用户点"停止"按钮时调用） */
+function stopGeneration() {
+  if (!sending.value) return
+  abortController?.abort()
+  abortController = null
+}
+
 // === 发送 ===
 async function handleSend() {
   let text = inputText.value.trim()
@@ -737,6 +785,7 @@ async function handleSend() {
 
   inputText.value = ''
   sending.value = true
+  abortController = new AbortController()
 
   // 1) 用户消息：完整历史(messages)永远追加用于渲染/回看；
   //    已压缩时同步追加到 compactionMessages（发网关用）。
@@ -777,6 +826,7 @@ async function handleSend() {
           // 记录单步真实 usage（agent 一轮可能多步，循环结束才提交本轮）
           recordStepUsage(assistantItem.id, usage)
         },
+        abortController?.signal,
       )
 
       assistantItem.streaming = false
@@ -801,12 +851,15 @@ async function handleSend() {
         await nextTick()
         let output: string
         try {
-          output = executeTool(call)
-          if (item) { item.toolStatus = 'success'; item.toolResult = output }
+          output = await executeTool(call, (msg) => {
+            // 流式工具（web_search）的进度回调：更新当前工具卡片
+            if (item) item.toolProgress = msg
+          })
+          if (item) { item.toolStatus = 'success'; item.toolResult = output; item.toolProgress = undefined }
           message.success(`已执行：${call.function.name}`)
         } catch (e) {
           output = JSON.stringify({ ok: false, error: e instanceof Error ? e.message : '执行失败' })
-          if (item) { item.toolStatus = 'error'; item.toolResult = output }
+          if (item) { item.toolStatus = 'error'; item.toolResult = output; item.toolProgress = undefined }
           message.error(`工具执行失败：${call.function.name}`)
         }
         const toolMsg: AiChatMessage = { role: 'tool', tool_call_id: call.id, content: output } as AiChatMessage
@@ -815,15 +868,27 @@ async function handleSend() {
       }
     }
   } catch (e) {
+    // 用户主动停止：保留已生成的部分回复（落库，下次继续聊 AI 还能看到），不报错
+    const isAborted = e instanceof DOMException && e.name === 'AbortError'
     if (currentAssistantItem) {
       currentAssistantItem.streaming = false
-      if (!currentAssistantItem.text && !currentAssistantItem.replyText && !currentAssistantItem.thinkText) {
+      if (isAborted && currentAssistantItem.replyText && currentAssistantItem.replyText.trim()) {
+        // 中断时 streamChat 抛异常、不会走到下面的 push；这里补 push 已生成的部分回复
+        const partial: AiChatMessage = { role: 'assistant', content: currentAssistantItem.replyText }
+        messages.value.push(partial)
+        if (compactionSummary.value) compactionMessages.value.push(partial)
+      } else if (!currentAssistantItem.text && !currentAssistantItem.replyText && !currentAssistantItem.thinkText) {
         renderItems.value = renderItems.value.filter((r) => r.id !== currentAssistantItem!.id)
       }
     }
-    message.error(e instanceof Error ? e.message : 'AI 对话失败')
+    if (!isAborted) {
+      message.error(e instanceof Error ? e.message : 'AI 对话失败')
+    } else {
+      message.info('已停止生成')
+    }
   } finally {
     sending.value = false
+    abortController = null
     // 一轮对话结束（不管 agent 内部走了几步），统一用本轮最大 prompt 步提交。
     // 避免多步重复历史被累加导致 total 虚高、rounds 虚高。
     commitRoundUsage()
@@ -1048,8 +1113,9 @@ function onInputKeydown(e: KeyboardEvent) {
           </div>
 
           <!-- 工具调用 -->
+          <!-- 工具调用 -->
           <div v-else class="msg msg-tool">
-            <ToolCallCard :call="item.toolCall!" :status="item.toolStatus || 'pending'" :result="item.toolResult" />
+            <ToolCallCard :call="item.toolCall!" :status="item.toolStatus || 'pending'" :result="item.toolResult" :progress="item.toolProgress" />
           </div>
         </template>
       </div>
@@ -1122,8 +1188,23 @@ function onInputKeydown(e: KeyboardEvent) {
             :disabled="sending || compacting"
             @keydown.capture="onInputKeydown"
           />
-          <button class="send-btn" :class="{ disabled: !inputText.trim() || sending || compacting }" :disabled="!inputText.trim() || sending || compacting" @click="handleSend">
-            <n-icon :size="16"><PaperPlaneOutline /></n-icon>
+          <!-- 发送 / 停止 按钮：sending 时切换为停止按钮（可点击终止生成） -->
+          <button
+            v-if="sending"
+            class="send-btn stop-btn"
+            title="停止生成"
+            @click="stopGeneration"
+          >
+            <n-icon :size="16"><StopOutline /></n-icon>
+          </button>
+          <button
+            v-else
+            class="send-btn"
+            :class="{ disabled: !inputText.trim() || compacting }"
+            :disabled="!inputText.trim() || compacting"
+            @click="handleSend"
+          >
+            <n-icon :size="16"><SendOutline /></n-icon>
           </button>
         </div>
 
@@ -1236,7 +1317,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .custom-select:not(.model-select) { width: auto; min-width: 72px; max-width: 110px; }
 /* 模型：flex:1 撑到行尾，吸收剩余空间 */
 .custom-select.model-select { flex: 1; }
-.cs-trigger {
+.cs-trigger { min-width: 0;
   display: flex; align-items: center; gap: 3px;
   padding: 3px 7px;
   border: 1px solid transparent;
@@ -1251,7 +1332,7 @@ function onInputKeydown(e: KeyboardEvent) {
 }
 .cs-trigger:hover { background: #f5f5f4; color: #1c1917; }
 /* 展开状态下保持 hover 态,避免点开菜单后触发器"消失" */
-.custom-select:has(.cs-menu) .cs-trigger { background: #f5f5f4; color: #1c1917; }
+.custom-select:has(.cs-menu) .cs-trigger { min-width: 0; background: #f5f5f4; color: #1c1917; }
 .cs-text { overflow: hidden; text-overflow: ellipsis; }
 .cs-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; box-shadow: 0 8px 24px rgba(28,25,23,0.12); z-index: 10010; max-height: 200px; overflow-y: auto; }
 .cs-option { padding: 7px 12px; font-size: 12px; color: #1c1917; cursor: pointer; transition: background 0.12s; }
@@ -1259,7 +1340,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .cs-option.active { color: #c15f3c; background: rgba(193,95,60,0.08); }
 .cs-option.disabled { color: #a8a29e; cursor: default; }
 
-.panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: #fafaf9; }
+.panel-body { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: #fafaf9; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
 .panel-body::-webkit-scrollbar-track { background: transparent; }
@@ -1340,7 +1421,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
 /* 底部 */
 .panel-footer { border-top: 1px solid #e7e5e4; background: #fafaf9; border-radius: 0 0 12px 12px; }
-.quick-cmds { display: flex; gap: 6px; padding: 8px 12px 0; align-items: center; }
+.quick-cmds { display: flex; gap: 6px; padding: 8px 12px 0; align-items: center; min-width: 0; overflow: hidden; }
 .quick-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #e7e5e4; background: #ffffff; color: #57534e; font-size: 11px; border-radius: 6px; cursor: pointer; transition: all 0.15s; flex-shrink: 0; height: 26px; box-sizing: border-box; }
 .quick-btn:hover { background: #f5f5f4; border-color: #d6d3d1; color: #1c1917; }
 .quick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -1359,6 +1440,13 @@ function onInputKeydown(e: KeyboardEvent) {
 .send-btn { flex-shrink: 0; width: 34px; height: 34px; border: none; border-radius: 8px; background: #1c1917; color: #fafaf9; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, opacity 0.15s; }
 .send-btn:hover { background: #292524; }
 .send-btn.disabled { opacity: 0.3; cursor: not-allowed; }
+/* 停止按钮：sending 期间替代发送按钮，红色 + 呼吸感，明确可点击终止 */
+.send-btn.stop-btn { background: #dc2626; animation: stop-breath 1.4s ease-in-out infinite; }
+.send-btn.stop-btn:hover { background: #b91c1c; }
+@keyframes stop-breath {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.2); }
+}
 
 /* 底部 token 统计 + 上下文进度条 */
 .ctx-foot { padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 4px; }

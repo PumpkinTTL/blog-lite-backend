@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { NIcon } from 'naive-ui'
 import { CheckmarkCircle, CloseCircle, SyncCircle, ChevronDownOutline } from '@vicons/ionicons5'
 import type { AiToolCall } from '../../api/ai'
@@ -10,6 +10,8 @@ const props = defineProps<{
   call: AiToolCall
   status: Status
   result?: string
+  /** 流式工具进度文本（web_search 的"正在搜索…"），仅 running 期间显示 */
+  progress?: string
 }>()
 
 const expanded = ref(false)
@@ -28,37 +30,109 @@ const NAME_LABEL: Record<string, string> = {
   find_and_replace: '查找替换',
   delete_lines: '删除行',
   get_word_count: '字数统计',
+  web_search: '联网搜索',
 }
 
 const label = computed(() => NAME_LABEL[props.call.function.name] || props.call.function.name)
+const isWebSearch = computed(() => props.call.function.name === 'web_search')
 
 // 参数解析为 key-value 数组（结构化展示）
-interface KV { key: string; value: string }
-const argsList = computed<KV[]>(() => {
+type KV = { key: string; value: string }
+const argsList = computed(() => {
   try {
     const obj = JSON.parse(props.call.function.arguments || '{}')
-    return Object.entries(obj).map(([k, v]) => ({
+    const list: KV[] = Object.entries(obj).map(([k, v]) => ({
       key: k,
       value: typeof v === 'string' ? v : JSON.stringify(v),
     }))
+    return list
   } catch {
     return [{ key: '(原始)', value: props.call.function.arguments }]
   }
 })
 
-// 结果解析为 key-value 数组
-const resultList = computed<KV[]>(() => {
-  if (!props.result) return []
+// 结果解析为 key-value 数组（非 web_search 工具用）
+const resultList = computed(() => {
+  // web_search 用专属的卡片式列表，不走通用 kv 展示
+  if (isWebSearch.value) return [] as KV[]
+  if (!props.result) return [] as KV[]
   try {
     const obj = JSON.parse(props.result)
-    return Object.entries(obj).map(([k, v]) => ({
+    const list: KV[] = Object.entries(obj).map(([k, v]) => ({
       key: k,
       value: typeof v === 'string' ? v : JSON.stringify(v),
     }))
+    return list
   } catch {
     return [{ key: '(原始)', value: props.result.slice(0, 200) }]
   }
 })
+
+/* ============ web_search 专属：逐条渲染动画 ============ */
+type SearchResultItem = {
+  title: string
+  url: string
+  content: string
+  score: number
+}
+/** 已揭示的结果（逐条 push，驱动动画） */
+const revealedResults = ref<SearchResultItem[]>([])
+/** 搜索元信息（answer / responseTime / 总数） */
+const searchMeta = ref<{ answer: string | null; responseTime: number; total: number } | null>(null)
+let revealTimer: ReturnType<typeof setInterval> | null = null
+
+function clearRevealTimer() {
+  if (revealTimer) { clearInterval(revealTimer); revealTimer = null }
+}
+
+// 从 url 提取域名（卡片右下角显示来源）
+function domainOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url.slice(0, 40)
+  }
+}
+
+// watch result：success 时解析，启动逐条揭示动画
+watch(
+  () => [props.result, props.status] as const,
+  ([result, status]) => {
+    if (!isWebSearch.value || status !== 'success' || !result) {
+      revealedResults.value = []
+      searchMeta.value = null
+      clearRevealTimer()
+      return
+    }
+    try {
+      const parsed = JSON.parse(result)
+      const all: SearchResultItem[] = Array.isArray(parsed.results) ? parsed.results : []
+      searchMeta.value = {
+        answer: parsed.answer ?? null,
+        responseTime: parsed.responseTime ?? 0,
+        total: all.length,
+      }
+      // 逐条揭示：每 150ms push 一条，模拟"搜索结果一条条出现"
+      revealedResults.value = []
+      clearRevealTimer()
+      let idx = 0
+      revealTimer = setInterval(() => {
+        if (idx >= all.length) {
+          clearRevealTimer()
+          return
+        }
+        revealedResults.value.push(all[idx])
+        idx++
+      }, 150)
+    } catch {
+      revealedResults.value = []
+      searchMeta.value = null
+    }
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(clearRevealTimer)
 
 // 截断长文本用于摘要展示
 function truncate(s: string, max: number): string {
@@ -113,7 +187,7 @@ const statusText = computed(() => {
       </n-icon>
     </div>
 
-    <!-- 参数概览（始终显示，紧凑） -->
+    <!-- 参数概览（默认显示） -->
     <div v-if="argsList.length > 0" class="tool-section">
       <div v-for="arg in argsList" :key="arg.key" class="kv-row">
         <span class="kv-key">{{ arg.key }}</span>
@@ -121,15 +195,44 @@ const statusText = computed(() => {
       </div>
     </div>
 
-    <!-- 结果概览（成功时显示，紧凑） -->
-    <div v-if="resultList.length > 0" class="tool-section tool-result-section">
+    <!-- 流式进度（仅 running 期间，如 web_search 的"正在搜索…"） -->
+    <div v-if="progress && status === 'running'" class="tool-section tool-progress-section">
+      <div class="kv-row">
+        <span class="kv-key">进度</span>
+        <span class="kv-val kv-progress">{{ progress }}</span>
+      </div>
+    </div>
+
+    <!-- web_search 专属：紧凑单行结果列表，逐条揭示动画 -->
+    <div v-if="isWebSearch && status === 'success' && searchMeta" class="tool-section tool-search-section">
+      <div class="search-meta">
+        共 {{ searchMeta.total }} 条{{ searchMeta.responseTime ? ` · ${searchMeta.responseTime}s` : '' }}
+      </div>
+      <transition-group name="search-item" tag="div" class="search-list">
+        <a
+          v-for="(r, i) in revealedResults"
+          :key="r.url || i"
+          :href="r.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="search-item"
+          :title="r.title"
+        >
+          <span class="search-item-domain">{{ domainOf(r.url) }}</span>
+          <span class="search-item-title">{{ truncate(r.title || '(无标题)', 36) }}</span>
+        </a>
+      </transition-group>
+    </div>
+
+    <!-- 其他工具：通用 key-value 结果展示 -->
+    <div v-else-if="!isWebSearch && resultList.length > 0" class="tool-section tool-result-section">
       <div v-for="r in resultList" :key="r.key" class="kv-row">
         <span class="kv-key">{{ r.key }}</span>
         <span class="kv-val">{{ truncate(r.value, 80) }}</span>
       </div>
     </div>
 
-    <!-- 展开详情：id + 完整参数/结果 JSON -->
+    <!-- 展开详情（靠 expanded 控制）：id + 完整参数/结果 JSON -->
     <div v-if="expanded" class="tool-detail">
       <div class="detail-row">
         <span class="detail-label">call_id</span>
@@ -158,7 +261,22 @@ const statusText = computed(() => {
   font-size: 12px;
   transition: border-color 0.2s;
 }
-.tool-card.is-running { border-color: #c15f3c; background: #fefcfb; }
+.tool-card.is-running {
+  border-color: #c15f3c;
+  background: #fefcfb;
+  /* 呼吸效果：外发光脉动，1.6s 一个周期 */
+  animation: tool-breath 1.6s ease-in-out infinite;
+}
+@keyframes tool-breath {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(193, 95, 60, 0); }
+  50%      { box-shadow: 0 0 0 3px rgba(193, 95, 60, 0.15); }
+}
+/* running 时"工具调用"标签轻微明灭，增强呼吸感 */
+.tool-card.is-running .tool-call-label { animation: label-fade 1.6s ease-in-out infinite; }
+@keyframes label-fade {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
 .tool-card.is-success { border-color: #e7e5e4; }
 .tool-card.is-error { border-color: #dc2626; background: #fef9f9; }
 
@@ -218,6 +336,40 @@ const statusText = computed(() => {
   border-top: 1px dashed #e7e5e4;
 }
 .tool-result-section .kv-val { color: #16a34a; }
+
+/* ============ web_search 结果：单行紧凑列表 ============ */
+.tool-search-section { padding-top: 7px; }
+.search-meta { font-size: 10px; color: #a8a29e; margin-bottom: 4px; }
+.search-list { display: flex; flex-direction: column; gap: 2px; }
+.search-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: transparent;
+  text-decoration: none;
+  transition: background 0.12s;
+  line-height: 1.4;
+}
+.search-item:hover { background: #f5f5f4; }
+/* 来源域名：左侧灰色等宽小字 */
+.search-item-domain {
+  font-size: 9px; color: #a8a29e;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  flex-shrink: 0; min-width: 70px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 标题：单行省略 */
+.search-item-title {
+  font-size: 11px; color: #1c1917;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1;
+}
+.search-item:hover .search-item-title { color: #c15f3c; }
+/* 逐条揭示动画 */
+.search-item-enter-active { transition: all 0.2s ease; }
+.search-item-enter-from { opacity: 0; transform: translateX(-4px); }
+/* 进度区块（running 期间） */
+.tool-progress-section .kv-progress { color: #c15f3c; }
 
 .kv-row {
   display: flex;

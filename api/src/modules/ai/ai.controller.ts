@@ -268,4 +268,55 @@ export class AiController {
       res.end();
     }
   }
+
+  /**
+   * 联网搜索（写作助手 web_search 工具用）：POST /ai/tavily-search（SSE 流式）。
+   *
+   * Tavily 本身是一次性返回（非逐 token），这里用 SSE 推进度事件模拟流式体验，
+   * 前端工具卡片实时显示「正在搜索… → 找到 N 条结果 → 完成」。
+   * 流末尾 done 事件下发完整搜索结果。
+   */
+  @Post('tavily-search')
+  async tavilySearch(
+    @Body() body: { query: string; max_results?: number },
+    @Res() res: Response,
+  ) {
+    if (!body.query?.trim()) {
+      throw new BadRequestException('搜索关键词不能为空');
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const writeEvent = (type: string, data: unknown) => {
+      res.write(`data: ${JSON.stringify({ type, data })}\n\n`);
+    };
+
+    try {
+      writeEvent('progress', { stage: 'searching', message: '正在搜索…' });
+
+      const result = await this.aiService.tavilySearch(
+        body.query.trim(),
+        body.max_results,
+      );
+
+      writeEvent('progress', {
+        stage: 'found',
+        message: `找到 ${result.results.length} 条结果`,
+        count: result.results.length,
+        responseTime: result.responseTime,
+      });
+
+      writeEvent('done', result);
+    } catch (e) {
+      writeEvent('error', {
+        message: e instanceof Error ? e.message : '搜索失败',
+      });
+    } finally {
+      res.end();
+    }
+  }
 }

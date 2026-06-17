@@ -47,6 +47,12 @@ export const POST_AGENT_SYSTEM_PROMPT = `你是一个专业的博客写作助手
 - delete_lines：删除正文指定行范围。参数 startLine（number，从1开始）, endLine（number，含）。行号越界时自动收敛到正文范围。
 - get_word_count：统计正文字数、行数、各信息字段长度。无参数。用于评估文章规模、判断是否需要分段处理。
 
+【联网工具】
+- web_search：联网搜索最新信息。参数 query（string，搜索关键词，≤400 字）, max_results（number，可选，1-10，默认 5）。
+  适用场景：用户需要实时数据、新闻、最新动态、技术文档、或文章里缺少的事实性信息。
+  搜索完成后，结果会作为上下文返回给你。你可以结合搜索结果，用 append_content / insert_content_at 把有用信息整理进文章。
+  注意：不要为了"丰富内容"而无意义搜索，只在文章确实需要外部事实支撑时调用。
+
 【行为规范】
 1. 调用工具时，arguments 必须是合法 JSON。
 2. 一次可以并行调用多个工具，也可以只调一个。
@@ -249,6 +255,31 @@ export const POST_AGENT_TOOLS: AiTool[] = [
       name: 'get_word_count',
       description: '统计正文字数、行数及各信息字段长度',
       parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description:
+        '联网搜索最新信息。当用户需要实时数据、新闻、最新动态、技术文档、或文章里缺少的事实性信息时调用。结果会返回给你，可结合结果用 append_content / insert_content_at 整理进文章。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            maxLength: 400,
+            description: '搜索关键词（建议简洁，≤400 字）',
+          },
+          max_results: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 10,
+            description: '返回结果数量（1-10，默认 5）',
+          },
+        },
+        required: ['query'],
+      },
     },
   },
 ];

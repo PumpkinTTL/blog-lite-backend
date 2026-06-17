@@ -141,6 +141,99 @@ export function compactHistory(data: { messages: AiChatMessage[]; model?: string
   )
 }
 
+/* ============ 联网搜索（SSE 流式进度） ============ */
+
+/** 单条搜索结果（精简后，对齐后端 TavilySearchItem） */
+export interface WebSearchItem {
+  title: string
+  url: string
+  content: string
+  score: number
+}
+
+/** 完整搜索结果（对齐后端 TavilySearchResult） */
+export interface WebSearchResult {
+  query: string
+  answer: string | null
+  results: WebSearchItem[]
+  responseTime: number
+}
+
+/** 进度事件载荷（后端 SSE progress 事件的 data） */
+export interface WebSearchProgress {
+  stage: 'searching' | 'found'
+  message: string
+  count?: number
+  responseTime?: number
+}
+
+/**
+ * 流式联网搜索：POST /ai/tavily-search，消费 SSE。
+ * Tavily 本身一次性返回，后端用 SSE 推进度事件（正在搜索 → 找到 N 条）模拟流式。
+ *
+ * @param query 搜索关键词
+ * @param maxResults 返回结果数（1-10）
+ * @param onProgress 进度回调（流期间多次触发，用于更新工具卡片 UI）
+ * @returns 完整搜索结果（也会被 executeTool JSON.stringify 塞回 messages 给 AI）
+ */
+export async function streamWebSearch(
+  query: string,
+  onProgress?: (p: WebSearchProgress) => void,
+  maxResults?: number,
+): Promise<WebSearchResult> {
+  const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
+  const baseURL = import.meta.env.VITE_API_BASE_URL
+
+  const resp = await fetch(`${baseURL}/ai/tavily-search`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ query, max_results: maxResults }),
+  })
+
+  if (!resp.ok || !resp.body) {
+    const errText = await resp.text().catch(() => '')
+    throw new Error(`搜索请求失败 (${resp.status}): ${errText.slice(0, 200)}`)
+  }
+
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result: WebSearchResult = { query, answer: null, results: [], responseTime: 0 }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      const s = line.trim()
+      if (!s.startsWith('data:')) continue
+      const payload = s.slice(5).trim()
+      if (!payload) continue
+      try {
+        const evt = JSON.parse(payload)
+        if (evt.type === 'progress' && evt.data?.message) {
+          onProgress?.(evt.data as WebSearchProgress)
+        } else if (evt.type === 'done') {
+          // 网关结束时的完整结果，作为权威值
+          result = evt.data as WebSearchResult
+        } else if (evt.type === 'error') {
+          throw new Error(evt.data?.message || '搜索服务错误')
+        }
+      } catch (e) {
+        // error 类型已抛出；JSON 解析失败则跳过
+        if (e instanceof Error && e.message && !e.message.includes('JSON')) throw e
+      }
+    }
+  }
+
+  return result
+}
+
 /* ============ Agent 对话（SSE 流式） ============ */
 
 /** 工具调用（已聚合） */
@@ -201,6 +294,8 @@ export async function streamChat(
   model?: string,
   onThinking?: (text: string) => void,
   onUsage?: (usage: AiUsage) => void,
+  /** 可选：AbortSignal，用于主动终止流式对话 */
+  signal?: AbortSignal,
 ): Promise<StreamChatResult> {
   const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
   const baseURL = import.meta.env.VITE_API_BASE_URL
@@ -212,6 +307,7 @@ export async function streamChat(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({ messages, context, model }),
+    signal,
   })
 
   if (!resp.ok || !resp.body) {

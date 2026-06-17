@@ -508,4 +508,112 @@ export class AiService {
     if (!text) return '';
     return text.length > max ? text.slice(0, max) : text;
   }
+
+  /* ============ Tavily 联网搜索（写作助手 web_search 工具用）============ */
+
+  /** 精简后的搜索结果（发给前端 / 塞回 messages 给 AI） */
+  async tavilySearch(
+    query: string,
+    maxResults = 5,
+  ): Promise<TavilySearchResult> {
+    const apiKey = process.env.TAVILY_API_KEY ?? '';
+    const baseUrl = (process.env.TAVILY_BASE_URL ?? 'https://api.tavily.com').replace(/\/+$/, '');
+    if (!apiKey) {
+      throw new Error('Tavily API Key 未配置（TAVILY_API_KEY）');
+    }
+
+    const startedAt = Date.now();
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post<TavilyRawResponse>(
+          `${baseUrl}/search`,
+          {
+            query,
+            search_depth: 'advanced',
+            max_results: maxResults,
+            include_answer: true,
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+            },
+            // Tavily 通常 1-3 秒，给 30s 上限避免极端情况挂起
+            timeout: 30000,
+          },
+        ),
+      );
+
+      const results: TavilySearchItem[] = (data.results ?? []).map((r) => ({
+        title: r.title ?? '',
+        url: r.url ?? '',
+        content: r.content ?? '',
+        score: typeof r.score === 'number' ? r.score : 0,
+      }));
+
+      return {
+        query,
+        answer: data.answer ?? null,
+        results,
+        responseTime: data.response_time ?? (Date.now() - startedAt) / 1000,
+      };
+    } catch (e) {
+      const err = e as AxiosError;
+      const status = err.response?.status;
+      const body = this.describeErrBody(err.response?.data);
+      this.logger.error(
+        `Tavily 调用失败 query=${query} status=${status} body=${body}`,
+      );
+      // 从错误体里提取人类可读信息（Tavily 错误通常是 {detail: "..."}）
+      const detail = this.extractTavilyError(err.response?.data);
+      throw new Error(detail || `Tavily 搜索失败 (status ${status ?? 'unknown'})`);
+    }
+  }
+
+  /** 从 Tavily 错误响应里提取 message（格式：{detail: "..."} 或 {message: "..."}） */
+  private extractTavilyError(data: unknown): string {
+    if (!data || typeof data !== 'object') {
+      if (typeof data === 'string') return data.slice(0, 200);
+      return '';
+    }
+    const d = data as Record<string, unknown>;
+    if (typeof d.detail === 'string') return d.detail;
+    if (typeof d.message === 'string') return d.message;
+    if (Array.isArray(d.detail) && d.detail.length > 0) {
+      const first = (d.detail as unknown[])[0];
+      if (first && typeof first === 'object') {
+        const f = first as Record<string, unknown>;
+        if (typeof f.msg === 'string') return f.msg;
+      }
+    }
+    return '';
+  }
+}
+
+/** Tavily 原始响应（截取用到的字段） */
+interface TavilyRawResponse {
+  answer?: string;
+  results?: Array<{
+    title?: string;
+    url?: string;
+    content?: string;
+    score?: number;
+  }>;
+  response_time?: number;
+}
+
+/** 精简后的单条搜索结果 */
+export interface TavilySearchItem {
+  title: string;
+  url: string;
+  content: string;
+  score: number;
+}
+
+/** 精简后的完整搜索结果（controller 直接转给前端） */
+export interface TavilySearchResult {
+  query: string;
+  answer: string | null;
+  results: TavilySearchItem[];
+  responseTime: number;
 }
