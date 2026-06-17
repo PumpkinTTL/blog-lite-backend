@@ -42,6 +42,24 @@ export class AiService {
   private cacheAt = 0;
   private static readonly CACHE_TTL = 30_000; // 30s
 
+  /**
+   * 安全描述 axios 错误响应体。
+   * stream 模式下 err.response.data 是未消费的 Readable（含 TLSSocket/ClientRequest 引用），
+   * 直接 JSON.stringify 会触发 "Converting circular structure to JSON" 并逃出 catch，
+   * 导致本应返回 BadGatewayException 的地方变成 500 + 循环引用报错。
+   */
+  private describeErrBody(data: unknown): string {
+    if (data == null) return '(no body)';
+    if (typeof data === 'string') return data.slice(0, 500);
+    if (Buffer.isBuffer(data)) return `(buffer ${data.length}B)`;
+    try {
+      return JSON.stringify(data).slice(0, 500);
+    } catch {
+      const name = (data as any)?.constructor?.name ?? 'stream';
+      return `(不可序列化的 ${name})`;
+    }
+  }
+
   constructor(
     private readonly providerService: AiProviderService,
     private readonly httpService: HttpService,
@@ -151,9 +169,8 @@ export class AiService {
       if (e instanceof BadGatewayException) throw e;
       const err = e as AxiosError;
       const status = err.response?.status;
-      const respBody = err.response?.data;
       this.logger.error(
-        `AI 调用失败 url=${url} model=${usedModel} status=${status} body=${JSON.stringify(respBody)}`,
+        `AI 调用失败 url=${url} model=${usedModel} status=${status} body=${this.describeErrBody(err.response?.data)}`,
       );
       throw new BadGatewayException('AI 服务调用失败，请稍后重试');
     }
@@ -200,7 +217,7 @@ export class AiService {
       if (e instanceof BadGatewayException) throw e;
       const err = e as AxiosError;
       this.logger.error(
-        `AI agent 调用失败 model=${usedModel} status=${err.response?.status} body=${JSON.stringify(err.response?.data)}`,
+        `AI agent 调用失败 model=${usedModel} status=${err.response?.status} body=${this.describeErrBody(err.response?.data)}`,
       );
       throw new BadGatewayException('AI 服务调用失败，请稍后重试');
     }
