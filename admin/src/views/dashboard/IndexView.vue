@@ -61,6 +61,13 @@ const donation = computed(() => {
   return list.find((d: any) => d.currency === 'CNY') || list[0] || null
 })
 
+// 真实用户名
+const username = computed(() => {
+  const raw = localStorage.getItem('userInfo') || sessionStorage.getItem('userInfo')
+  if (!raw) return 'Admin'
+  try { const u = JSON.parse(raw); return u.username || u.name || u.nickname || 'Admin' } catch { return 'Admin' }
+})
+
 let trendChart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
 let donChart: echarts.ECharts | null = null
@@ -99,6 +106,15 @@ function fmtNum(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + 'w'
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
   return String(n)
+}
+
+function timeAgo(s: string): string {
+  const m = Math.floor((Date.now() - new Date(s).getTime()) / 60000)
+  if (m < 1) return '刚刚'
+  if (m < 60) return m + '分钟前'
+  const h = Math.floor(m / 60)
+  if (h < 24) return h + '小时前'
+  return Math.floor(h / 24) + '天前'
 }
 
 function renderTrendChart() {
@@ -200,7 +216,7 @@ onBeforeUnmount(() => {
         <!-- greeting card -->
         <div class="card greeting-card">
           <div class="greeting-content">
-            <h3 class="greeting-title">{{ getGreeting() }}，Admin</h3>
+            <h3 class="greeting-title">{{ getGreeting() }}，{{ username }}</h3>
             <p class="greeting-desc">欢迎回来！今天系统运行状况良好，继续创作优秀的内容吧。</p>
           </div>
           <div class="greeting-date">
@@ -253,6 +269,33 @@ onBeforeUnmount(() => {
               <span class="card-title">捐赠趋势</span>
             </div>
             <div ref="donEl" class="chart-box"></div>
+          </div>
+        </div>
+
+        <!-- hot posts + recent users -->
+        <div class="bot-row">
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="card-hd" style="margin:0;padding:16px 20px 10px">
+              <span class="card-title">热门文章</span>
+              <span class="bot-link" @click="router.push('/posts')">全部</span>
+            </div>
+            <div v-if="!stats.topPosts.length" style="padding:32px;text-align:center;font-size:12px;color:var(--n-text-color-3)">暂无数据</div>
+            <div v-for="(p,i) in stats.topPosts.slice(0,5)" :key="p.id" class="post-row" @click="router.push(`/posts/${p.id}/edit`)">
+              <span class="pr-rank">{{ i+1 }}</span>
+              <span class="pr-title">{{ p.title }}</span>
+              <span class="pr-stat">{{ fmtNum(p.viewCount) }} 阅读 · {{ fmtNum(p.likeCount) }} 赞</span>
+            </div>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="card-hd" style="margin:0;padding:16px 20px 10px">
+              <span class="card-title">最近注册</span>
+            </div>
+            <div v-if="!stats.recentUsers.length" style="padding:32px;text-align:center;font-size:12px;color:var(--n-text-color-3)">暂无数据</div>
+            <div v-for="u in stats.recentUsers.slice(0,5)" :key="u.id" class="user-row">
+              <div class="ur-ava">{{ (u.nickname || u.username).charAt(0).toUpperCase() }}</div>
+              <span class="ur-name">{{ u.nickname || u.username }}</span>
+              <span class="ur-time">{{ timeAgo(u.createdAt) }}</span>
+            </div>
           </div>
         </div>
 
@@ -390,5 +433,49 @@ onBeforeUnmount(() => {
 @media (max-width: 1400px) { .chart-row { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
 .chart-box { width: 100%; height: 230px; }
+
+/* bottom row: hot posts + recent users */
+.bot-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .bot-row { grid-template-columns: 1fr; } }
+.bot-link { font-size: 12px; color: var(--n-primary-color); cursor: pointer; }
+.bot-link:hover { text-decoration: underline; }
+
+.post-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 20px; cursor: pointer;
+  transition: background 0.15s;
+}
+.post-row:hover { background: var(--n-color-hover); }
+.pr-rank {
+  width: 20px; height: 20px; border-radius: 5px;
+  background: var(--n-fill-color);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; color: var(--n-text-color-3);
+  flex-shrink: 0;
+}
+.post-row:first-child .pr-rank { background: #FEF3C7; color: #B45309; }
+.post-row:nth-child(2) .pr-rank { background: #E5E7EB; color: #374151; }
+.post-row:nth-child(3) .pr-rank { background: #FEE2E2; color: #991B1B; }
+.pr-title {
+  flex: 1; min-width: 0; font-size: 13px; color: var(--n-text-color);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pr-stat { font-size: 11px; color: var(--n-text-color-3); flex-shrink: 0; }
+
+.user-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+}
+.ur-ava {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--n-fill-color);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; color: var(--n-text-color-2);
+  flex-shrink: 0;
+}
+.ur-name {
+  flex: 1; min-width: 0; font-size: 13px; color: var(--n-text-color);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ur-time { font-size: 11px; color: var(--n-text-color-3); flex-shrink: 0; }
 
 </style>
