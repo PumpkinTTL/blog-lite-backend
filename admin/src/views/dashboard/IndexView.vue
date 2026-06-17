@@ -3,9 +3,19 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { NSpin, NIcon, NButton, useMessage } from 'naive-ui'
 import {
-  DocumentTextOutline, CreateOutline, PeopleOutline,
-  ChatbubblesOutline, HeartOutline, StarOutline, EyeOutline,
-  RefreshOutline, CashOutline, GiftOutline, ChevronForwardOutline,
+  DocumentTextOutline,
+  PaperPlaneOutline,
+  FolderOutline,
+  PricetagsOutline,
+  PeopleOutline,
+  ChatbubblesOutline,
+  HeartOutline,
+  StarOutline,
+  EyeOutline,
+  RefreshOutline,
+  CashOutline,
+  CreateOutline,
+  GiftOutline,
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts/core'
 import { LineChart, PieChart, BarChart } from 'echarts/charts'
@@ -31,16 +41,26 @@ const stats = ref<DashboardStats>({
   interactionTrend: [],
 })
 
-const username = computed(() => {
-  try { const u = JSON.parse(localStorage.getItem('userInfo') || sessionStorage.getItem('userInfo') || '{}'); return u.username || u.name || u.nickname || 'Admin' } catch { return 'Admin' }
-})
+type CardKey = 'postCount' | 'publishedCount' | 'categoryCount' | 'tagCount'
+  | 'userCount' | 'pendingCommentCount' | 'likeCount' | 'favoriteCount' | 'totalViews'
+
+const cards: { label: string; key: CardKey; icon: any; color: string }[] = [
+  { label: '文章总数', key: 'postCount', icon: DocumentTextOutline, color: '#1E40AF' },
+  { label: '已发布', key: 'publishedCount', icon: PaperPlaneOutline, color: '#3B82F6' },
+  { label: '分类', key: 'categoryCount', icon: FolderOutline, color: '#6366F1' },
+  { label: '标签', key: 'tagCount', icon: PricetagsOutline, color: '#F59E0B' },
+  { label: '用户', key: 'userCount', icon: PeopleOutline, color: '#EC4899' },
+  { label: '待审评论', key: 'pendingCommentCount', icon: ChatbubblesOutline, color: '#EF4444' },
+  { label: '总点赞', key: 'likeCount', icon: HeartOutline, color: '#F43F5E' },
+  { label: '总收藏', key: 'favoriteCount', icon: StarOutline, color: '#F59E0B' },
+  { label: '总阅读', key: 'totalViews', icon: EyeOutline, color: '#10B981' },
+]
 
 const donation = computed(() => {
   const list = stats.value.donationTotalAmount || []
   return list.find((d: any) => d.currency === 'CNY') || list[0] || null
 })
 
-// === Charts ===
 let trendChart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
 let donChart: echarts.ECharts | null = null
@@ -52,51 +72,50 @@ async function loadStats() {
   loading.value = true
   try {
     const res = await getDashboardStats()
-    if (res.data) stats.value = res.data
+    if (res.data) { stats.value = res.data; await nextTick(); renderCharts() }
   } catch (e: any) { message.error(e?.message || '加载统计数据失败') }
   finally { loading.value = false }
-  await nextTick()
-  renderCharts()
 }
 
-function aColor() { return isDark.value ? '#334155' : '#E2E8F0' }
-function tColor() { return isDark.value ? '#94A3B8' : '#64748B' }
-function bgColor() { return isDark.value ? '#1E293B' : '#FFFFFF' }
+function axisColor() { return isDark.value ? '#334155' : '#E2E8F0' }
+function textColor() { return isDark.value ? '#CBD5E1' : '#64748B' }
+function tooltipBg() { return isDark.value ? '#1E293B' : '#FFFFFF' }
 
-function fmtNum(n: number | undefined | null): string {
-  if (n == null) return '0'
+function getGreeting(): string {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 12) return '早上好'
+  if (hour >= 12 && hour < 14) return '中午好'
+  if (hour >= 14 && hour < 18) return '下午好'
+  return '晚上好'
+}
+
+function getTodayDate(): string {
+  const d = new Date()
+  const weeks = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${weeks[d.getDay()]}`
+}
+
+function fmtNum(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + 'w'
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
   return String(n)
-}
-function timeAgo(s: string): string {
-  const m = Math.floor((Date.now() - new Date(s).getTime()) / 60000)
-  if (m < 1) return '刚刚'
-  if (m < 60) return m + '分钟前'
-  const h = Math.floor(m / 60)
-  if (h < 24) return h + '小时前'
-  return Math.floor(h / 24) + '天前'
-}
-function getGreeting(): string {
-  const h = new Date().getHours()
-  return h < 12 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好'
 }
 
 function renderTrendChart() {
   if (!trendEl.value) return
   if (!trendChart) trendChart = echarts.init(trendEl.value)
-  const d = stats.value.interactionTrend
-  const tc = tColor()
+  const trend = stats.value.interactionTrend
+  const tc = textColor()
   trendChart.setOption({
     animation: true, animationDuration: 600,
-    tooltip: { trigger: 'axis', backgroundColor: bgColor(), borderColor: '#E2E8F0', textStyle: { color: '#0F172A', fontSize: 12 }, extraCssText: 'border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.08);' },
-    legend: { data: ['点赞', '收藏'], top: 0, right: 0, itemGap: 12, textStyle: { color: tc, fontSize: 11, fontWeight: 500 }, icon: 'roundRect', itemWidth: 10, itemHeight: 6 },
-    grid: { left: 40, right: 12, top: 36, bottom: 24 },
-    xAxis: { type: 'category', data: d.map((t: any) => t.date.slice(5)), axisLine: { show: false }, axisLabel: { color: tc, fontSize: 10 }, axisTick: { show: false } },
-    yAxis: { type: 'value', minInterval: 1, axisLine: { show: false }, axisLabel: { color: tc, fontSize: 10 }, splitLine: { lineStyle: { color: aColor(), type: 'dashed' } } },
+    tooltip: { trigger: 'axis', backgroundColor: tooltipBg(), borderColor: '#E2E8F0', textStyle: { color: tc, fontSize: 12 }, extraCssText: 'border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.08);' },
+    legend: { data: ['点赞', '收藏'], top: 6, right: 6, itemGap: 16, textStyle: { color: tc, fontSize: 12 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
+    grid: { left: 40, right: 20, top: 40, bottom: 28 },
+    xAxis: { type: 'category', data: trend.map((t: any) => t.date.slice(5)), axisLine: { lineStyle: { color: axisColor() } }, axisLabel: { color: tc, fontSize: 11 }, axisTick: { show: false } },
+    yAxis: { type: 'value', minInterval: 1, axisLine: { show: false }, axisLabel: { color: tc, fontSize: 11 }, splitLine: { lineStyle: { color: axisColor(), type: 'dashed' } } },
     series: [
-      { name: '点赞', type: 'line', smooth: true, symbol: 'circle', symbolSize: 3, data: d.map((t: any) => t.likeCount), itemStyle: { color: '#F43F5E' }, lineStyle: { color: '#F43F5E', width: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(244,63,94,0.08)' }, { offset: 1, color: 'rgba(244,63,94,0)' }]) } },
-      { name: '收藏', type: 'line', smooth: true, symbol: 'circle', symbolSize: 3, data: d.map((t: any) => t.favoriteCount), itemStyle: { color: '#F59E0B' }, lineStyle: { color: '#F59E0B', width: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(245,158,11,0.08)' }, { offset: 1, color: 'rgba(245,158,11,0)' }]) } },
+      { name: '点赞', type: 'line', smooth: true, symbol: 'circle', symbolSize: 5, data: trend.map((t: any) => t.likeCount), itemStyle: { color: '#F43F5E' }, lineStyle: { color: '#F43F5E', width: 2.5 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(244,63,94,0.12)' }, { offset: 1, color: 'rgba(244,63,94,0)' }]) } },
+      { name: '收藏', type: 'line', smooth: true, symbol: 'circle', symbolSize: 5, data: trend.map((t: any) => t.favoriteCount), itemStyle: { color: '#F59E0B' }, lineStyle: { color: '#F59E0B', width: 2.5 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(245,158,11,0.12)' }, { offset: 1, color: 'rgba(245,158,11,0)' }]) } },
     ],
   })
 }
@@ -104,326 +123,272 @@ function renderTrendChart() {
 function renderPieChart() {
   if (!pieEl.value) return
   if (!pieChart) pieChart = echarts.init(pieEl.value)
-  const d = stats.value.postStatusDist
-  const total = d.reduce((s: number, x: any) => s + x.value, 0)
-  const palette = ['#3B82F6', '#94A3B8', '#F59E0B', '#8B5CF6', '#10B981', '#EF4444']
-  const tc = tColor()
+  const dist = stats.value.postStatusDist
+  const total = dist.reduce((s: number, d: any) => s + d.value, 0)
+  const palette = ['#2563EB', '#94A3B8', '#F59E0B', '#8B5CF6', '#10B981', '#EF4444']
+  const tc = textColor()
   pieChart.setOption({
     animation: true, animationDuration: 600,
-    tooltip: { trigger: 'item', formatter: '{b}: {c} 篇 ({d}%)', backgroundColor: bgColor(), borderColor: '#E2E8F0', textStyle: { color: '#0F172A', fontSize: 12 }, extraCssText: 'border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.08);' },
-    legend: { orient: 'vertical', top: 'center', left: 10, textStyle: { color: tc, fontSize: 11 }, icon: 'circle', itemWidth: 6, itemHeight: 6, itemGap: 10 },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)', backgroundColor: tooltipBg(), borderColor: '#E2E8F0', textStyle: { color: tc, fontSize: 12 }, extraCssText: 'border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.08);' },
+    legend: { bottom: 4, textStyle: { color: tc, fontSize: 11 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
     color: palette,
-    graphic: { type: 'text', left: 'center', top: '42%', style: { text: `共${total}篇`, textAlign: 'center', fill: isDark.value ? '#94A3B8' : '#94A3B8', fontSize: 24, fontWeight: 700 } },
-    series: [{ type: 'pie', radius: ['55%', '78%'], center: ['62%', '50%'], itemStyle: { borderRadius: 6, borderColor: bgColor(), borderWidth: 3 }, label: { show: false }, emphasis: { scaleSize: 6, label: { show: true, fontSize: 13, fontWeight: 'bold' } }, data: d }],
+    graphic: { type: 'text', left: 'center', top: '36%', style: { text: `共${total}篇`, textAlign: 'center', fill: tc, fontSize: 13, fontWeight: 600 } },
+    series: [{
+      type: 'pie', radius: ['52%', '76%'], center: ['50%', '44%'],
+      itemStyle: { borderRadius: 5, borderColor: tooltipBg(), borderWidth: 3 },
+      label: { show: false },
+      emphasis: { scaleSize: 6, label: { show: true, fontSize: 13, fontWeight: 'bold' } },
+      data: dist,
+    }],
   })
 }
 
 function renderDonChart() {
   if (!donEl.value) return
   if (!donChart) donChart = echarts.init(donEl.value)
-  const d = stats.value.donationTrend
-  const tc = tColor()
+  const data = stats.value.donationTrend
+  const tc = textColor()
   donChart.setOption({
     animation: true, animationDuration: 600,
-    tooltip: { trigger: 'axis', backgroundColor: bgColor(), borderColor: '#E2E8F0', textStyle: { color: '#0F172A', fontSize: 12 }, extraCssText: 'border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.08);' },
-    legend: { data: ['金额', '笔数'], top: 0, right: 0, itemGap: 12, textStyle: { color: tc, fontSize: 11, fontWeight: 500 }, icon: 'roundRect', itemWidth: 10, itemHeight: 6 },
-    grid: { left: 44, right: 48, top: 36, bottom: 24 },
-    xAxis: { type: 'category', data: d.map((t: any) => t.date.slice(5)), axisLine: { show: false }, axisLabel: { color: tc, fontSize: 10 }, axisTick: { show: false } },
+    tooltip: { trigger: 'axis', backgroundColor: tooltipBg(), borderColor: '#E2E8F0', textStyle: { color: tc, fontSize: 12 }, extraCssText: 'border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.08);' },
+    legend: { data: ['金额', '笔数'], top: 6, right: 6, itemGap: 16, textStyle: { color: tc, fontSize: 11 }, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
+    grid: { left: 44, right: 48, top: 38, bottom: 28 },
+    xAxis: { type: 'category', data: data.map((t: any) => t.date.slice(5)), axisLine: { lineStyle: { color: axisColor() } }, axisLabel: { color: tc, fontSize: 11 }, axisTick: { show: false } },
     yAxis: [
-      { type: 'value', axisLine: { show: false }, axisLabel: { color: tc, fontSize: 10 }, splitLine: { lineStyle: { color: aColor(), type: 'dashed' } } },
-      { type: 'value', axisLine: { show: false }, axisLabel: { color: tc, fontSize: 10 }, splitLine: { show: false } },
+      { type: 'value', axisLine: { show: false }, axisLabel: { color: tc, fontSize: 11 }, splitLine: { lineStyle: { color: axisColor(), type: 'dashed' } } },
+      { type: 'value', axisLine: { show: false }, axisLabel: { color: tc, fontSize: 11 }, splitLine: { show: false } },
     ],
     series: [
-      { name: '金额', type: 'line', smooth: true, symbol: 'circle', symbolSize: 3, yAxisIndex: 0, data: d.map((t: any) => t.amount), itemStyle: { color: '#10B981' }, lineStyle: { color: '#10B981', width: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(16,185,129,0.08)' }, { offset: 1, color: 'rgba(16,185,129,0)' }]) } },
-      { name: '笔数', type: 'bar', yAxisIndex: 1, data: d.map((t: any) => t.count), itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#F59E0B' }, { offset: 1, color: '#FDE68A' }]), borderRadius: [3, 3, 0, 0] }, barWidth: 12, barGap: '40%' },
+      { name: '金额', type: 'line', smooth: true, symbol: 'circle', symbolSize: 5, yAxisIndex: 0, data: data.map((t: any) => t.amount), itemStyle: { color: '#10B981' }, lineStyle: { color: '#10B981', width: 2.5 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(16,185,129,0.12)' }, { offset: 1, color: 'rgba(16,185,129,0)' }]) } },
+      { name: '笔数', type: 'bar', yAxisIndex: 1, data: data.map((t: any) => t.count), itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#F59E0B' }, { offset: 1, color: '#FCD34D' }]), borderRadius: [3, 3, 0, 0] }, barWidth: 14, barGap: '40%' },
     ],
   })
 }
 
 function renderCharts() { renderTrendChart(); renderPieChart(); renderDonChart() }
+function handleResize() { trendChart?.resize(); pieChart?.resize(); donChart?.resize() }
 watch(isDark, () => nextTick(renderCharts))
-onMounted(() => { loadStats(); window.addEventListener('resize', () => { trendChart?.resize(); pieChart?.resize(); donChart?.resize() }) })
-onBeforeUnmount(() => { trendChart?.dispose(); pieChart?.dispose(); donChart?.dispose() })
+
+onMounted(() => { loadStats(); window.addEventListener('resize', handleResize) })
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  trendChart?.dispose(); pieChart?.dispose(); donChart?.dispose()
+})
 </script>
 
 <template>
-  <div class="dash">
+  <div class="dash" :class="{ 'is-dark': isDark }">
+    <div class="dash-bar">
+      <div class="dash-left">
+        <span class="dash-title">数据概览</span>
+        <n-button text size="tiny" style="color:#3B82F6;gap:4px;margin-left:16px" @click="router.push('/posts/create')">
+          <n-icon size="14"><CreateOutline /></n-icon>写文章
+        </n-button>
+        <n-button text size="tiny" style="color:#8B5CF6;gap:4px;margin-left:8px" @click="router.push('/membership')">
+          <n-icon size="14"><GiftOutline /></n-icon>开通会员
+        </n-button>
+      </div>
+      <n-button size="small" :loading="loading" @click="loadStats" quaternary>
+        <template #icon><n-icon><RefreshOutline /></n-icon></template>
+        刷新
+      </n-button>
+    </div>
 
     <n-spin :show="loading">
-      <div class="wrap">
+      <div class="dash-body">
 
-        <!-- ===== Header ===== -->
-        <div class="header">
-          <div>
-            <h1 class="h-title">{{ getGreeting() }}，{{ username }}</h1>
-            <p class="h-sub">这是你的博客数据概览</p>
+        <!-- greeting card -->
+        <div class="card greeting-card">
+          <div class="greeting-content">
+            <h3 class="greeting-title">{{ getGreeting() }}，Admin</h3>
+            <p class="greeting-desc">欢迎回来！今天系统运行状况良好，继续创作优秀的内容吧。</p>
           </div>
-          <div class="h-btns">
-            <n-button size="small" type="primary" @click="router.push('/posts/create')">
-              <template #icon><n-icon size="16"><CreateOutline /></n-icon></template>
-              写文章
-            </n-button>
-            <n-button size="small" @click="router.push('/membership')">
-              <template #icon><n-icon size="16"><GiftOutline /></n-icon></template>
-            </n-button>
-            <n-button size="small" :loading="loading" @click="loadStats" quaternary>
-              <template #icon><n-icon size="16"><RefreshOutline /></n-icon></template>
-            </n-button>
+          <div class="greeting-date">
+            <span class="g-date-text">{{ getTodayDate() }}</span>
           </div>
         </div>
 
-        <!-- ===== KPI Cards Row ===== -->
-        <div class="kpi-row">
-          <!-- Content group -->
-          <div class="kpi">
-            <div class="kpi-icon" style="background:rgba(59,130,246,0.1);color:#3B82F6"><DocumentTextOutline /></div>
-            <div class="kpi-data">
-              <div class="kpi-num">{{ fmtNum(stats.postCount) }}</div>
-              <div class="kpi-text">文章<span class="kpi-sub">{{ stats.publishedCount }} 已发布</span></div>
+        <!-- metrics card -->
+        <div class="card metrics">
+          <!-- donation row -->
+          <div class="metric-hero" @click="router.push('/donations')">
+            <div class="mh-icon" style="color:#10B981"><n-icon size="22"><CashOutline /></n-icon></div>
+            <div class="mh-data">
+              <div class="mh-val">{{ donation ? (donation.currency === 'CNY' ? '¥' : '$') + donation.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 }) : '¥0.00' }}</div>
+              <div class="mh-label">累计捐赠 · {{ stats.donationCount ?? 0 }} 笔</div>
             </div>
           </div>
-          <div class="kpi">
-            <div class="kpi-icon" style="background:rgba(139,92,246,0.1);color:#8B5CF6"><DocumentTextOutline /></div>
-            <div class="kpi-data">
-              <div class="kpi-num">{{ fmtNum(stats.draftCount) }}</div>
-              <div class="kpi-text">草稿</div>
-            </div>
-          </div>
-          <div class="kpi">
-            <div class="kpi-icon" style="background:rgba(249,115,22,0.1);color:#F97316"><EyeOutline /></div>
-            <div class="kpi-data">
-              <div class="kpi-num">{{ fmtNum(stats.totalViews) }}</div>
-              <div class="kpi-text">总阅读</div>
-            </div>
-          </div>
-          <div class="kpi">
-            <div class="kpi-icon" style="background:rgba(16,185,129,0.1);color:#10B981"><PeopleOutline /></div>
-            <div class="kpi-data">
-              <div class="kpi-num">{{ fmtNum(stats.userCount) }}</div>
-              <div class="kpi-text">用户</div>
-            </div>
-          </div>
-
-          <!-- Engagement group -->
-          <div class="kpi">
-            <div class="kpi-icon" style="background:rgba(244,63,94,0.1);color:#F43F5E"><HeartOutline /></div>
-            <div class="kpi-data">
-              <div class="kpi-num">{{ fmtNum(stats.likeCount) }}</div>
-              <div class="kpi-text">点赞</div>
-            </div>
-          </div>
-          <div class="kpi">
-            <div class="kpi-icon" style="background:rgba(245,158,11,0.1);color:#F59E0B"><StarOutline /></div>
-            <div class="kpi-data">
-              <div class="kpi-num">{{ fmtNum(stats.favoriteCount) }}</div>
-              <div class="kpi-text">收藏</div>
-            </div>
-          </div>
-          <div class="kpi clickable" @click="router.push('/comments')">
-            <div class="kpi-icon" style="background:rgba(239,68,68,0.1);color:#EF4444"><ChatbubblesOutline /></div>
-            <div class="kpi-data">
-              <div class="kpi-num">{{ fmtNum(stats.pendingCommentCount) }}</div>
-              <div class="kpi-text">待审评论</div>
-            </div>
-          </div>
-
-          <!-- Donation -->
-          <div v-if="donation && stats.donationCount > 0" class="kpi clickable" @click="router.push('/donations')">
-            <div class="kpi-icon" style="background:rgba(16,185,129,0.1);color:#10B981"><CashOutline /></div>
-            <div class="kpi-data">
-              <div class="kpi-num">{{ donation.currency === 'CNY' ? '¥' : '$' }}{{ donation.amount }}</div>
-              <div class="kpi-text">捐赠<span class="kpi-sub">共 {{ stats.donationCount }} 笔</span></div>
+          <div class="divider"></div>
+          <!-- metric grid -->
+          <div class="metric-grid">
+            <div v-for="c in cards" :key="c.key" class="metric">
+              <div class="m-icon" :style="{ color: c.color }">
+                <n-icon size="18"><component :is="c.icon" /></n-icon>
+              </div>
+              <div class="m-body">
+                <div class="m-val">{{ fmtNum(stats[c.key]) }}</div>
+                <div class="m-label">{{ c.label }}</div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- ===== Charts ===== -->
+        <!-- charts 3-col -->
         <div class="chart-row">
-          <div class="ch-card c2">
-            <div class="ch-head">
-              <span class="ch-title">互动趋势</span>
-              <span class="ch-badge">7 天</span>
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">7 天互动趋势</span>
             </div>
-            <div ref="trendEl" class="ch-body"></div>
+            <div ref="trendEl" class="chart-box"></div>
           </div>
-          <div class="ch-card c1">
-            <div class="ch-head">
-              <span class="ch-title">文章分布</span>
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">文章状态分布</span>
+              <span class="card-tag">共 {{ stats.postCount }} 篇</span>
             </div>
-            <div ref="pieEl" class="ch-body"></div>
+            <div ref="pieEl" class="chart-box"></div>
           </div>
-          <div v-if="stats.donationTrend.length" class="ch-card c1">
-            <div class="ch-head">
-              <span class="ch-title">捐赠趋势</span>
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">捐赠趋势</span>
             </div>
-            <div ref="donEl" class="ch-body"></div>
-          </div>
-        </div>
-
-        <!-- ===== Content Row ===== -->
-        <div class="bot-row">
-          <!-- Top Posts -->
-          <div class="bot-card">
-            <div class="bot-head">
-              <span class="bot-title">热门文章</span>
-              <span class="bot-link" @click="router.push('/posts')">查看全部 <n-icon size="12"><ChevronForwardOutline /></n-icon></span>
-            </div>
-            <div v-if="!stats.topPosts.length" class="bot-empty">暂无数据</div>
-            <div v-for="(p, i) in stats.topPosts.slice(0, 6)" :key="p.id" class="bp-item" @click="router.push(`/posts/${p.id}/edit`)">
-              <span class="bp-rank">{{ i + 1 }}</span>
-              <div class="bp-info">
-                <span class="bp-name">{{ p.title }}</span>
-                <span class="bp-stat">{{ fmtNum(p.viewCount) }} 阅读 · {{ fmtNum(p.likeCount) }} 赞</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Recent Users -->
-          <div class="bot-card">
-            <div class="bot-head">
-              <span class="bot-title">最近注册</span>
-            </div>
-            <div v-if="!stats.recentUsers.length" class="bot-empty">暂无数据</div>
-            <div v-for="u in stats.recentUsers.slice(0, 6)" :key="u.id" class="bu-item">
-              <div class="bu-ava">{{ (u.nickname || u.username).charAt(0).toUpperCase() }}</div>
-              <div class="bu-info">
-                <span class="bu-name">{{ u.nickname || u.username }}</span>
-                <span class="bu-time">{{ timeAgo(u.createdAt) }}</span>
-              </div>
-            </div>
+            <div ref="donEl" class="chart-box"></div>
           </div>
         </div>
 
       </div>
     </n-spin>
-
   </div>
 </template>
 
 <style scoped>
-/* ===== Base ===== */
-.dash { padding: 8px; }
-.wrap { display: flex; flex-direction: column; gap: 18px; }
+.dash { min-height: 100%; }
+.dash-body { display: flex; flex-direction: column; gap: 16px; }
 
-/* ===== Header ===== */
-.header {
+/* greeting card */
+.greeting-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.06) 0%, rgba(96, 165, 250, 0.02) 100%);
+  border: 1px solid var(--n-border-color);
+  padding: 24px;
+  gap: 16px;
+}
+
+.is-dark .greeting-card {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.12) 0%, rgba(30, 41, 59, 0.5) 100%);
+}
+
+.greeting-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.greeting-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--n-text-color);
+}
+
+.greeting-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--n-text-color-3);
+}
+
+.greeting-date {
+  display: flex;
+  align-items: center;
+  background: var(--n-card-color);
+  border: 1px solid var(--n-border-color);
+  padding: 8px 16px;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.g-date-text {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--n-text-color-2);
+}
+
+@media (max-width: 600px) {
+  .greeting-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .greeting-date {
+    align-self: flex-start;
+  }
+}
+
+/* header bar */
+.dash-bar {
   display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
 }
-.h-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--n-text-color); letter-spacing: -0.02em; }
-.h-sub { margin: 4px 0 0; font-size: 13px; color: var(--n-text-color-3); }
-.h-btns { display: flex; gap: 6px; align-items: center; }
+.dash-left { display: flex; align-items: center; }
+.dash-title { font-size: 18px; font-weight: 700; color: var(--n-text-color); }
 
-/* ===== KPI Row ===== */
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
-.kpi {
+/* card */
+.card {
   background: var(--n-card-color);
+  border-radius: 12px; padding: 20px;
   border: 1px solid var(--n-border-color);
-  border-radius: 12px;
-  padding: 16px;
-  display: flex; gap: 14px; align-items: center;
-  transition: border-color 0.2s, box-shadow 0.2s;
 }
-.kpi.clickable { cursor: pointer; }
-.kpi.clickable:hover { border-color: var(--n-primary-color); box-shadow: 0 2px 12px rgba(37,99,235,0.06); }
-.kpi-icon {
-  width: 40px; height: 40px; border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-}
-.kpi-icon :deep(svg) { width: 20px; height: 20px; }
-.kpi-data { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.kpi-num { font-size: 22px; font-weight: 700; color: var(--n-text-color); line-height: 1.1; letter-spacing: -0.01em; }
-.kpi-text { font-size: 12px; color: var(--n-text-color-3); font-weight: 500; }
-.kpi-sub { color: var(--n-text-color-3); margin-left: 6px; font-weight: 400; }
-
-/* ===== Charts ===== */
-.chart-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
-  gap: 12px;
-}
-.ch-card {
-  background: var(--n-card-color);
-  border: 1px solid var(--n-border-color);
-  border-radius: 12px;
-  padding: 16px;
-}
-.ch-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.ch-title { font-size: 13px; font-weight: 600; color: var(--n-text-color); }
-.ch-badge { font-size: 10px; font-weight: 600; color: #6366F1; background: rgba(99,102,241,0.08); padding: 2px 8px; border-radius: 10px; }
-.ch-body { width: 100%; height: 200px; }
-
-/* ===== Bottom Row ===== */
-.bot-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 12px;
-}
-.bot-card {
-  background: var(--n-card-color);
-  border: 1px solid var(--n-border-color);
-  border-radius: 12px;
-  padding: 0;
-}
-.bot-head {
+.card-hd {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 16px 0;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
-.bot-title { font-size: 13px; font-weight: 600; color: var(--n-text-color); }
-.bot-link { font-size: 12px; color: #3B82F6; cursor: pointer; display: flex; align-items: center; gap: 2px; }
-.bot-link:hover { text-decoration: underline; }
-.bot-empty { padding: 24px; text-align: center; font-size: 12px; color: var(--n-text-color-3); }
+.card-title { font-size: 14px; font-weight: 600; color: var(--n-text-color); }
+.card-tag { font-size: 11px; color: var(--n-text-color-3); }
 
-/* Popular post item */
-.bp-item {
-  display: flex; gap: 12px; padding: 10px 16px;
+/* metrics card */
+.metrics { padding: 20px 24px; }
+.metric-hero {
+  display: flex; align-items: center; gap: 14px;
+  padding: 2px 8px; margin: -2px -8px; border-radius: 8px;
   cursor: pointer; transition: background 0.15s;
 }
-.bp-item:hover { background: var(--n-fill-color); }
-.bp-rank {
-  width: 20px; height: 20px; border-radius: 5px;
-  background: var(--n-fill-color);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 600; color: var(--n-text-color-3);
-  flex-shrink: 0;
-}
-.bp-item:first-child .bp-rank { background: #FEF3C7; color: #B45309; }
-.bp-item:nth-child(2) .bp-rank { background: #E5E7EB; color: #374151; }
-.bp-item:nth-child(3) .bp-rank { background: #FEE2E2; color: #991B1B; }
-.bp-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.bp-name { font-size: 13px; color: var(--n-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bp-stat { font-size: 11px; color: var(--n-text-color-3); }
+.metric-hero:hover { background: var(--n-color-hover); }
+.mh-icon { flex-shrink: 0; }
+.mh-data { min-width: 0; }
+.mh-val { font-size: 24px; font-weight: 700; color: var(--n-text-color); letter-spacing: -0.01em; }
+.mh-label { font-size: 12px; color: var(--n-text-color-3); margin-top: 2px; }
 
-/* User item */
-.bu-item {
-  display: flex; gap: 10px; padding: 10px 16px; align-items: center;
+.divider {
+  height: 1px; background: var(--n-divider-color);
+  margin: 16px 0;
 }
-.bu-ava {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: var(--n-fill-color);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 600; color: var(--n-text-color-2);
-  flex-shrink: 0;
-}
-.bu-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.bu-name { font-size: 12px; color: var(--n-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bu-time { font-size: 10px; color: var(--n-text-color-3); }
 
-/* ===== Responsive ===== */
-@media (max-width: 1400px) {
-  .chart-row { grid-template-columns: 1fr 1fr; }
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
 }
-@media (max-width: 1200px) {
-  .kpi-row { grid-template-columns: repeat(3, 1fr); }
-  .bot-row { grid-template-columns: 1fr; }
+.metric {
+  display: flex; align-items: center; gap: 10px;
 }
-@media (max-width: 900px) {
-  .kpi-row { grid-template-columns: repeat(2, 1fr); }
-  .chart-row { grid-template-columns: 1fr; }
+.m-icon {
+  flex-shrink: 0; width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  background: var(--n-fill-color);
 }
+.m-body { min-width: 0; }
+.m-val { font-size: 20px; font-weight: 700; color: var(--n-text-color); line-height: 1.1; }
+.m-label { font-size: 11px; color: var(--n-text-color-3); margin-top: 2px; }
+
+/* charts */
+.chart-row {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+}
+@media (max-width: 1400px) { .chart-row { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
+.chart-box { width: 100%; height: 230px; }
+
 </style>
