@@ -51,11 +51,15 @@ export interface AiCompactResult {
 /**
  * 压缩对话历史：把多轮历史交给后端 AI 总结成摘要。
  * 前端用返回的摘要替换旧历史，释放上下文 token。
+ *
+ * 单独放宽超时到 180s：压缩要把整段历史发给 AI 总结，内容大时网关响应慢，
+ * 不能用全局默认的 10s（会直接掐断，导致"压缩总是超时"）。
  */
 export function compactHistory(data: { messages: AiChatMessage[]; model?: string }) {
   return request.post<AiApiResponse<AiCompactResult>, AiApiResponse<AiCompactResult>>(
     '/ai/compact',
     data,
+    { timeout: 180000 },
   )
 }
 

@@ -134,6 +134,9 @@ export class AiService {
               'Content-Type': 'application/json',
             },
             responseType: 'stream',
+            // 压缩历史时整段对话发给网关总结，响应慢；给 300s 上限避免无限挂起，
+            // 真正的超时由前端 compactHistory 的 180s 把控。
+            timeout: 300000,
           },
         ),
       );
