@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, reactive, nextTick, computed, onBeforeUnmount, watch } from 'vue'
+import { ref, reactive, nextTick, computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import {
-  NIcon, NInput, NSelect, useMessage, NTooltip,
+  NIcon, NInput, useMessage, NTooltip,
 } from 'naive-ui'
 import {
   ChatbubbleEllipsesOutline, RemoveOutline,
@@ -57,24 +57,50 @@ const messages = ref<AiChatMessage[]>([])
 const inputText = ref('')
 const sending = ref(false)
 const compacting = ref(false)
+const selectedProviderId = ref<number | null>(null)
 const selectedModel = ref<string | null>(null)
 const providers = ref<AiProvider[]>([])
-const providerModelOptions = computed(() => {
-  const opts: { label: string; key: string; type: 'group'; children: { label: string; value: string }[] }[] = []
-  for (const p of providers.value) {
-    if (p.models?.length) {
-      opts.push({ label: p.name, key: `provider-${p.id}`, type: 'group', children: p.models.map(m => ({ label: m.displayName || m.modelId, value: m.modelId })) })
-    }
-  }
-  return opts
+const provDropdownOpen = ref(false)
+const modelDropdownOpen = ref(false)
+
+const providerOptions = computed(() =>
+  providers.value.map(p => ({ label: p.name, value: p.id }))
+)
+const activeProvider = computed(() =>
+  providers.value.find(p => p.id === selectedProviderId.value)
+)
+const modelOptions = computed(() => {
+  if (!activeProvider.value) return []
+  return (activeProvider.value.models || []).map(m => ({ label: m.displayName || m.modelId, value: m.modelId }))
 })
+const activeModelLabel = computed(() => {
+  const m = modelOptions.value.find(o => o.value === selectedModel.value)
+  return m?.label ?? null
+})
+
+function selectProvider(id: number) {
+  selectedProviderId.value = id
+  selectedModel.value = providers.value.find(p => p.id === id)?.models?.[0]?.modelId ?? null
+  provDropdownOpen.value = false
+}
+function selectModel(modelId: string) {
+  selectedModel.value = modelId
+  modelDropdownOpen.value = false
+}
 
 async function loadProviders() {
   try {
     const res: any = await getActiveAiProviders()
-    const list = res.data || res
-    providers.value = Array.isArray(list) ? list : []
-  } catch { /* ignore */ }
+    const list = Array.isArray(res) ? res : (res?.data ?? [])
+    providers.value = list
+    if (!selectedProviderId.value && list.length > 0) {
+      selectedProviderId.value = list[0].id
+      selectedModel.value = list[0].models?.[0]?.modelId ?? null
+    }
+    console.log('[AgentPanel] 加载供应商:', list.length, '个')
+  } catch (e: any) {
+    console.warn('[AgentPanel] 加载供应商失败:', e.message)
+  }
 }
 
 // 当前登录用户名首字（用户头像）
@@ -544,13 +570,15 @@ async function persistConversation(newPostId?: number): Promise<void> {
 
 defineExpose({ persistConversation })
 
+onMounted(() => { loadProviders(); document.addEventListener('click', closeDropdowns) })
 watch(() => props.postId, () => { historyLoaded.value = false; loadHistory() }, { immediate: true })
-watch(open, (v) => { if (v) loadProviders() })
 onBeforeUnmount(() => {
   document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)
+  document.removeEventListener('click', closeDropdowns)
 })
+function closeDropdowns() { provDropdownOpen.value = false; modelDropdownOpen.value = false }
 
 function toggleThink(id: string) {
   if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)
@@ -595,7 +623,37 @@ function onInputKeydown(e: KeyboardEvent) {
 
       <!-- 工具栏 -->
       <div class="panel-toolbar">
-        <n-select v-model:value="selectedModel" :options="providerModelOptions" size="small" placeholder="默认模型" clearable class="model-select" />
+        <!-- 提供商下拉 -->
+        <div class="custom-select" @click.stop="provDropdownOpen = !provDropdownOpen">
+          <div class="cs-trigger">
+            <span class="cs-text">{{ activeProvider?.name || '提供商' }}</span>
+            <n-icon :size="12"><ChevronDownOutline /></n-icon>
+          </div>
+          <div v-if="provDropdownOpen" class="cs-menu" @click.stop>
+            <div
+              v-for="p in providers" :key="p.id"
+              class="cs-option"
+              :class="{ active: selectedProviderId === p.id }"
+              @click.stop="selectProvider(p.id)"
+            >{{ p.name }}</div>
+          </div>
+        </div>
+        <!-- 模型下拉 -->
+        <div class="custom-select model-select" @click.stop="modelDropdownOpen = !modelDropdownOpen">
+          <div class="cs-trigger">
+            <span class="cs-text">{{ activeModelLabel || '模型' }}</span>
+            <n-icon :size="12"><ChevronDownOutline /></n-icon>
+          </div>
+          <div v-if="modelDropdownOpen" class="cs-menu" @click.stop>
+            <div
+              v-for="m in modelOptions" :key="m.value"
+              class="cs-option"
+              :class="{ active: selectedModel === m.value }"
+              @click.stop="selectModel(m.value)"
+            >{{ m.label }}</div>
+            <div v-if="modelOptions.length === 0" class="cs-option disabled">无可用模型</div>
+          </div>
+        </div>
       </div>
 
       <!-- 消息流 -->
@@ -729,11 +787,11 @@ function onInputKeydown(e: KeyboardEvent) {
   position: fixed; width: 480px; height: 660px; z-index: 10001;
   background: #fafaf9; border-radius: 12px;
   box-shadow: 0 16px 48px rgba(28,25,23,0.18), 0 0 0 1px rgba(28,25,23,0.06);
-  display: flex; flex-direction: column; overflow: hidden;
+  display: flex; flex-direction: column; overflow: visible;
 }
 .head-mini-info { font-size: 10px; color: #a8a29e; font-weight: 400; margin-left: 4px; }
 
-.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; cursor: grab; user-select: none; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; border-radius: 12px 12px 0 0; cursor: grab; user-select: none; }
 .panel-head:active { cursor: grabbing; }
 .head-title { display: inline-flex; align-items: center; gap: 8px; }
 .head-icon { color: #c15f3c; }
@@ -744,7 +802,19 @@ function onInputKeydown(e: KeyboardEvent) {
 .head-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .panel-toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e7e5e4; align-items: center; background: #fafaf9; }
-.model-select { flex: 1; }
+
+/* 自定义下拉 */
+.custom-select { position: relative; min-width: 0; }
+.custom-select:not(.model-select) { width: 110px; }
+.custom-select.model-select { flex: 1; }
+.cs-trigger { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 4px 10px; border: 1px solid #e7e5e4; border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: #1c1917; line-height: 1.4; white-space: nowrap; overflow: hidden; }
+.cs-trigger:hover { border-color: #d6d3d1; }
+.cs-text { overflow: hidden; text-overflow: ellipsis; }
+.cs-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; box-shadow: 0 8px 24px rgba(28,25,23,0.12); z-index: 10010; max-height: 200px; overflow-y: auto; }
+.cs-option { padding: 7px 12px; font-size: 12px; color: #1c1917; cursor: pointer; transition: background 0.12s; }
+.cs-option:hover { background: #f5f5f4; }
+.cs-option.active { color: #c15f3c; background: rgba(193,95,60,0.08); }
+.cs-option.disabled { color: #a8a29e; cursor: default; }
 
 .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: #fafaf9; }
 .panel-body::-webkit-scrollbar { width: 6px; }
@@ -826,7 +896,7 @@ function onInputKeydown(e: KeyboardEvent) {
 @keyframes blink { 50% { opacity: 0; } }
 
 /* 底部 */
-.panel-footer { border-top: 1px solid #e7e5e4; background: #fafaf9; }
+.panel-footer { border-top: 1px solid #e7e5e4; background: #fafaf9; border-radius: 0 0 12px 12px; }
 .quick-cmds { display: flex; gap: 6px; padding: 8px 12px 0; }
 .quick-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #e7e5e4; background: #ffffff; color: #57534e; font-size: 11px; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
 .quick-btn:hover { background: #f5f5f4; border-color: #d6d3d1; color: #1c1917; }
