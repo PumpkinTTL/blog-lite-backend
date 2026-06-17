@@ -28,7 +28,6 @@ import {
   BanOutline,
   SpeedometerOutline,
   CubeOutline,
-  HardwareChipOutline,
   ChatbubbleEllipsesOutline,
 } from '@vicons/ionicons5'
 import { useAuth } from '../stores/auth'
@@ -65,7 +64,6 @@ const menuOptions: MenuOption[] = [
   { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
   { type: 'divider', key: 'd3' },
   { label: 'AI 提供商', key: '/ai-providers', icon: renderIcon(CubeOutline) },
-  { label: 'AI 模型', key: '/ai-models', icon: renderIcon(HardwareChipOutline) },
   { label: 'AI 对话历史', key: '/ai-conversations', icon: renderIcon(ChatbubbleEllipsesOutline) },
   { type: 'divider', key: 'd3b' },
   { label: '黑名单', key: '/blacklist', icon: renderIcon(BanOutline) },
@@ -119,7 +117,6 @@ const breadcrumbItems = computed(() => {
     '/rate-limit': '限流配置',
     '/donations': '捐赠管理',
     '/ai-providers': 'AI 提供商',
-    '/ai-models': 'AI 模型',
     '/ai-conversations': 'AI 对话历史',
     '/settings': '系统设置',
   }

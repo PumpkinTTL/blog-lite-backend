@@ -31,7 +31,6 @@ import { ResourceCategoryModule } from './modules/resource-category/resource-cat
 import { BlacklistModule } from './modules/blacklist/blacklist.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AiProviderModule } from './modules/ai-provider/ai-provider.module';
-import { AiModelModule } from './modules/ai-model/ai-model.module';
 import { AiConversationModule } from './modules/ai-conversation/ai-conversation.module';
 
 @Module({
@@ -132,7 +131,6 @@ import { AiConversationModule } from './modules/ai-conversation/ai-conversation.
     BlacklistModule,
     AiModule,
     AiProviderModule,
-    AiModelModule,
     AiConversationModule,
   ],
 })

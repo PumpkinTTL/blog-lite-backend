@@ -36,6 +36,12 @@ export class AiProviderController {
     return { success: true, data, message: '查询成功' };
   }
 
+  @Get('active')
+  async findActive() {
+    const data = await this.service.findActive();
+    return { success: true, data, message: '查询成功' };
+  }
+
   @Get(':id')
   async findById(@Param('id', ParseIntPipe) id: number) {
     const data = await this.service.findById(id);

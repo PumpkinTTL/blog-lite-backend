@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, h } from 'vue'
-import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NPagination, NTag, NSelect } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NModal, NForm, NFormItem, NPagination, NTag, NSelect, NSwitch, NInputNumber } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getAiProviders, createAiProvider, updateAiProvider, deleteAiProvider, batchDeleteAiProviders } from '../../api/ai-provider'
-import type { AiProvider } from '../../api/ai-provider'
+import type { AiProvider, AiProviderModel } from '../../api/ai-provider'
 import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
@@ -33,7 +33,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     deleteApi: deleteAiProvider,
     batchDeleteApi: batchDeleteAiProviders,
     deleteContent: (row) => `确定删除提供商「${row.name}」？`,
-    defaultForm: () => ({ name: '', baseUrl: '', apiKey: '', protocol: 'openai', remark: '', status: 1 }),
+    defaultForm: () => ({ name: '', baseUrl: '', apiKey: '', protocol: 'openai', models: [], remark: '', status: 1 } as any),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) { total.value = payload.total; return payload.list }
@@ -53,6 +53,17 @@ const rules: FormRules = {
   apiKey: [{ required: true, message: '请输入 API Key', trigger: ['input', 'blur'] }],
 }
 
+// === 模型列表编辑（嵌入） ===
+function addModel() {
+  const fv = formValue.value as any
+  if (!Array.isArray(fv.models)) fv.models = []
+  fv.models.push({ modelId: '', displayName: '', maxContextTokens: 32000, maxOutputTokens: 8192, supportsTools: true, supportsThinking: false } as AiProviderModel)
+}
+function removeModel(idx: number) {
+  const fv = formValue.value as any
+  if (Array.isArray(fv.models)) fv.models.splice(idx, 1)
+}
+
 const columns: DataTableColumns<AiProvider> = [
   selectionColumn,
   { title: 'ID', key: 'id', width: 70 },
@@ -66,7 +77,13 @@ const columns: DataTableColumns<AiProvider> = [
       return masked
     },
   },
-  { title: '协议', key: 'protocol', width: 90 },
+  {
+    title: '模型', key: 'models', width: 200, ellipsis: { tooltip: true },
+    render: (row) => {
+      const count = row.models?.length ?? 0
+      return count > 0 ? `${count} 个模型` : '—'
+    },
+  },
   { title: '备注', key: 'remark', width: 160, ellipsis: { tooltip: true } },
   {
     title: '状态', key: 'status', width: 80,
@@ -77,7 +94,7 @@ const columns: DataTableColumns<AiProvider> = [
     title: '操作', key: 'actions', width: 140, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small', wrap: false }, {
       default: () => [
-        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, baseUrl: r.baseUrl, apiKey: r.apiKey, protocol: r.protocol, remark: r.remark ?? '', status: r.status })) }, {
+        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, baseUrl: r.baseUrl, apiKey: r.apiKey, protocol: r.protocol, models: r.models ?? [], remark: r.remark ?? '', status: r.status } as any)) }, {
           default: () => '编辑', icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
         }),
         h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
@@ -123,7 +140,7 @@ const columns: DataTableColumns<AiProvider> = [
       </div>
     </div>
 
-    <n-modal v-model:show="showModal" preset="dialog" :title="editingId ? '编辑提供商' : '新建提供商'" :positive-text="saving ? '提交中...' : '确认'" :negative-text="saving ? undefined : '取消'" :loading="saving" @positive-click="handleSave">
+    <n-modal v-model:show="showModal" preset="dialog" :title="editingId ? '编辑提供商' : '新建提供商'" :positive-text="saving ? '提交中...' : '确认'" :negative-text="saving ? undefined : '取消'" :loading="saving" @positive-click="handleSave" style="width: 640px">
       <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="top">
         <n-form-item label="名称" path="name">
           <n-input v-model:value="formValue.name" placeholder="如 9router" />
@@ -137,6 +154,29 @@ const columns: DataTableColumns<AiProvider> = [
         <n-form-item label="协议" path="protocol">
           <n-input v-model:value="formValue.protocol" placeholder="openai" />
         </n-form-item>
+
+        <!-- 模型列表编辑 -->
+        <n-form-item label="模型列表" path="models">
+          <div class="models-editor">
+            <div v-for="(m, idx) in (formValue.models || [])" :key="idx" class="model-row">
+              <n-input v-model:value="m.modelId" placeholder="模型标识 modelId" style="width: 200px" />
+              <n-input v-model:value="m.displayName" placeholder="展示名" style="width: 150px" />
+              <n-input-number v-model:value="m.maxContextTokens" placeholder="上下文" :step="1000" size="small" style="width: 120px" />
+              <div class="model-flags">
+                <label class="flag"><n-switch v-model:value="m.supportsTools" size="small" />工具</label>
+                <label class="flag"><n-switch v-model:value="m.supportsThinking" size="small" />思考</label>
+              </div>
+              <n-button size="small" quaternary type="error" @click="removeModel(idx)">
+                <template #icon><n-icon><TrashOutline /></n-icon></template>
+              </n-button>
+            </div>
+            <n-button size="small" dashed block @click="addModel">
+              <template #icon><n-icon><AddOutline /></n-icon></template>
+              添加模型
+            </n-button>
+          </div>
+        </n-form-item>
+
         <n-form-item label="备注" path="remark">
           <n-input v-model:value="formValue.remark" type="textarea" placeholder="可选" :rows="2" />
         </n-form-item>
@@ -148,4 +188,12 @@ const columns: DataTableColumns<AiProvider> = [
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.models-editor { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.model-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px; border: 1px dashed #e7e5e4; border-radius: 8px; background: #fafaf9;
+}
+.model-flags { display: flex; gap: 10px; }
+.flag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #78716c; }
+</style>

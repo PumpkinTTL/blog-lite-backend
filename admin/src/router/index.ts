@@ -126,12 +126,6 @@ const router = createRouter({
           meta: { title: 'AI 提供商' },
         },
         {
-          path: 'ai-models',
-          name: 'ai-models',
-          component: () => import('../views/ai-model/IndexView.vue'),
-          meta: { title: 'AI 模型' },
-        },
-        {
           path: 'ai-conversations',
           name: 'ai-conversations',
           component: () => import('../views/ai-conversation/IndexView.vue'),

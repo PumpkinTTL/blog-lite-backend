@@ -1,11 +1,22 @@
 import request from './request'
 
+/** 单个模型（嵌入 provider.models 数组） */
+export interface AiProviderModel {
+  modelId: string
+  displayName: string
+  maxContextTokens?: number
+  maxOutputTokens?: number
+  supportsTools?: boolean
+  supportsThinking?: boolean
+}
+
 export interface AiProvider {
   id: number
   name: string
   baseUrl: string
   apiKey: string
   protocol: string
+  models: AiProviderModel[]
   remark: string | null
   status: number
   createdAt: string
@@ -14,6 +25,11 @@ export interface AiProvider {
 
 export function getAiProviders(params?: { id?: number; keyword?: string; status?: number; page?: number; pageSize?: number }) {
   return request.get('/ai-providers', { params })
+}
+
+/** 取所有启用的 provider（含 models），供写作面板联动选择 */
+export function getActiveAiProviders() {
+  return request.get('/ai-providers/active')
 }
 
 export function createAiProvider(data: Partial<AiProvider>) {

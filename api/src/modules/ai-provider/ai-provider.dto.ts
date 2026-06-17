@@ -5,7 +5,38 @@ import {
   IsIn,
   MaxLength,
   IsArray,
+  ArrayMinSize,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import type { AiProviderModel } from './ai-provider.entity';
+
+/** 单个模型的输入校验（嵌入 provider.models 数组） */
+export class AiProviderModelDto {
+  @IsString()
+  @MaxLength(200)
+  modelId: string;
+
+  @IsString()
+  @MaxLength(100)
+  displayName: string;
+
+  @IsInt()
+  @IsOptional()
+  maxContextTokens?: number;
+
+  @IsInt()
+  @IsOptional()
+  maxOutputTokens?: number;
+
+  @IsIn([0, 1])
+  @IsOptional()
+  supportsTools?: number;
+
+  @IsIn([0, 1])
+  @IsOptional()
+  supportsThinking?: number;
+}
 
 /** 创建 AI 提供商 */
 export class CreateAiProviderDto {
@@ -26,6 +57,12 @@ export class CreateAiProviderDto {
   @MaxLength(50)
   protocol?: string;
 
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AiProviderModelDto)
+  @IsOptional()
+  models?: AiProviderModel[];
+
   @IsString()
   @IsOptional()
   @MaxLength(500)
@@ -35,6 +72,14 @@ export class CreateAiProviderDto {
   @IsIn([0, 1])
   @IsOptional()
   status?: number;
+}
+
+/** 批量删除 */
+export class BatchIdsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsInt({ each: true })
+  ids: number[];
 }
 
 /** 更新 AI 提供商（全部可选） */
@@ -59,6 +104,12 @@ export class UpdateAiProviderDto {
   @MaxLength(50)
   protocol?: string;
 
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AiProviderModelDto)
+  @IsOptional()
+  models?: AiProviderModel[];
+
   @IsString()
   @IsOptional()
   @MaxLength(500)
@@ -68,11 +119,4 @@ export class UpdateAiProviderDto {
   @IsIn([0, 1])
   @IsOptional()
   status?: number;
-}
-
-/** 批量删除 */
-export class BatchIdsDto {
-  @IsArray()
-  @IsInt({ each: true })
-  ids: number[];
 }
