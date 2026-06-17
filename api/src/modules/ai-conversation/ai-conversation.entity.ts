@@ -28,6 +28,33 @@ export class AiConversationEntity {
   @Column({ type: 'varchar', length: 200, nullable: true, comment: '使用模型' })
   model: string | null;
 
+  /** 累计输入 token（每轮 prompt_tokens 累加，持久化避免重开重新计算） */
+  @Column({
+    name: 'prompt_tokens',
+    type: 'int',
+    default: 0,
+    comment: '累计输入 token',
+  })
+  promptTokens: number;
+
+  /** 累计输出 token（每轮 completion_tokens 累加） */
+  @Column({
+    name: 'completion_tokens',
+    type: 'int',
+    default: 0,
+    comment: '累计输出 token',
+  })
+  completionTokens: number;
+
+  /** 对话轮次（每完成一轮 assistant 回复 +1） */
+  @Column({
+    name: 'rounds',
+    type: 'int',
+    default: 0,
+    comment: '对话轮次',
+  })
+  rounds: number;
+
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })
   createdAt: Date;
 

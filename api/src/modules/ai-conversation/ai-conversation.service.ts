@@ -26,7 +26,31 @@ export class AiConversationService {
       .skip((page - 1) * pageSize)
       .take(pageSize);
     const [list, total] = await qb.getManyAndCount();
-    return { list, total, page, pageSize };
+    // messages 是 JSON 字符串且较大：列表只返回消息条数，不展开整串。
+    // 旧逻辑直接返回字符串导致前端 Array.isArray 判断为 false，消息数恒为 0。
+    const dtoList = list.map((e) => {
+      let messageCount = 0;
+      if (e.messages) {
+        try {
+          const arr = JSON.parse(e.messages);
+          if (Array.isArray(arr)) messageCount = arr.length;
+        } catch {
+          // 解析失败算 0，不阻断列表
+        }
+      }
+      return {
+        id: e.id,
+        postId: e.postId,
+        model: e.model,
+        promptTokens: e.promptTokens ?? 0,
+        completionTokens: e.completionTokens ?? 0,
+        rounds: e.rounds ?? 0,
+        createdAt: e.createdAt,
+        updatedAt: e.updatedAt,
+        messageCount,
+      };
+    });
+    return { list: dtoList, total, page, pageSize };
   }
 
   /** 按文章 ID 读取对话历史（AgentPanel 加载用），不存在返回 null */
@@ -34,18 +58,25 @@ export class AiConversationService {
     return this.repo.findOne({ where: { postId } });
   }
 
-  /** upsert：有则更新 messages，无则新建 */
+  /** upsert：有则更新 messages + token 累计，无则新建 */
   async save(dto: SaveConversationDto): Promise<AiConversationEntity> {
     const messagesJson = JSON.stringify(dto.messages);
     let item = await this.repo.findOne({ where: { postId: dto.postId } });
     if (item) {
       item.messages = messagesJson;
       if (dto.model !== undefined) item.model = dto.model;
+      // token / 轮次：前端传全量累计值直接覆盖（前端是唯一写入方）
+      item.promptTokens = dto.promptTokens ?? item.promptTokens ?? 0;
+      item.completionTokens = dto.completionTokens ?? item.completionTokens ?? 0;
+      item.rounds = dto.rounds ?? item.rounds ?? 0;
     } else {
       item = this.repo.create({
         postId: dto.postId,
         messages: messagesJson,
         model: dto.model ?? null,
+        promptTokens: dto.promptTokens ?? 0,
+        completionTokens: dto.completionTokens ?? 0,
+        rounds: dto.rounds ?? 0,
       });
     }
     return this.repo.save(item);

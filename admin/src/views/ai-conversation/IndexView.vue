@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, h } from 'vue'
-import { NButton, NDataTable, NSpace, NInput, NIcon, NPagination, NTag, NDrawer, NDrawerContent, useDialog, useMessage } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NPagination, NTag, NDrawer, NDrawerContent, NSpin, useDialog, useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { TrashOutline, SearchOutline, RefreshOutline, EyeOutline } from '@vicons/ionicons5'
-import { getAiConversations, deleteAiConversation, batchDeleteAiConversations } from '../../api/ai-conversation'
+import { getAiConversations, getAiConversationById, deleteAiConversation, batchDeleteAiConversations } from '../../api/ai-conversation'
 import type { AiConversation } from '../../api/ai-conversation'
+
+interface ConversationMsg { role: string; content?: string | null }
 
 const dialog = useDialog()
 const message = useMessage()
@@ -19,7 +21,8 @@ const checkedRowKeys = ref<number[]>([])
 
 // 详情查看
 const detailVisible = ref(false)
-const detailItem = ref<AiConversation | null>(null)
+const detailLoading = ref(false)
+const detailItem = ref<(AiConversation & { messages?: ConversationMsg[] }) | null>(null)
 
 const selectionColumn = { type: 'selection' as const }
 
@@ -75,20 +78,44 @@ async function handleBatchDelete() {
   })
 }
 
-function viewDetail(row: AiConversation) {
-  detailItem.value = row
+// 列表行只有 messageCount，不含 messages。
+// 详情走单条接口拿已 parse 的 messages，避免对 JSON 字符串做 v-for（会按字符迭代）。
+async function viewDetail(row: AiConversation) {
   detailVisible.value = true
+  detailLoading.value = true
+  detailItem.value = { ...row, messages: [] }
+  try {
+    const res = await getAiConversationById(row.id)
+    detailItem.value = {
+      ...row,
+      messages: Array.isArray(res.data?.messages) ? res.data.messages : [],
+    }
+  } catch (e: any) {
+    message.error(e?.message || '加载详情失败')
+    detailItem.value = { ...row, messages: [] }
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 function messageCount(row: AiConversation): number {
-  return Array.isArray(row.messages) ? row.messages.length : 0
+  return typeof row.messageCount === 'number' ? row.messageCount : 0
 }
 
 const columns: DataTableColumns<AiConversation> = [
   selectionColumn,
   { title: 'ID', key: 'id', width: 70 },
   { title: '文章 ID', key: 'postId', width: 100 },
-  { title: '消息数', key: 'count', width: 90, render: (row) => messageCount(row) },
+  { title: '消息数', key: 'messageCount', width: 90, render: (row) => messageCount(row) },
+  { title: '轮次', key: 'rounds', width: 80, render: (row) => row.rounds ?? 0 },
+  {
+    title: 'Token 累计', key: 'tokens', width: 180,
+    render: (row) => {
+      const p = row.promptTokens ?? 0
+      const c = row.completionTokens ?? 0
+      return `↑${p} ↓${c} = ${p + c}`
+    },
+  },
   { title: '模型', key: 'model', width: 200, ellipsis: { tooltip: true }, render: (row) => row.model || '-' },
   { title: '更新时间', key: 'updatedAt', width: 170 },
   {
@@ -130,23 +157,26 @@ const columns: DataTableColumns<AiConversation> = [
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="800" :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="950" :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
     </div>
 
     <!-- 详情抽屉 -->
-    <n-drawer v-model:show="detailVisible" :width="520" placement="right">
+    <n-drawer v-model:show="detailVisible" :width="560" placement="right">
       <n-drawer-content :title="`文章 #${detailItem?.postId} 对话`" closable>
-        <n-space vertical :size="8">
-          <template v-if="detailItem">
-            <div v-for="(msg, i) in (detailItem.messages as any[])" :key="i" class="msg-row">
-              <n-tag size="small" :type="msg.role === 'user' ? 'primary' : msg.role === 'tool' ? 'warning' : 'default'">{{ msg.role }}</n-tag>
-              <span class="msg-text">{{ typeof msg.content === 'string' ? msg.content.slice(0, 200) : JSON.stringify(msg).slice(0, 200) }}</span>
-            </div>
-          </template>
-        </n-space>
+        <n-spin :show="detailLoading">
+          <n-space vertical :size="8">
+            <template v-if="detailItem && (detailItem.messages?.length ?? 0) > 0">
+              <div v-for="(msg, i) in (detailItem.messages as ConversationMsg[])" :key="i" class="msg-row">
+                <n-tag size="small" :type="msg.role === 'user' ? 'primary' : msg.role === 'tool' ? 'warning' : 'default'">{{ msg.role }}</n-tag>
+                <span class="msg-text">{{ typeof msg.content === 'string' ? msg.content.slice(0, 200) : JSON.stringify(msg).slice(0, 200) }}</span>
+              </div>
+            </template>
+            <div v-else-if="!detailLoading" class="empty-tip">该对话无消息内容</div>
+          </n-space>
+        </n-spin>
       </n-drawer-content>
     </n-drawer>
   </div>
@@ -166,5 +196,12 @@ const columns: DataTableColumns<AiConversation> = [
   word-break: break-all;
   line-height: 1.5;
   flex: 1;
+  white-space: pre-wrap;
+}
+.empty-tip {
+  text-align: center;
+  color: #94a3b8;
+  padding: 32px 0;
+  font-size: 13px;
 }
 </style>

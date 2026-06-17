@@ -34,13 +34,41 @@ export class AiConversationController {
     return { success: true, data, message: '查询成功' };
   }
 
+  /** 按主键读取单条（管理页详情查看用，messages 已 parse） */
+  @Get(':id')
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    const item = await this.service.findById(id);
+    const data = {
+      id: item.id,
+      postId: item.postId,
+      model: item.model,
+      promptTokens: item.promptTokens ?? 0,
+      completionTokens: item.completionTokens ?? 0,
+      rounds: item.rounds ?? 0,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      messages: JSON.parse(item.messages),
+    };
+    return { success: true, data, message: '查询成功' };
+  }
+
   /** 按文章 ID 读取对话（AgentPanel 加载用） */
   @Get('post/:postId')
   async findByPostId(@Param('postId', ParseIntPipe) postId: number) {
     const item = await this.service.findByPostId(postId);
-    // messages 是 JSON 字符串，解析后返回
+    // messages 是 JSON 字符串，解析后返回；一并返回 token 累计与轮次（前端恢复统计）
     const data = item
-      ? { ...item, messages: JSON.parse(item.messages) }
+      ? {
+          id: item.id,
+          postId: item.postId,
+          model: item.model,
+          promptTokens: item.promptTokens ?? 0,
+          completionTokens: item.completionTokens ?? 0,
+          rounds: item.rounds ?? 0,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          messages: JSON.parse(item.messages),
+        }
       : null;
     return { success: true, data, message: item ? '查询成功' : '无对话历史' };
   }

@@ -1,26 +1,51 @@
 import request from './request'
 
+/** 管理页列表项（messages 已折叠为 messageCount，不带整串 JSON） */
 export interface AiConversation {
   id: number
   postId: number
-  messages: unknown[]
+  /** 消息条数（列表接口已解析，前端不再自己 Array.isArray 判断） */
+  messageCount?: number
   model: string | null
+  /** 累计输入 token */
+  promptTokens?: number
+  /** 累计输出 token */
+  completionTokens?: number
+  /** 对话轮次 */
+  rounds?: number
   createdAt: string
   updatedAt: string
 }
 
-/** 管理页分页列表（messages 字段较大，列表接口已排除/不展开） */
+/** 单条对话（getConversationByPostId 返回），messages 已 parse 为数组 */
+export interface AiConversationDetail extends AiConversation {
+  messages: unknown[]
+}
+
+/** 管理页分页列表（列表项已折叠 messages，轻量） */
 export function getAiConversations(params?: { id?: number; postId?: number; page?: number; pageSize?: number }) {
   return request.get('/ai-conversations', { params })
 }
 
-/** 按文章 ID 读取完整对话（AgentPanel 加载用） */
+/** 按文章 ID 读取完整对话（AgentPanel 加载 / 详情查看用，messages 已 parse） */
 export function getConversationByPostId(postId: number) {
   return request.get(`/ai-conversations/post/${postId}`)
 }
 
-/** 保存/更新对话历史（upsert） */
-export function saveConversation(data: { postId: number; messages: unknown[]; model?: string }) {
+/** 按主键读取单条对话（详情查看用，messages 已 parse） */
+export function getAiConversationById(id: number) {
+  return request.get(`/ai-conversations/${id}`)
+}
+
+/** 保存/更新对话历史（upsert），同时持久化 token 累计与轮次 */
+export function saveConversation(data: {
+  postId: number
+  messages: unknown[]
+  model?: string
+  promptTokens?: number
+  completionTokens?: number
+  rounds?: number
+}) {
   return request.post('/ai-conversations/save', data)
 }
 

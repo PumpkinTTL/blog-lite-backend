@@ -59,9 +59,9 @@ function addModel() {
   if (!Array.isArray(fv.models)) fv.models = []
   fv.models.push({ modelId: '', displayName: '', maxContextTokens: 32000, maxOutputTokens: 8192, supportsTools: true, supportsThinking: false } as AiProviderModel)
 }
-function removeModel(idx: number) {
+function removeModel(idx: number | string) {
   const fv = formValue.value as any
-  if (Array.isArray(fv.models)) fv.models.splice(idx, 1)
+  if (Array.isArray(fv.models)) fv.models.splice(Number(idx), 1)
 }
 
 const columns: DataTableColumns<AiProvider> = [

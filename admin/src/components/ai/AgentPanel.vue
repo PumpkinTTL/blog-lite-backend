@@ -63,9 +63,24 @@ const providers = ref<AiProvider[]>([])
 const provDropdownOpen = ref(false)
 const modelDropdownOpen = ref(false)
 
-const providerOptions = computed(() =>
-  providers.value.map(p => ({ label: p.name, value: p.id }))
-)
+// provider/model 本地持久化：刷新后仍保留用户上次选择，而不是回退到第一个。
+const LS_PROVIDER_KEY = 'agentPanel.providerId'
+const LS_MODEL_KEY = 'agentPanel.modelId'
+function readLsNumber(key: string): number | null {
+  const raw = localStorage.getItem(key) || sessionStorage.getItem(key)
+  if (!raw) return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+function readLsStr(key: string): string | null {
+  return localStorage.getItem(key) || sessionStorage.getItem(key) || null
+}
+function persistSelection() {
+  const store = localStorage  // 统一写 localStorage（跨会话保留）
+  if (selectedProviderId.value != null) store.setItem(LS_PROVIDER_KEY, String(selectedProviderId.value))
+  if (selectedModel.value) store.setItem(LS_MODEL_KEY, selectedModel.value)
+}
+
 const activeProvider = computed(() =>
   providers.value.find(p => p.id === selectedProviderId.value)
 )
@@ -82,10 +97,12 @@ function selectProvider(id: number) {
   selectedProviderId.value = id
   selectedModel.value = providers.value.find(p => p.id === id)?.models?.[0]?.modelId ?? null
   provDropdownOpen.value = false
+  persistSelection()
 }
 function selectModel(modelId: string) {
   selectedModel.value = modelId
   modelDropdownOpen.value = false
+  persistSelection()
 }
 
 async function loadProviders() {
@@ -94,8 +111,18 @@ async function loadProviders() {
     const list = Array.isArray(res) ? res : (res?.data ?? [])
     providers.value = list
     if (!selectedProviderId.value && list.length > 0) {
-      selectedProviderId.value = list[0].id
-      selectedModel.value = list[0].models?.[0]?.modelId ?? null
+      // 优先恢复本地持久化的选择；校验 provider/model 仍存在于当前可用列表中，避免选了已下架的
+      const savedPid = readLsNumber(LS_PROVIDER_KEY)
+      const savedMid = readLsStr(LS_MODEL_KEY)
+      const matched = savedPid != null ? list.find((p: any) => p.id === savedPid) : null
+      if (matched) {
+        selectedProviderId.value = matched.id
+        const hasModel = (matched.models || []).some((m: any) => m.modelId === savedMid)
+        selectedModel.value = hasModel ? savedMid : (matched.models?.[0]?.modelId ?? null)
+      } else {
+        selectedProviderId.value = list[0].id
+        selectedModel.value = list[0].models?.[0]?.modelId ?? null
+      }
     }
     console.log('[AgentPanel] 加载供应商:', list.length, '个')
   } catch (e: any) {
@@ -389,6 +416,8 @@ async function handleCompact() {
     resetTokenStats()
     message.success('对话已压缩')
     await scrollToBottom()
+    // 压缩改变了历史结构，立即落库（token 已重置为 0）
+    void persistConversation()
   } catch (e) {
     message.error(e instanceof Error ? e.message : '压缩失败')
   } finally {
@@ -497,6 +526,9 @@ async function handleSend() {
     // sending 从 true→false 会让 NInput 的 disabled 恢复，焦点会丢失，主动聚焦回来
     await nextTick()
     inputRef.value?.focus?.()
+    // 每轮结束自动落库：token 累计与对话历史都要持久化，
+    // 这样即使未点"保存文章"就关闭页面，下次打开也能恢复统计、避免上下文溢出无预警。
+    void persistConversation()
   }
   // 引用避免未使用告警
   void userItem
@@ -528,6 +560,11 @@ async function loadHistory() {
     if (data && Array.isArray(data.messages) && data.messages.length > 0) {
       messages.value = data.messages as AiChatMessage[]
       rebuildRenderFromHistory()
+      // 恢复累计 token / 轮次：避免重开后统计清零、却把历史原样带上网关，
+      // 导致前 N 轮 token 未计入而上下文实际已逼近上限（溢出风险）。
+      tokenStats.prompt = Number(data.promptTokens ?? 0) || 0
+      tokenStats.completion = Number(data.completionTokens ?? 0) || 0
+      tokenStats.rounds = Number(data.rounds ?? 0) || 0
     }
   } catch { /* 静默 */ }
   finally {
@@ -564,7 +601,15 @@ async function persistConversation(newPostId?: number): Promise<void> {
   if (!pid) return
   if (messages.value.length === 0) return
   try {
-    await saveConversation({ postId: pid, messages: messages.value, model: selectedModel.value ?? undefined })
+    // 一并落库累计 token 与轮次，保证下次打开能恢复，避免"重算"导致上下文溢出无预警。
+    await saveConversation({
+      postId: pid,
+      messages: messages.value,
+      model: selectedModel.value ?? undefined,
+      promptTokens: tokenStats.prompt,
+      completionTokens: tokenStats.completion,
+      rounds: tokenStats.rounds,
+    })
   } catch { /* 静默 */ }
 }
 
