@@ -14,7 +14,12 @@ const props = defineProps<{
   progress?: string
 }>()
 
-const expanded = ref(false)
+// 折叠状态：running 时展开（看进度），success/error 后自动收起。用户仍可手动点开。
+const expanded = ref(props.status === 'running')
+watch(
+  () => props.status,
+  (s) => { if (s !== 'running') expanded.value = false },
+)
 
 // 工具名中文映射
 const NAME_LABEL: Record<string, string> = {
@@ -171,11 +176,11 @@ const statusText = computed(() => {
   <div class="tool-card" :class="`is-${status}`">
     <!-- 头部：工具调用标签 + 状态点 + 工具名 + 状态 -->
     <div class="tool-head" @click="expanded = !expanded">
-      <span class="tool-call-label">
+      <span v-if="status !== 'success'" class="tool-call-label">
         <n-icon :size="11" class="tool-label-icon"><component :is="statusIcon" /></n-icon>
         <span>工具调用</span>
       </span>
-      <span class="tool-status-dot" :style="{ background: statusColor }" :class="{ spinning: status === 'running' }" />
+      <span v-if="status !== 'success'" class="tool-status-dot" :style="{ background: statusColor }" :class="{ spinning: status === 'running' }" />
       <span class="tool-name">{{ label }}</span>
       <span class="tool-tag">{{ call.function.name }}</span>
       <span class="tool-status-text" :style="{ color: statusColor }">
@@ -187,8 +192,8 @@ const statusText = computed(() => {
       </n-icon>
     </div>
 
-    <!-- 参数概览（默认显示） -->
-    <div v-if="argsList.length > 0" class="tool-section">
+    <!-- 参数概览（展开才显示，折叠态更干净） -->
+    <div v-if="expanded && argsList.length > 0" class="tool-section">
       <div v-for="arg in argsList" :key="arg.key" class="kv-row">
         <span class="kv-key">{{ arg.key }}</span>
         <span class="kv-val">{{ truncate(arg.value, 80) }}</span>
@@ -203,7 +208,7 @@ const statusText = computed(() => {
       </div>
     </div>
 
-    <!-- web_search 专属：紧凑单行结果列表，逐条揭示动画 -->
+    <!-- web_search 专属：紧凑卡片式结果，逐条揭示动画 -->
     <div v-if="isWebSearch && status === 'success' && searchMeta" class="tool-section tool-search-section">
       <div class="search-meta">
         共 {{ searchMeta.total }} 条{{ searchMeta.responseTime ? ` · ${searchMeta.responseTime}s` : '' }}
@@ -218,8 +223,11 @@ const statusText = computed(() => {
           class="search-item"
           :title="r.title"
         >
-          <span class="search-item-domain">{{ domainOf(r.url) }}</span>
-          <span class="search-item-title">{{ truncate(r.title || '(无标题)', 36) }}</span>
+          <span class="search-item-main">
+            <span class="search-item-title">{{ truncate(r.title || '(无标题)', 44) }}</span>
+            <span class="search-item-domain">{{ domainOf(r.url) }}</span>
+          </span>
+          <span v-if="r.content" class="search-item-snippet">{{ truncate(r.content, 90) }}</span>
         </a>
       </transition-group>
     </div>
@@ -342,29 +350,44 @@ const statusText = computed(() => {
 .search-meta { font-size: 10px; color: #a8a29e; margin-bottom: 4px; }
 .search-list { display: flex; flex-direction: column; gap: 2px; }
 .search-item {
-  display: flex; align-items: center; gap: 6px;
-  padding: 3px 6px;
-  border-radius: 4px;
-  background: transparent;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: #fafaf9;
+  border: 1px solid #f0eeec;
   text-decoration: none;
-  transition: background 0.12s;
+  transition: border-color 0.12s, background 0.12s;
   line-height: 1.4;
 }
-.search-item:hover { background: #f5f5f4; }
-/* 来源域名：左侧灰色等宽小字 */
-.search-item-domain {
-  font-size: 9px; color: #a8a29e;
-  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-  flex-shrink: 0; min-width: 70px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.search-item:hover { background: #fff; border-color: #e7e5e4; }
+/* 第一行：标题 + 域名 */
+.search-item-main {
+  display: flex; align-items: baseline; gap: 6px;
+  min-width: 0;
 }
-/* 标题：单行省略 */
+/* 标题：主体，可省略 */
 .search-item-title {
-  font-size: 11px; color: #1c1917;
+  font-size: 11.5px; color: #1c1917; font-weight: 500;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   flex: 1;
 }
 .search-item:hover .search-item-title { color: #c15f3c; }
+/* 来源域名：标题右侧灰色等宽小字 */
+.search-item-domain {
+  font-size: 9px; color: #a8a29e;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  flex-shrink: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 40%;
+}
+/* 第二行：内容摘要，2行截断 */
+.search-item-snippet {
+  font-size: 10.5px; color: #78716c; line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 /* 逐条揭示动画 */
 .search-item-enter-active { transition: all 0.2s ease; }
 .search-item-enter-from { opacity: 0; transform: translateX(-4px); }
