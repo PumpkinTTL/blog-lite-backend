@@ -169,6 +169,12 @@ onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() 
           </div>
         </div>
 
+        <!-- Section divider -->
+        <div class="sec">
+          <span>数据趋势</span>
+          <div class="sec-line"></div>
+        </div>
+
         <!-- Charts -->
         <div class="charts">
           <n-card size="small" :bordered="false">
@@ -215,7 +221,8 @@ onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() 
 </template>
 
 <style scoped>
-.dash { display: flex; flex-direction: column; gap: 24px; }
+.dash { min-height: 100%; background: linear-gradient(160deg, #F8FAFC 0%, #F1F5F9 60%, #E8ECF1 100%); }
+.dash.is-dark { background: var(--n-body-color); }
 .body { display: flex; flex-direction: column; gap: 24px; }
 
 /* header */
@@ -224,22 +231,38 @@ onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() 
 .hdrs { margin: 3px 0 0; font-size: 13px; color: var(--n-text-color-3); }
 .hdrb { display: flex; gap: 6px; align-items: center; }
 
-/* KPI cards — Stripe style: label on top, number below */
-.kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+/* KPI cards — label on top, coloured dot, shadow for depth */
+.kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .kc {
+  position: relative;
   background: var(--n-card-color);
-  border: 1px solid var(--n-border-color);
-  border-radius: 8px;
-  padding: 16px;
-  display: flex; flex-direction: column; gap: 8px;
-  transition: border-color .2s, box-shadow .2s;
+  border-radius: 10px;
+  padding: 18px 18px 18px 18px;
+  display: flex; flex-direction: column; gap: 6px;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.04), 0 1px 2px rgba(15,23,42,0.06);
+  transition: box-shadow .25s, transform .25s;
 }
+.kc::before {
+  content: ''; position: absolute; top: 14px; left: 18px;
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.kc:nth-child(1)::before { background: #3B82F6; }
+.kc:nth-child(2)::before { background: #0891B2; }
+.kc:nth-child(3)::before { background: #059669; }
+.kc:nth-child(4)::before { background: #DB2777; }
+.kc:nth-child(5)::before { background: #E11D48; }
+.kc:nth-child(6)::before { background: #CA8A04; }
+.kc:nth-child(7)::before { background: #DC2626; }
+.kc:nth-child(8)::before { background: #059669; }
 .kc.clk { cursor: pointer; }
-.kc.clk:hover { border-color: var(--n-primary-color); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.kl { font-size: 12px; font-weight: 500; color: var(--n-text-color-3); }
-.kv { font-size: 28px; font-weight: 700; color: var(--n-text-color); line-height: 1; letter-spacing: -0.02em; }
+.kc.clk:hover { box-shadow: 0 4px 16px rgba(15,23,42,0.08), 0 1px 3px rgba(15,23,42,0.04); transform: translateY(-1px); }
+.kl { font-size: 12px; font-weight: 500; color: var(--n-text-color-3); padding-left: 16px; }
+.kv { font-size: 28px; font-weight: 700; color: var(--n-text-color); line-height: 1; letter-spacing: -0.03em; }
 
 /* charts */
+.sec { display: flex; align-items: center; gap: 16px; }
+.sec span { font-size: 14px; font-weight: 600; color: var(--n-text-color); flex-shrink: 0; }
+.sec-line { flex: 1; height: 1px; background: var(--n-border-color); }
 .charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .echart { width: 100%; height: 210px; }
 
