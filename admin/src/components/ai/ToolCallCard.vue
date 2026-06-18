@@ -161,10 +161,10 @@ const statusIcon = computed(() => {
 
 const statusColor = computed(() => {
   switch (props.status) {
-    case 'running': return '#c15f3c'
-    case 'success': return '#16a34a'
-    case 'error': return '#dc2626'
-    default: return '#a8a29e'
+    case 'running': return 'var(--accent)'
+    case 'success': return 'var(--success)'
+    case 'error': return 'var(--warn)'
+    default: return 'var(--text-5)'
   }
 })
 
@@ -270,14 +270,14 @@ const statusText = computed(() => {
 .tool-card {
   padding: 9px 11px;
   border-radius: 8px;
-  background: #ffffff;
-  border: 1px solid #e7e5e4;
+  background: var(--surface);
+  border: 1px solid var(--border);
   font-size: 12px;
   transition: border-color 0.2s;
 }
 .tool-card.is-running {
-  border-color: #c15f3c;
-  background: #fefcfb;
+  border-color: var(--accent);
+  background: var(--accent-bg);
   /* 呼吸效果：外发光脉动，1.6s 一个周期 */
   animation: tool-breath 1.6s ease-in-out infinite;
 }
@@ -291,8 +291,8 @@ const statusText = computed(() => {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.45; }
 }
-.tool-card.is-success { border-color: #e7e5e4; }
-.tool-card.is-error { border-color: #dc2626; background: #fef9f9; }
+.tool-card.is-success { border-color: var(--border); }
+.tool-card.is-error { border-color: var(--warn); background: var(--error-bg); }
 
 /* 头部内"工具调用"标签（和工具名同一行） */
 .tool-call-label {
@@ -300,12 +300,12 @@ const statusText = computed(() => {
   align-items: center;
   gap: 3px;
   font-size: 10px;
-  color: #a8a29e;
+  color: var(--text-5);
   padding-right: 6px;
   margin-right: 2px;
-  border-right: 1px solid #e7e5e4;
+  border-right: 1px solid var(--border);
 }
-.tool-label-icon { color: #c15f3c; }
+.tool-label-icon { color: var(--accent); }
 
 /* 头部 */
 .tool-head {
@@ -322,14 +322,14 @@ const statusText = computed(() => {
 }
 .tool-status-dot.spinning { animation: dot-pulse 1s ease-in-out infinite; }
 @keyframes dot-pulse { 50% { opacity: 0.4; } }
-.tool-name { font-weight: 600; color: #1c1917; }
+.tool-name { font-weight: 600; color: var(--text); }
 .tool-tag {
   font-size: 10px;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   padding: 1px 6px;
   border-radius: 4px;
-  background: #f5f5f4;
-  color: #78716c;
+  background: var(--surface-3);
+  color: var(--text-4);
   letter-spacing: 0.3px;
 }
 .tool-status-text {
@@ -340,32 +340,32 @@ const statusText = computed(() => {
   font-size: 11px;
   font-weight: 500;
 }
-.tool-chevron { color: #a8a29e; transition: transform 0.2s; }
+.tool-chevron { color: var(--text-5); transition: transform 0.2s; }
 .tool-chevron.rotated { transform: rotate(180deg); }
 
 /* 参数/结果 区块 */
 .tool-section {
   margin-top: 7px;
   padding-top: 6px;
-  border-top: 1px dashed #e7e5e4;
+  border-top: 1px dashed var(--border);
 }
-.tool-result-section .kv-val { color: #16a34a; }
+.tool-result-section .kv-val { color: var(--success); }
 
 /* ============ web_search 结果：单行紧凑列表 ============ */
 .tool-search-section { padding-top: 7px; }
-.search-meta { font-size: 10px; color: #a8a29e; margin-bottom: 4px; }
+.search-meta { font-size: 10px; color: var(--text-5); margin-bottom: 4px; }
 .search-list { display: flex; flex-direction: column; gap: 2px; }
 .search-item {
   display: flex; flex-direction: column; gap: 2px;
   padding: 5px 7px;
   border-radius: 5px;
-  background: #fafaf9;
-  border: 1px solid #f0eeec;
+  background: var(--bg);
+  border: 1px solid var(--surface-2);
   text-decoration: none;
   transition: border-color 0.12s, background 0.12s;
   line-height: 1.4;
 }
-.search-item:hover { background: #fff; border-color: #e7e5e4; }
+.search-item:hover { background: var(--surface); border-color: var(--border); }
 /* 第一行：标题 + 域名 */
 .search-item-main {
   display: flex; align-items: baseline; gap: 6px;
@@ -373,14 +373,14 @@ const statusText = computed(() => {
 }
 /* 标题：主体，可省略 */
 .search-item-title {
-  font-size: 11.5px; color: #1c1917; font-weight: 500;
+  font-size: 11.5px; color: var(--text); font-weight: 500;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   flex: 1;
 }
-.search-item:hover .search-item-title { color: #c15f3c; }
+.search-item:hover .search-item-title { color: var(--accent); }
 /* 来源域名：标题右侧灰色等宽小字 */
 .search-item-domain {
-  font-size: 9px; color: #a8a29e;
+  font-size: 9px; color: var(--text-5);
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   flex-shrink: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -388,7 +388,7 @@ const statusText = computed(() => {
 }
 /* 第二行：内容摘要，2行截断 */
 .search-item-snippet {
-  font-size: 10.5px; color: #78716c; line-height: 1.45;
+  font-size: 10.5px; color: var(--text-4); line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -398,7 +398,7 @@ const statusText = computed(() => {
 .search-item-enter-active { transition: all 0.2s ease; }
 .search-item-enter-from { opacity: 0; transform: translateX(-4px); }
 /* 进度区块（running 期间） */
-.tool-progress-section .kv-progress { color: #c15f3c; }
+.tool-progress-section .kv-progress { color: var(--accent); }
 
 .kv-row {
   display: flex;
@@ -408,12 +408,12 @@ const statusText = computed(() => {
 }
 .kv-key {
   flex-shrink: 0;
-  color: #a8a29e;
+  color: var(--text-5);
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   min-width: 60px;
 }
 .kv-val {
-  color: #57534e;
+  color: var(--text-3);
   word-break: break-all;
   flex: 1;
 }
@@ -422,7 +422,7 @@ const statusText = computed(() => {
 .tool-detail {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #e7e5e4;
+  border-top: 1px solid var(--border);
 }
 .detail-row {
   display: flex;
@@ -432,25 +432,25 @@ const statusText = computed(() => {
 }
 .detail-label {
   font-size: 10px;
-  color: #a8a29e;
+  color: var(--text-5);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 .detail-val {
   font-size: 10px;
-  color: #78716c;
+  color: var(--text-4);
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
 }
 .detail-code {
   margin: 0 0 6px;
   padding: 7px;
-  background: #f5f5f4;
+  background: var(--surface-3);
   border-radius: 5px;
   font-size: 10.5px;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   white-space: pre-wrap;
   word-break: break-all;
-  color: #44403c;
+  color: var(--text-2);
   max-height: 140px;
   overflow: auto;
 }
