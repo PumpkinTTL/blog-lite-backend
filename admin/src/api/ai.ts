@@ -180,6 +180,8 @@ export async function streamWebSearch(
   query: string,
   onProgress?: (p: WebSearchProgress) => void,
   maxResults?: number,
+  /** 可选：AbortSignal，用于主动终止搜索请求 */
+  signal?: AbortSignal,
 ): Promise<WebSearchResult> {
   const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
   const baseURL = import.meta.env.VITE_API_BASE_URL
@@ -191,6 +193,7 @@ export async function streamWebSearch(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({ query, max_results: maxResults }),
+    signal,
   })
 
   if (!resp.ok || !resp.body) {

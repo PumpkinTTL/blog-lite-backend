@@ -453,6 +453,8 @@ const fail = (error: string) => JSON.stringify({ ok: false, error })
 async function executeTool(
   call: AiToolCall,
   onProgress?: (msg: string) => void,
+  /** 可选：AbortSignal，转发给流式工具（如 web_search）以支持停止 */
+  signal?: AbortSignal,
 ): Promise<string> {
   let args: any = {}
   try { args = JSON.parse(call.function.arguments || '{}') } catch {
@@ -597,6 +599,7 @@ async function executeTool(
           onProgress?.(`${p.message}${extra}`)
         },
         maxResults,
+        signal,
       )
       // 精简：每条 content 截断到 500 字，避免历史膨胀
       const slim = {
@@ -786,6 +789,9 @@ async function handleSend() {
   inputText.value = ''
   sending.value = true
   abortController = new AbortController()
+  // 捕获本次对话的 signal 引用：stopGeneration 会把 abortController 置 null，
+  // 但这个局部 signal 引用始终有效，循环里靠它判断是否已停止。
+  const signal = abortController.signal
 
   // 1) 用户消息：完整历史(messages)永远追加用于渲染/回看；
   //    已压缩时同步追加到 compactionMessages（发网关用）。
@@ -799,6 +805,8 @@ async function handleSend() {
 
   try {
     for (let step = 0; step < MAX_LOOP; step++) {
+      // 用户已点停止：直接跳出，不再开新一轮 AI 推理
+      if (signal.aborted) break
       const assistantItem = addRenderItem({ id: nextId(), kind: 'assistant', text: '', streaming: true })
       currentAssistantItem = assistantItem
       await scrollToBottom()
@@ -825,7 +833,7 @@ async function handleSend() {
           // 记录单步真实 usage（agent 一轮可能多步，循环结束才提交本轮）
           recordStepUsage(assistantItem.id, usage)
         },
-        abortController?.signal,
+        signal,
       )
 
       assistantItem.streaming = false
@@ -843,6 +851,8 @@ async function handleSend() {
       if (compactionSummary.value) compactionMessages.value.push(assistantMsg)
 
       if (result.toolCalls.length === 0) break
+      // 用户已点停止：不再执行后续工具，跳出循环
+      if (signal.aborted) break
 
       for (const call of result.toolCalls) {
         // 执行到该工具时才创建卡片并立即设为 running，避免提前渲染一排"等待中"
@@ -851,13 +861,22 @@ async function handleSend() {
         scrollToBottom()
         let output: string
         try {
-          output = await executeTool(call, (msg) => {
-            // 流式工具（web_search）的进度回调：更新当前工具卡片
-            item.toolProgress = msg
-          })
+          output = await executeTool(
+            call,
+            (msg) => {
+              // 流式工具（web_search）的进度回调：更新当前工具卡片
+              item.toolProgress = msg
+            },
+            signal,
+          )
           item.toolStatus = 'success'; item.toolResult = output; item.toolProgress = undefined
           message.success(`已执行：${call.function.name}`)
         } catch (e) {
+          // 用户停止导致的 AbortError：把卡片置为已中断，跳出工具循环
+          if (e instanceof DOMException && e.name === 'AbortError') {
+            item.toolStatus = 'error'; item.toolResult = '已停止'; item.toolProgress = undefined
+            break
+          }
           output = JSON.stringify({ ok: false, error: e instanceof Error ? e.message : '执行失败' })
           item.toolStatus = 'error'; item.toolResult = output; item.toolProgress = undefined
           message.error(`工具执行失败：${call.function.name}`)
