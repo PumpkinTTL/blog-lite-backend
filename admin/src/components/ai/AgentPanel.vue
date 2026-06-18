@@ -4,7 +4,7 @@ import { useMessage } from 'naive-ui'
 import {
   RemoveOutline,
   BulbOutline, ChevronDownOutline,
-  SparklesOutline, ContractOutline, HappyOutline, ColorPaletteOutline, CubeOutline,
+  SparklesOutline, ContractOutline, ExpandOutline, HappyOutline, ColorPaletteOutline, CubeOutline,
   StopOutline, ArrowUpSharp, ArrowUpOutline, ArrowDownOutline, SyncOutline,
   LayersOutline, DocumentTextOutline,
 } from '@vicons/ionicons5'
@@ -15,6 +15,8 @@ import { getActiveAiProviders } from '../../api/ai-provider'
 import type { AiProvider } from '../../api/ai-provider'
 import { isDark } from '../../theme'
 import ToolCallCard from './ToolCallCard.vue'
+import MarkdownRender from 'markstream-vue'
+import 'markstream-vue/index.css'
 
 /** 文章 formValue 的最小契约（避免和 PostEditView 强耦合） */
 interface ArticleForm {
@@ -57,6 +59,10 @@ const form = computed<ArticleForm>(() =>
 const messages = ref<AiChatMessage[]>([])
 const inputText = ref('')
 const inputFocused = ref(false)
+const isFullscreen = ref(false)
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
+}
 const sending = ref(false)
 const compacting = ref(false)
 /** 对话中断控制器：sending 期间用户点"停止"时 abort，终止 streamChat fetch */
@@ -64,8 +70,6 @@ let abortController: AbortController | null = null
 const selectedProviderId = ref<number | null>(null)
 const selectedModel = ref<string | null>(null)
 const providers = ref<AiProvider[]>([])
-const provDropdownOpen = ref(false)
-const modelDropdownOpen = ref(false)
 
 // provider/model 本地持久化：刷新后仍保留用户上次选择，而不是回退到第一个。
 const LS_PROVIDER_KEY = 'agentPanel.providerId'
@@ -138,12 +142,10 @@ function formatCompactTime(iso: string | null): string {
 function selectProvider(id: number) {
   selectedProviderId.value = id
   selectedModel.value = providers.value.find(p => p.id === id)?.models?.[0]?.modelId ?? null
-  provDropdownOpen.value = false
   persistSelection()
 }
 function selectModel(modelId: string) {
   selectedModel.value = modelId
-  modelDropdownOpen.value = false
   persistSelection()
 }
 
@@ -1224,7 +1226,7 @@ onBeforeUnmount(() => {
   // 离开页面/卸载前把当前对话落库，避免未点"保存文章"就关闭导致丢失
   void persistConversation()
 })
-function closeDropdowns() { provDropdownOpen.value = false; modelDropdownOpen.value = false; slashMenuOpen.value = false }
+function closeDropdowns() { slashMenuOpen.value = false }
 
 function toggleThink(id: string) {
   if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)
@@ -1294,8 +1296,8 @@ function onInputKeydown(e: KeyboardEvent) {
     <div
       v-if="open"
       class="agent-panel"
-      :class="{ dark: isDark }"
-      :style="{ left: panelPos.left + 'px', top: panelPos.top + 'px' }"
+      :class="{ dark: isDark, fullscreen: isFullscreen }"
+      :style="isFullscreen ? undefined : { left: panelPos.left + 'px', top: panelPos.top + 'px' }"
     >
       <!-- 头部 -->
       <div class="panel-head" @mousedown="startDrag">
@@ -1305,6 +1307,9 @@ function onInputKeydown(e: KeyboardEvent) {
           <span v-if="tokenStats.rounds > 0" class="head-mini-info">{{ tokenStats.rounds }}轮</span>
         </div>
         <div class="head-actions">
+          <button class="head-btn" @click.stop="toggleFullscreen" :title="isFullscreen ? '还原' : '全屏'">
+            <i class="ico" :style="{ fontSize: 15 + 'px' }"><ContractOutline v-if="isFullscreen" /><ExpandOutline v-else /></i>
+          </button>
           <button class="head-btn" @click.stop="open = false" title="收起">
             <i class="ico" :style="{ fontSize: 15 + 'px' }"><RemoveOutline /></i>
           </button>
@@ -1355,9 +1360,15 @@ function onInputKeydown(e: KeyboardEvent) {
                     <div class="think-body">{{ item.thinkText }}</div>
                   </div>
                 </div>
-                <!-- 正式回复 -->
-                <div v-if="item.replyText" class="bubble bubble-ai">
-                  {{ item.replyText }}
+                <!-- 正式回复：markstream-vue 流式 Markdown 渲染（shiki 代码高亮 + 明暗主题跟随） -->
+                <div v-if="item.replyText" class="ai-reply" :class="{ dark: isDark }">
+                  <MarkdownRender
+                    :content="item.replyText"
+                    :final="!item.streaming"
+                    :fade="false"
+                    code-renderer="shiki"
+                    :code-block-theme="isDark ? 'github-dark' : 'github-light'"
+                  />
                   <span v-if="item.streaming" class="cursor">▋</span>
                 </div>
                 <!-- 加载动画：claude code 风像素流——方块大小固定，横向位置/亮度不规则变化，像数据流在流动 -->
@@ -1398,7 +1409,8 @@ function onInputKeydown(e: KeyboardEvent) {
 
       <!-- 底部：快捷指令 + token统计 + 输入 -->
       <div class="panel-footer">
-        <!-- 快捷指令按钮 + 模型选择下拉（同一行） -->
+        <!-- 工具栏：快捷指令 + 模型状态条（点击调起 /model 弹窗切换）。
+             删掉底部冗余的 prov/model 下拉——/model 命令已能切两者。 -->
         <div class="quick-cmds">
           <button
             v-for="cmd in quickCmds"
@@ -1411,37 +1423,50 @@ function onInputKeydown(e: KeyboardEvent) {
             <i class="ico" :style="{ fontSize: 13 + 'px' }"><component :is="cmd.icon" /></i>
             <span>{{ cmd.label }}</span>
           </button>
-          <!-- 提供商下拉 -->
-          <div class="custom-select" @click.stop="provDropdownOpen = !provDropdownOpen">
-            <div class="cs-trigger">
-              <span class="cs-text">{{ activeProvider?.name || '提供商' }}</span>
-              <i class="ico" :style="{ fontSize: 12 + 'px' }"><ChevronDownOutline /></i>
-            </div>
-            <div v-if="provDropdownOpen" class="cs-menu" @click.stop>
-              <div
-                v-for="p in providers" :key="p.id"
-                class="cs-option"
-                :class="{ active: selectedProviderId === p.id }"
-                @click.stop="selectProvider(p.id)"
-              >{{ p.name }}</div>
-            </div>
+          <!-- 模型状态条：点击调起 /model 弹窗，展示"提供商 · 模型"，贴右 -->
+          <button
+            v-if="activeModelLabel || activeProvider?.name"
+            class="model-chip"
+            :disabled="sending"
+            title="切换模型"
+            @click="modelPickerOpen = true"
+          >
+            <i class="ico" :style="{ fontSize: 12 + 'px' }"><CubeOutline /></i>
+            <span class="model-chip-text">
+              <span v-if="activeProvider?.name" class="model-chip-prov">{{ activeProvider.name }}</span>
+              <span v-if="activeProvider?.name && activeModelLabel" class="model-chip-sep">·</span>
+              <span class="model-chip-name">{{ activeModelLabel || '未选择' }}</span>
+            </span>
+            <i class="ico" :style="{ fontSize: 11 + 'px' }"><ChevronDownOutline /></i>
+          </button>
+        </div>
+
+        <!-- 状态行：单行文本流，左=会话统计，右=上下文容量。
+             用纯文本 + · 分隔替代一堆胶囊，避免视觉拥挤。
+             只有"轮次"用胶囊（主状态），其余统计降级为轻量文本。 -->
+        <div v-if="tokenStats.rounds > 0" class="ctx-foot">
+          <div class="ctx-left">
+            <span class="ctx-rounds">{{ tokenStats.rounds }}轮</span>
+            <span
+              v-if="compactionSummary"
+              class="ctx-summary"
+              :title="`历史已摘要化（释放约 ${formatTokens(compactionTokens)} token）${compactionReleasedAt ? ' · ' + formatCompactTime(compactionReleasedAt) : ''}`"
+            >摘要{{ formatTokens(compactionTokens) }}</span>
+            <span class="ctx-tok">
+              <span class="ctx-tok-up">↑{{ formatTokens(tokenStats.totalPrompt) }}</span>
+              <span class="ctx-tok-down">↓{{ formatTokens(tokenStats.totalCompletion) }}</span>
+            </span>
           </div>
-          <!-- 模型下拉 -->
-          <div class="custom-select model-select" @click.stop="modelDropdownOpen = !modelDropdownOpen">
-            <div class="cs-trigger">
-              <span class="cs-text">{{ activeModelLabel || '模型' }}</span>
-              <i class="ico" :style="{ fontSize: 12 + 'px' }"><ChevronDownOutline /></i>
-            </div>
-            <div v-if="modelDropdownOpen" class="cs-menu" @click.stop>
-              <div
-                v-for="m in modelOptions" :key="m.value"
-                class="cs-option"
-                :class="{ active: selectedModel === m.value }"
-                @click.stop="selectModel(m.value)"
-              >{{ m.label }}</div>
-              <div v-if="modelOptions.length === 0" class="cs-option disabled">无可用模型</div>
-            </div>
-          </div>
+          <!-- 上下文容量：独立右栏，进度条 + 数字 -->
+          <span
+            v-if="contextLimit > 0"
+            class="ctx-prog"
+            :class="{ warn: contextWarn }"
+            :title="`上下文占用 ${contextPercent}%`"
+          >
+            <span class="ctx-prog-bar"><span class="ctx-prog-fill" :style="{ width: contextPercent + '%' }"></span></span>
+            <span class="ctx-prog-text">{{ formatTokens(contextUsed) }}/{{ formatTokens(contextLimit) }}</span>
+          </span>
         </div>
 
         <div class="panel-input">
@@ -1489,40 +1514,6 @@ function onInputKeydown(e: KeyboardEvent) {
             >
               <i class="ico" :style="{ fontSize: 15 + 'px' }"><ArrowUpSharp /></i>
             </button>
-          </div>
-        </div>
-
-        <!-- 会话级 token 统计 + 上下文占用进度条 -->
-        <div v-if="tokenStats.rounds > 0" class="ctx-foot">
-          <!-- 第一行：累计消耗（算钱用）+ 摘要胶囊 -->
-          <span class="ctx-stat">
-            <span class="ctx-rounds">
-              <i class="ico" :style="{ fontSize: 11 + 'px' }"><LayersOutline /></i>
-              {{ tokenStats.rounds }}轮
-            </span>
-            <!-- 摘要胶囊：和轮次同属元信息，放一起 -->
-            <span
-              v-if="compactionSummary"
-              class="ctx-pill-compacted"
-              :title="`历史已摘要化（释放约 ${formatTokens(compactionTokens)} token）${compactionReleasedAt ? ' · ' + formatCompactTime(compactionReleasedAt) : ''}`"
-            >
-              <i class="ico" :style="{ fontSize: 11 + 'px' }"><DocumentTextOutline /></i>
-              摘要-{{ formatTokens(compactionTokens) }}
-            </span>
-            <span class="ctx-divider">·</span>
-            <span class="ctx-tokens">
-              <span class="ctx-tok-up">↑{{ formatTokens(tokenStats.totalPrompt) }}</span>
-              <span class="ctx-tok-down">↓{{ formatTokens(tokenStats.totalCompletion) }}</span>
-            </span>
-          </span>
-          <!-- 第二行：上下文占用进度条（防溢出用，对齐模型 maxContextTokens） -->
-          <div v-if="contextLimit > 0" class="ctx-progress" :class="{ warn: contextWarn }">
-            <span class="ctx-progress-label">上下文</span>
-            <div class="ctx-progress-bar">
-              <div class="ctx-progress-fill" :style="{ width: contextPercent + '%' }"></div>
-            </div>
-            <span class="ctx-progress-text"><span class="used">{{ formatTokens(contextUsed) }}</span> / {{ formatTokens(contextLimit) }}</span>
-            <span class="ctx-progress-pct">{{ contextPercent }}%</span>
           </div>
         </div>
       </div>
@@ -1589,25 +1580,31 @@ function onInputKeydown(e: KeyboardEvent) {
   height: 1em;
   display: block;
 }
-/* 色彩令牌系统：浅色（Claude 米色家族）为默认基线，.dark 覆盖为深色家族。
-   每个令牌语义明确：bg/surface/border/text-strong/text/text-muted/accent/warn */
+/* 色彩令牌系统：层级递进明确，消除打补丁感。
+   设计原则（对标 Claude/ChatGPT 暖灰体系）：
+   - bg: 最底层（消息流画布）
+   - surface: 浮起卡片（输入框、弹窗、代码块）= bg 微调暖白
+   - surface-2: 次级层（头部、底部栏）= 比 bg 略深，建立区域分界
+   - surface-3: 容器内底色（代码块、表头、think-block、悬停）= 比 surface-2 再深一档
+   - surface-4: 最深容器（user 气泡、按钮）= 强对比
+   每一层都有明确角色，不再临时凑颜色。 */
 .agent-panel {
-  --bg:           #fafaf9;  /* 面板/消息流/页脚主背景 */
-  --surface:      #ffffff;  /* AI气泡、输入框、弹窗、quick-btn 背景 */
-  --surface-2:    #f0eeec;  /* 头部背景 */
-  --surface-3:    #f5f5f4;  /* 次级悬停背景、think-block、tip-chip */
-  --surface-4:    #e7e5e4;  /* user 气泡背景、head-mini-info */
-  --border:       #e7e5e4;  /* 主分隔线/边框 */
-  --border-soft:  rgba(28,25,23,0.08); /* 进度条槽、阴影描边 */
-  --text:         #1c1917;  /* 主文字 */
-  --text-2:       #44403c;  /* user avatar、次要强调 */
-  --text-3:       #57534e;  /* quick-btn、摘要胶囊、ctx 用量 */
-  --text-4:       #78716c;  /* head-btn、ctx-tok-up、hint 文字 */
-  --text-5:       #a8a29e;  /* ctx-stat、placeholder、muted */
-  --text-6:       #d6d3d1;  /* 分隔点、scrollbar */
-  --accent:       #c15f3c;  /* 土橙主色 */
-  --accent-2:     #d4724e;  /* 渐变起点 */
-  --accent-hover: #a84d2e;  /* send-btn hover */
+  --bg:           #faf9f7;  /* 画布：暖米白，所有元素的基底 */
+  --surface:      #ffffff;  /* 浮起卡片：纯白，输入框/弹窗/代码块用 */
+  --surface-2:    #f1efec;  /* 区域栏：头部/底部，比画布深一档建立分界 */
+  --surface-3:    #ebe8e4;  /* 容器底：代码块/表头/think-block/悬停，深两档 */
+  --surface-4:    #e2ded8;  /* 强对比：user 气泡/激活态，最深 */
+  --border:       #e2ded8;  /* 边框：与 surface-4 同色，视觉统一 */
+  --border-soft:  rgba(28,25,23,0.06);
+  --text:         #1c1917;
+  --text-2:       #44403c;
+  --text-3:       #57534e;
+  --text-4:       #78716c;
+  --text-5:       #a8a29e;
+  --text-6:       #c7c3be;
+  --accent:       #c15f3c;
+  --accent-2:     #d4724e;
+  --accent-hover: #a84d2e;
   --accent-soft:  rgba(193,95,60,0.08);
   --accent-soft-2:rgba(193,95,60,0.12);
   --accent-border:rgba(193,95,60,0.22);
@@ -1615,22 +1612,23 @@ function onInputKeydown(e: KeyboardEvent) {
   --warn-2:       #f87171;
   --warn-soft:    rgba(220,38,38,0.1);
   --success:      #16a34a;
-  --error-bg:     #fef9f9;
-  --accent-bg:    #fefcfb;
+  --error-bg:     #fef5f5;   /* 错误态柔和红底（ToolCallCard 用） */
+  --accent-bg:    #fefcfb;   /* 工具卡 running 态柔和橙底（ToolCallCard 用） */
   --shadow-card: 0 0 0 1px rgba(28,25,23,0.08), 0 4px 12px rgba(28,25,23,0.08), 0 24px 56px rgba(28,25,23,0.16);
   --shadow-pop:  0 8px 24px rgba(28,25,23,0.12);
   --shadow-mask: rgba(28,25,23,0.32);
 }
 .agent-panel.dark {
-  /* Claude 深色：保留暖调，避免冷冰冰的纯黑。背景 stone-900 系列。 */
-  --bg:           #1c1917;
-  --surface:      #292524;
-  --surface-2:    #232120;
-  --surface-3:    #2c2826;
-  --surface-4:    #34302e;
-  --border:       #3a3532;
+  /* 深色：暖黑 stone 体系，层级递进方向反转（越深越暗）。
+   bg 最暗 → surface-4 最亮（浮起感）。 */
+  --bg:           #1a1714;  /* 画布：暖黑 */
+  --surface:      #2a2522;  /* 浮起卡片：比 bg 亮一档 */
+  --surface-2:    #221e1b;  /* 区域栏：比 bg 略深，建立分界（深色下栏要更暗） */
+  --surface-3:    #322c28;  /* 容器底：比 surface 亮，代码块/表头 */
+  --surface-4:    #3a332e;  /* 强对比：user 气泡，最亮容器 */
+  --border:       #38322d;
   --border-soft:  rgba(255,255,255,0.06);
-  --text:         #f5f5f4;
+  --text:         #f5f4f2;
   --text-2:       #e7e5e4;
   --text-3:       #d6d3d1;
   --text-4:       #a8a29e;
@@ -1647,7 +1645,7 @@ function onInputKeydown(e: KeyboardEvent) {
   --warn-soft:    rgba(248,113,113,0.15);
   --success:      #4ade80;
   --error-bg:     rgba(248,113,113,0.08);
-  --accent-bg:    rgba(224,131,98,0.06);
+  --accent-bg:    rgba(224,131,98,0.08);
   --shadow-card: 0 0 0 1px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.4), 0 24px 56px rgba(0,0,0,0.6);
   --shadow-pop:  0 8px 24px rgba(0,0,0,0.5);
   --shadow-mask: rgba(0,0,0,0.5);
@@ -1685,10 +1683,24 @@ function onInputKeydown(e: KeyboardEvent) {
   background: var(--bg); border-radius: 16px;
   box-shadow: var(--shadow-card);
   display: flex; flex-direction: column; overflow: visible;
+  transition: width 0.25s cubic-bezier(0.16,1,0.3,1), height 0.25s cubic-bezier(0.16,1,0.3,1), border-radius 0.25s;
 }
+/* 全屏态：铺满视口（留 24px 边距），置顶，去掉圆角，禁用拖拽 */
+.agent-panel.fullscreen {
+  left: 24px !important; top: 24px !important;
+  width: calc(100vw - 48px); height: calc(100vh - 48px);
+  border-radius: 12px;
+  z-index: 10010;
+}
+.agent-panel.fullscreen .panel-head { cursor: default; border-radius: 12px 12px 0 0; }
+.agent-panel.fullscreen .panel-footer { border-radius: 0 0 12px 12px; }
+/* 全屏时消息流居中限宽（对标 ChatGPT/Claude 全屏阅读宽度 ~820px），
+   用 padding 让内容区居中，避免宽屏上内容散成难看的窄条。 */
+.agent-panel.fullscreen .panel-body { padding-left: max(14px, calc(50% - 410px)); padding-right: max(14px, calc(50% - 410px)); }
 .head-mini-info { font-size: 10.5px; color: var(--text-5); font-weight: 500; margin-left: 4px; padding: 1px 6px; background: var(--surface-4); border-radius: 4px; }
 
-.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-radius: 16px 16px 0 0; cursor: grab; user-select: none; }
+/* 头部：surface-2 + 底部细微投影，强化与消息区的分界 */
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-radius: 16px 16px 0 0; cursor: grab; user-select: none; box-shadow: 0 1px 0 rgba(28,25,23,0.03); }
 .panel-head:active { cursor: grabbing; }
 .head-title { display: inline-flex; align-items: center; gap: 9px; }
 /* 图标容器：淡土橙底色圆角块，像 Claude logo 容器，比裸图标更有质感 */
@@ -1703,36 +1715,36 @@ function onInputKeydown(e: KeyboardEvent) {
 .head-btn:hover { background: var(--surface-4); color: var(--text); }
 .head-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* 自定义下拉（现在位于快捷键行末尾，和按键并排） */
-.custom-select { position: relative; min-width: 0; flex-shrink: 0; }
-/* 供应商：宽度自适应内容，给个上下限避免太短/太长 */
-.custom-select:not(.model-select) { width: auto; min-width: 72px; max-width: 110px; }
-/* 模型：flex:1 撑到行尾，吸收剩余空间 */
-.custom-select.model-select { flex: 1; }
-.cs-trigger { min-width: 0;
-  display: flex; align-items: center; gap: 3px;
-  padding: 3px 7px;
+/* 模型状态条：点击调起 /model 弹窗。和 quick-btn 同款 ghost 语言，
+   紧跟按钮组（gap 由父级 .quick-cmds 的 gap:2px 控制，无额外 margin）。 */
+.model-chip {
+  margin-left: 4px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0 8px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
   font-size: 12px; color: var(--text-3);
-  line-height: 1.4;
-  white-space: nowrap; overflow: hidden;
+  line-height: 1;
   height: 26px; box-sizing: border-box;
+  flex-shrink: 0; min-width: 0;
   transition: background 0.15s, color 0.15s;
 }
-.cs-trigger:hover { background: var(--surface-3); color: var(--text); }
-/* 展开状态下保持 hover 态,避免点开菜单后触发器"消失" */
-.custom-select:has(.cs-menu) .cs-trigger { min-width: 0; background: var(--surface-3); color: var(--text); }
-.cs-text { overflow: hidden; text-overflow: ellipsis; }
-.cs-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-pop); z-index: 10010; max-height: 200px; overflow-y: auto; }
-.cs-option { padding: 7px 12px; font-size: 12px; color: var(--text); cursor: pointer; transition: background 0.12s; }
-.cs-option:hover { background: var(--surface-3); }
-.cs-option.active { color: var(--accent); background: var(--accent-soft); }
-.cs-option.disabled { color: var(--text-5); cursor: default; }
+.model-chip:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.model-chip:disabled { opacity: 0.5; cursor: default; }
+.model-chip-text {
+  display: inline-flex; align-items: center; gap: 4px;
+  min-width: 0; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis;
+}
+.model-chip-prov { color: var(--text-5); font-size: 11px; }
+.model-chip-sep { color: var(--text-6); font-size: 11px; }
+.model-chip-name { color: var(--text-2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.model-chip:hover:not(:disabled) .model-chip-name { color: var(--accent); }
 
-.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 14px; display: flex; flex-direction: column-reverse; gap: 10px; background: var(--bg); }
+/* 消息流：gap 加大到 16px，消息间有呼吸感；padding 16px 更宽松 */
+.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: flex; flex-direction: column-reverse; gap: 16px; background: var(--bg); }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: var(--text-6); border-radius: 3px; transition: background 0.15s; }
 .panel-body::-webkit-scrollbar-thumb:hover { background: var(--text-5); }
@@ -1774,8 +1786,10 @@ function onInputKeydown(e: KeyboardEvent) {
 .tool-card-wrap { flex: 1; min-width: 0; }
 
 .bubble-wrap { display: flex; align-items: flex-end; max-width: 80%; }
+/* AI 气泡自由宽度：fit-content 收缩到内容宽度，max-width 防止超宽。
+   不顶满水平轴，短回复就是短气泡，长回复（代码块/表格）才撑到上限。 */
 .ai-bubble-wrap { flex-direction: column; align-items: flex-start; }
-.msg-ai .ai-content { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.msg-ai .ai-content { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; }
 
 .avatar { flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; width: 28px; height: 28px; border-radius: 50%; }
 /* AI 头像：土橙微渐变，更立体，不破坏 Claude 暖色调 */
@@ -1784,9 +1798,96 @@ function onInputKeydown(e: KeyboardEvent) {
 @keyframes avatar-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(193,95,60,0.4); } 50% { box-shadow: 0 0 0 6px rgba(193,95,60,0); } }
 .avatar-user { background: var(--text-2); font-size: 12px; font-weight: 600; }
 
-.bubble { padding: 9px 13px; border-radius: 12px; font-size: 13px; line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
-.bubble-user { background: var(--surface-4); color: var(--text); border-top-right-radius: 4px; }
-.bubble-ai { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-top-left-radius: 4px; display: inline-block; }
+.bubble { padding: 9px 13px; border-radius: 12px; font-size: 13px; line-height: 1.6; word-break: break-word; }
+/* AI 回复区：markstream-vue 裸渲染，只设宽度，不设 padding/字号，让组件自带 CSS 接管 */
+/* AI 回复区：自由宽度，收缩到内容大小，max-width 限制上限不超容器。
+   短文本就是窄气泡，代码块/表格才撑宽。
+   透明背景：AI 回复不要气泡背景，和 panel-body 融为一体。
+   overflow-x:auto 让宽表格/代码块横向滚动而非挤掉布局。
+   !important 强制覆盖 markstream-vue 自带的任何暖色背景。 */
+.ai-reply { width: fit-content; max-width: 100%; min-width: 0; color: var(--text); background: transparent !important; overflow-x: auto; }
+.ai-reply :deep(*) { background-color: transparent !important; }
+/* 代码块保留中性灰底（覆盖全局透明），其他元素一律透明 */
+.ai-reply :deep(pre),
+.ai-reply :deep(pre code) { background: var(--surface-3) !important; }
+.ai-reply :deep(blockquote) { background: var(--surface-2) !important; }
+.ai-reply :deep(th) { background: var(--surface-3) !important; }
+.ai-reply :deep(tr:nth-child(even) td) { background: var(--surface-2) !important; }
+/* user 气泡走纯文本，保留 pre-wrap 换行 */
+.bubble-user { background: var(--surface-4); color: var(--text); border-top-right-radius: 4px; white-space: pre-wrap; }
+
+/* ===== AI 回复 Markdown 排版（对标 ChatGPT/Claude 聊天界面）=====
+   用 :deep() 覆盖 markstream-vue 自带的偏文档站样式，收紧到聊天尺度。
+   所有颜色走 CSS 变量，深色模式自动跟随。 */
+.ai-reply :deep(.ms-content),
+.ai-reply :deep(.ms-markdown) {
+  font-size: 14px; line-height: 1.7; color: var(--text);
+  word-wrap: break-word; overflow-wrap: break-word;
+}
+/* 首尾元素不留多余间距 */
+.ai-reply :deep(.ms-markdown > :first-child) { margin-top: 0; }
+.ai-reply :deep(.ms-markdown > :last-child) { margin-bottom: 0; }
+/* 段落：ChatGPT 风的宽松行高 + 适度段间距 */
+.ai-reply :deep(p) { margin: 0 0 12px; }
+.ai-reply :deep(p:last-child) { margin-bottom: 0; }
+/* 标题：克制，不喧宾夺主 */
+.ai-reply :deep(h1) { font-size: 18px; font-weight: 700; margin: 20px 0 10px; line-height: 1.3; }
+.ai-reply :deep(h2) { font-size: 16px; font-weight: 700; margin: 18px 0 8px; line-height: 1.3; }
+.ai-reply :deep(h3) { font-size: 15px; font-weight: 600; margin: 16px 0 6px; line-height: 1.4; }
+.ai-reply :deep(h4) { font-size: 14px; font-weight: 600; margin: 12px 0 4px; }
+/* 加粗 */
+.ai-reply :deep(strong) { font-weight: 700; }
+/* 行内代码：紧凑灰底 */
+.ai-reply :deep(code:not(pre code)) {
+  padding: 2px 6px; border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--accent);
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 0.88em;
+}
+/* 代码块：覆盖 markstream 的花哨样式，改成克制的灰底块 */
+.ai-reply :deep(pre) {
+  margin: 12px 0; padding: 14px 16px;
+  background: var(--surface-3) !important;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+  font-size: 13px;
+}
+.ai-reply :deep(pre code) {
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 13px; line-height: 1.6;
+  background: transparent !important;
+  padding: 0;
+}
+/* 引用块：中性灰底（不再用暖橙 accent-bg，避免背景偏红），左侧细边框区分 */
+.ai-reply :deep(blockquote) {
+  margin: 12px 0; padding: 8px 16px;
+  border-left: 3px solid var(--text-6);
+  color: var(--text-4);
+  border-radius: 0 8px 8px 0;
+}
+.ai-reply :deep(blockquote p) { margin: 4px 0; }
+/* 列表 */
+.ai-reply :deep(ul), .ai-reply :deep(ol) { margin: 12px 0; padding-left: 24px; }
+.ai-reply :deep(li) { margin: 4px 0; }
+.ai-reply :deep(li > p) { margin: 0; }
+/* 链接 */
+.ai-reply :deep(a) { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+/* 表格：保持 display:table 让列宽正确计算，
+   宽表格由外层 .ai-reply 的 overflow-x:auto 处理横向滚动，不会被截断。 */
+.ai-reply :deep(table) {
+  margin: 12px 0; border-collapse: collapse;
+  font-size: 13px; max-width: 100%;
+}
+.ai-reply :deep(th), .ai-reply :deep(td) {
+  padding: 8px 12px; border: 1px solid var(--border); text-align: left;
+  white-space: normal; word-break: break-word;
+}
+.ai-reply :deep(th) { background: var(--surface-3); font-weight: 700; }
+.ai-reply :deep(tr:nth-child(even) td) { background: var(--surface-2); }
+/* 分隔线 */
+.ai-reply :deep(hr) { margin: 16px 0; border: none; border-top: 1px solid var(--border); }
 
 /* 单轮 token 小字 */
 .item-usage { font-size: 10.5px; color: var(--text-5); margin-top: 3px; padding: 0 4px; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
@@ -1865,29 +1966,34 @@ function onInputKeydown(e: KeyboardEvent) {
 .cursor { display: inline-block; color: var(--accent); margin-left: 1px; animation: blink 0.9s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* 底部 */
-.panel-footer { border-top: 1px solid var(--border); background: var(--bg); border-radius: 0 0 16px 16px; }
-.quick-cmds { display: flex; gap: 6px; padding: 8px 12px 0; align-items: center; min-width: 0; overflow: hidden; }
-.quick-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text-3); font-size: 11px; border-radius: 6px; cursor: pointer; transition: all 0.15s; flex-shrink: 0; height: 26px; box-sizing: border-box; }
-.quick-btn:hover { background: var(--surface-3); border-color: var(--text-6); color: var(--text); }
+/* 底部：三段式布局（快捷指令 → token统计 → 输入框），统一 14px 水平 padding，
+   各区块顶部 padding 统一 8px，圆角体系统一（卡片 12px / 工具栏胶囊 7px / 状态胶囊 5px）。 */
+.panel-footer { border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 16px 16px; box-shadow: 0 -1px 0 rgba(28,25,23,0.03); padding-bottom: 12px; }
+.quick-cmds { display: flex; gap: 2px; padding: 10px 14px 0; align-items: center; justify-content: flex-start; min-width: 0; overflow: hidden; }
+/* 工具栏 ghost chip：与 cs-trigger 同款（透明无边框 / 26px / 6px 圆角 / hover→surface-3）。
+   整行连成一片工具栏，压缩/润色/提供商/模型 视觉上是一族。 */
+.quick-btn { display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; border: 1px solid transparent; background: transparent; color: var(--text-3); font-size: 12px; border-radius: 6px; cursor: pointer; transition: background 0.15s, color 0.15s; flex-shrink: 0; height: 26px; box-sizing: border-box; line-height: 1; }
+.quick-btn:hover { background: var(--surface-3); color: var(--text); }
+.quick-btn:active { transform: scale(0.96); }
 .quick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .panel-input {
-  padding: 8px 12px; position: relative;
+  padding: 8px 14px 0; position: relative;
 }
-/* 一体化输入容器：textarea 和发送按钮共享同一外框/圆角/背景，
-   彻底解决两者独立圆角导致的高度/对齐错位。聚焦光环作用于整个容器。 */
+/* 一体化输入容器：textarea 和发送按钮共享同一外框/圆角/背景。
+   圆角 12px（底部最大圆角，主交互区），默认带微妙阴影增加浮起质感。 */
 .input-composer {
-  display: flex; align-items: flex-end; gap: 4px;
-  padding: 5px 5px 5px 12px;
+  display: flex; align-items: flex-end; gap: 6px;
+  padding: 6px 6px 6px 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
+  box-shadow: 0 1px 2px rgba(28,25,23,0.04);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-composer.focused {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft-2);
+  box-shadow: 0 0 0 3px var(--accent-soft-2), 0 1px 2px rgba(28,25,23,0.04);
 }
 /* textarea 无独立边框，由 .input-composer 统一提供。
    overflow 默认 hidden 避免单行 1px 滚动条，has-scroll 满 4 行后切 auto。 */
@@ -1908,7 +2014,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .chat-input:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* 斜杠命令菜单 */
-.slash-menu { position: absolute; bottom: calc(100% + 4px); left: 12px; right: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-pop); z-index: 10010; overflow: hidden; }
+.slash-menu { position: absolute; bottom: calc(100% + 6px); left: 14px; right: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-pop); z-index: 10010; overflow: hidden; }
 .slash-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; transition: background 0.12s; border-left: 2px solid transparent; }
 .slash-item:hover { background: var(--surface-3); }
 .slash-item.active { background: var(--accent-soft); color: var(--accent); border-left-color: var(--accent); }
@@ -1939,70 +2045,69 @@ function onInputKeydown(e: KeyboardEvent) {
   50%      { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.2); }
 }
 
-/* 底部 token 统计 + 上下文进度条 */
-.ctx-foot { padding: 4px 14px 9px; display: flex; flex-direction: column; gap: 5px; }
-.ctx-stat { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-5); font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
-/* 统一胶囊规范：固定高度 18px，圆角 5px，inline-flex 居中。
-   内部 .ico 已内置 line-height:0，无需额外覆盖。 */
-.ctx-rounds, .ctx-pill-compacted {
-  display: inline-flex; align-items: center; gap: 3px;
-  height: 18px; padding: 0 7px; box-sizing: border-box;
-  border-radius: 5px; font-size: 10px; font-weight: 600; line-height: 1;
-  white-space: nowrap; flex-shrink: 0;
-  border: 1px solid transparent;
-}
-/* 轮次：土橙主色家族 */
-.ctx-rounds {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent-border);
-}
-/* 摘要：暖琥珀次色家族，与轮次区分但同属暖色系 */
-.ctx-pill-compacted {
-  background: var(--border-soft);
-  color: var(--text-3);
-  border-color: var(--border);
-  font-weight: 500;
-  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-  cursor: help;
-}
-.ctx-divider { color: var(--text-6); }
-.ctx-tokens { display: inline-flex; gap: 6px; }
-.ctx-tok-up { color: var(--text-4); }
-.ctx-tok-down { color: var(--text-5); }
-/* 上下文进度条：单行紧凑，无底色，进度条 flex 自适应。
-   结构：标签 | 进度条…… | 当前/上限 | 百分比胶囊 */
-.ctx-progress { display: flex; align-items: center; gap: 8px; }
-.ctx-progress-label {
-  font-size: 10.5px; color: var(--text-5); font-weight: 600; flex-shrink: 0;
-}
-.ctx-progress.warn .ctx-progress-label { color: var(--warn); }
-.ctx-progress-bar {
-  flex: 1; min-width: 40px; height: 4px;
-  background: var(--border-soft); border-radius: 999px; overflow: hidden;
-}
-.ctx-progress-fill {
-  height: 100%; border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent-2), var(--accent));
-  box-shadow: 0 0 0 1px var(--accent-soft-2);
-  transition: width 0.4s cubic-bezier(0.16,1,0.3,1), background 0.2s;
-}
-.ctx-progress.warn .ctx-progress-fill {
-  background: linear-gradient(90deg, var(--warn-2), var(--warn));
-}
-.ctx-progress-text {
-  font-size: 10px; color: var(--text-5); flex-shrink: 0;
-  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-  font-variant-numeric: tabular-nums; white-space: nowrap;
-}
-.ctx-progress-text .used { color: var(--text-3); font-weight: 600; }
-.ctx-progress.warn .ctx-progress-text .used { color: var(--warn); }
-.ctx-progress-pct {
-  font-size: 10px; color: var(--accent); font-weight: 700; flex-shrink: 0;
+/* 状态行：左右两栏 flex。左=会话统计文本流，右=上下文容量。
+   用"1 个胶囊 + 纯文本"取代原来 4 个胶囊，瞬间清爽。
+   单色系：统计统一 text-5 弱化，只轮次用强调色突出主状态。 */
+.ctx-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px 0;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   font-variant-numeric: tabular-nums;
+  overflow: hidden;
 }
-.ctx-progress.warn .ctx-progress-pct { color: var(--warn); }
+/* 左栏：会话统计，文本流紧凑排列 */
+.ctx-left {
+  display: flex; align-items: center; gap: 8px;
+  min-width: 0; flex: 1;
+  white-space: nowrap; overflow: hidden;
+}
+/* 轮次：唯一的胶囊，主状态用强调色 */
+.ctx-rounds {
+  display: inline-flex; align-items: center;
+  height: 17px; padding: 0 6px;
+  border-radius: 4px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 10px; font-weight: 700; line-height: 1;
+  flex-shrink: 0;
+}
+/* 摘要、token：纯文本，弱化色，不再用胶囊 */
+.ctx-summary {
+  font-size: 10px; color: var(--text-5);
+  cursor: help; flex-shrink: 0;
+}
+.ctx-tok {
+  display: inline-flex; gap: 5px;
+  font-size: 10px; flex-shrink: 0;
+}
+.ctx-tok-up { color: var(--text-4); }
+.ctx-tok-down { color: var(--text-5); }
+
+/* 右栏：上下文容量，进度条 + 数字，独立单元 */
+.ctx-prog {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 5px;
+  flex-shrink: 0;
+}
+.ctx-prog-bar {
+  display: inline-block;
+  width: 50px; height: 4px;
+  background: var(--surface-4);
+  border-radius: 999px; overflow: hidden;
+}
+.ctx-prog-fill {
+  display: block; height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width 0.4s cubic-bezier(0.16,1,0.3,1), background 0.2s;
+}
+.ctx-prog-text {
+  font-size: 10px; color: var(--text-4);
+  white-space: nowrap;
+}
+.ctx-prog.warn .ctx-prog-fill {
+  background: linear-gradient(90deg, var(--warn-2), var(--warn));
+}
+.ctx-prog.warn .ctx-prog-text { color: var(--warn); }
 
 .panel-enter-active, .panel-leave-active { transition: opacity 0.25s cubic-bezier(0.16,1,0.3,1), transform 0.25s cubic-bezier(0.16,1,0.3,1); }
 .panel-enter-from, .panel-leave-to { opacity: 0; transform: translateY(16px) scale(0.94); }
@@ -2011,7 +2116,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
 /* /model 模型选择弹窗 */
 .picker-mask { position: absolute; inset: 0; background: var(--shadow-mask); z-index: 10020; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
-.picker-dialog { width: 380px; max-height: 70vh; background: var(--bg); border-radius: 12px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; overflow: hidden; }
+.picker-dialog { width: 380px; max-height: 70vh; background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; overflow: hidden; }
 .picker-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
 .picker-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
 .picker-hint { font-size: 10.5px; color: var(--text-5); flex: 1; text-align: center; }
@@ -2035,4 +2140,25 @@ function onInputKeydown(e: KeyboardEvent) {
 .picker-enter-from, .picker-leave-to { opacity: 0; }
 .picker-enter-active .picker-dialog, .picker-leave-active .picker-dialog { transition: transform 0.2s cubic-bezier(0.16,1,0.3,1); }
 .picker-enter-from .picker-dialog, .picker-leave-to .picker-dialog { transform: scale(0.96) translateY(8px); }
+
+/* ===== 移动端适配（< 768px）=====
+   面板铺满屏幕（固定定位满屏），去掉圆角，字号微调。
+   非全屏在小屏上意义不大，直接当全屏处理。 */
+@media (max-width: 768px) {
+  .agent-panel {
+    left: 0 !important; top: 0 !important;
+    width: 100vw !important; height: 100vh !important;
+    height: 100dvh !important;   /* 动态视口高度，避免移动端浏览器栏遮挡 */
+    border-radius: 0;
+    max-width: none; max-height: none;
+  }
+  .agent-panel .panel-head { border-radius: 0; }
+  .agent-panel .panel-footer { border-radius: 0; }
+  /* 移动端气泡占满宽度，fit-content 在小屏上会导致内容被挤 */
+  .ai-reply { width: 100% !important; }
+  .bubble-wrap { max-width: 92% !important; }
+  /* 输入区 padding 收紧 */
+  .panel-input { padding: 8px !important; }
+  .quick-cmds { padding: 8px 8px 0 !important; }
+}
 </style>
