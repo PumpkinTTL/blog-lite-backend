@@ -1302,8 +1302,13 @@ function onInputKeydown(e: KeyboardEvent) {
       <!-- 头部 -->
       <div class="panel-head" @mousedown="startDrag">
         <div class="head-title">
-          <i class="ico head-icon" :style="{ fontSize: 16 + 'px' }"><SparklesOutline /></i>
-          <span class="head-name">{{ title }}</span>
+          <div class="head-icon-badge">
+            <i class="ico" :style="{ fontSize: 15 + 'px' }"><SparklesOutline /></i>
+          </div>
+          <div class="head-title-group">
+            <span class="head-name">{{ title }}</span>
+            <span class="head-desc">{{ subtitle }}</span>
+          </div>
           <span v-if="tokenStats.rounds > 0" class="head-mini-info">{{ tokenStats.rounds }}轮</span>
         </div>
         <div class="head-actions">
@@ -1324,12 +1329,15 @@ function onInputKeydown(e: KeyboardEvent) {
           <span>加载历史对话…</span>
         </div>
         <div v-else-if="renderItems.length === 0" class="empty-hint">
-          <div class="empty-icon"><i class="ico" :style="{ fontSize: 22 + 'px' }"><SparklesOutline /></i></div>
+          <div class="empty-glow-ring">
+            <div class="empty-icon"><i class="ico" :style="{ fontSize: 24 + 'px' }"><SparklesOutline /></i></div>
+          </div>
           <p class="empty-title">{{ title }}</p>
           <p class="empty-desc">{{ subtitle }}</p>
           <div class="empty-tips">
             <span v-for="tip in tips" :key="tip" class="tip-chip">{{ tip }}</span>
           </div>
+          <p class="empty-hint-slash">输入 <code>/</code> 查看快捷命令</p>
         </div>
 
         <template v-for="item in reversedRenderItems" :key="item.id">
@@ -1699,39 +1707,63 @@ function onInputKeydown(e: KeyboardEvent) {
 .agent-panel.fullscreen .panel-body { padding-left: max(14px, calc(50% - 410px)); padding-right: max(14px, calc(50% - 410px)); }
 .head-mini-info { font-size: 10.5px; color: var(--text-5); font-weight: 500; margin-left: 4px; padding: 1px 6px; background: var(--surface-4); border-radius: 4px; }
 
-/* 头部：surface-2 + 底部细微投影，强化与消息区的分界 */
-.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-radius: 16px 16px 0 0; cursor: grab; user-select: none; box-shadow: 0 1px 0 rgba(28,25,23,0.03); }
-.panel-head:active { cursor: grabbing; }
-.head-title { display: inline-flex; align-items: center; gap: 9px; }
-/* 图标容器：淡土橙底色圆角块，像 Claude logo 容器，比裸图标更有质感 */
-.head-icon {
-  width: 26px; height: 26px; border-radius: 8px;
-  background: var(--accent-soft-2); color: var(--accent);
+/* 头像徽章：土橙软渐变底色，比单色更立体 */
+.head-icon-badge {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  background: linear-gradient(145deg, var(--accent-soft-2) 0%, rgba(193,95,60,0.18) 100%);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
   display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(193,95,60,0.12);
 }
-.head-name { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
-.head-actions { display: flex; gap: 2px; }
+.agent-panel.dark .head-icon-badge {
+  background: linear-gradient(145deg, rgba(224,131,98,0.16) 0%, rgba(224,131,98,0.1) 100%);
+  box-shadow: 0 1px 4px rgba(224,131,98,0.18);
+}
+/* 标题组：主标题 + 副标题上下叠 */
+.head-title-group { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.head-desc { font-size: 10.5px; color: var(--text-5); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 头部：surface-2 + 底部细微投影，强化与消息区的分界 */
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px 10px 14px;
+  background: linear-gradient(to bottom, var(--surface-2) 0%, var(--surface-2) 100%);
+  border-bottom: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  cursor: grab; user-select: none;
+  box-shadow: 0 1px 0 rgba(28,25,23,0.04), inset 0 1px 0 rgba(255,255,255,0.6);
+}
+.agent-panel.dark .panel-head { box-shadow: 0 1px 0 rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03); }
+.panel-head:active { cursor: grabbing; }
+.head-title { display: inline-flex; align-items: center; gap: 10px; min-width: 0; flex: 1; overflow: hidden; }
+.head-name { font-size: 13.5px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.head-actions { display: flex; gap: 2px; flex-shrink: 0; }
 .head-btn { width: 28px; height: 28px; border: none; background: transparent; color: var(--text-4); cursor: pointer; border-radius: 7px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
 .head-btn:hover { background: var(--surface-4); color: var(--text); }
 .head-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* 模型状态条：点击调起 /model 弹窗。和 quick-btn 同款 ghost 语言，
-   紧跟按钮组（gap 由父级 .quick-cmds 的 gap:2px 控制，无额外 margin）。 */
+/* 模型状态条：和 quick-btn 高度对齐，向右推到底部 */
 .model-chip {
-  margin-left: 4px;
+  margin-left: auto;
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
   cursor: pointer;
   font-size: 12px; color: var(--text-3);
   line-height: 1;
-  height: 26px; box-sizing: border-box;
+  height: 28px; box-sizing: border-box;
   flex-shrink: 0; min-width: 0;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  box-shadow: 0 1px 2px rgba(28,25,23,0.04);
 }
-.model-chip:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.model-chip:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--accent-border);
+}
 .model-chip:disabled { opacity: 0.5; cursor: default; }
 .model-chip-text {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1769,12 +1801,37 @@ function onInputKeydown(e: KeyboardEvent) {
 .back-top-enter-active, .back-top-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .back-top-enter-from, .back-top-leave-to { opacity: 0; transform: translateY(6px); }
 
-.empty-hint { margin: auto; text-align: center; }
-.empty-icon { width: 44px; height: 44px; margin: 0 auto 10px; border-radius: 12px; background: var(--surface-3); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--accent); }
-.empty-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
-.empty-desc { margin: 3px 0 10px; font-size: 11.5px; color: var(--text-4); }
-.empty-tips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-.tip-chip { font-size: 11px; padding: 3px 9px; border-radius: 6px; background: var(--surface-3); border: 1px solid var(--border); color: var(--text-3); }
+.empty-hint { margin: auto; text-align: center; padding: 16px 0; }
+/* 光晕环：icon 外面一圈柔和的环形渐变，增加仪式感 */
+.empty-glow-ring {
+  width: 72px; height: 72px; margin: 0 auto 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-soft-2) 0%, transparent 70%);
+  display: flex; align-items: center; justify-content: center;
+}
+.empty-icon {
+  width: 52px; height: 52px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--accent-soft-2), rgba(193,95,60,0.06));
+  border: 1px solid var(--accent-border);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent);
+  box-shadow: 0 4px 12px rgba(193,95,60,0.12), 0 1px 3px rgba(28,25,23,0.06);
+}
+.agent-panel.dark .empty-icon { box-shadow: 0 4px 12px rgba(224,131,98,0.15); }
+.empty-title { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.empty-desc { margin: 0 0 14px; font-size: 12px; color: var(--text-4); line-height: 1.5; }
+.empty-tips { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-bottom: 16px; }
+.tip-chip {
+  font-size: 11.5px; padding: 4px 11px; border-radius: 20px;
+  background: var(--surface-3); border: 1px solid var(--border);
+  color: var(--text-3); cursor: default;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.tip-chip:hover { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent); }
+/* 斜杠命令提示 */
+.empty-hint-slash { font-size: 11px; color: var(--text-5); margin: 0; }
+.empty-hint-slash code { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: var(--surface-3); border: 1px solid var(--border); color: var(--accent); font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
 
 .msg { display: flex; gap: 7px; max-width: 100%; align-items: flex-start; }
 /* 用户消息靠右 */
@@ -1968,32 +2025,46 @@ function onInputKeydown(e: KeyboardEvent) {
 
 /* 底部：三段式布局（快捷指令 → token统计 → 输入框），统一 14px 水平 padding，
    各区块顶部 padding 统一 8px，圆角体系统一（卡片 12px / 工具栏胶囊 7px / 状态胶囊 5px）。 */
-.panel-footer { border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 16px 16px; box-shadow: 0 -1px 0 rgba(28,25,23,0.03); padding-bottom: 12px; }
-.quick-cmds { display: flex; gap: 2px; padding: 10px 14px 0; align-items: center; justify-content: flex-start; min-width: 0; overflow: hidden; }
-/* 工具栏 ghost chip：与 cs-trigger 同款（透明无边框 / 26px / 6px 圆角 / hover→surface-3）。
-   整行连成一片工具栏，压缩/润色/提供商/模型 视觉上是一族。 */
-.quick-btn { display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; border: 1px solid transparent; background: transparent; color: var(--text-3); font-size: 12px; border-radius: 6px; cursor: pointer; transition: background 0.15s, color 0.15s; flex-shrink: 0; height: 26px; box-sizing: border-box; line-height: 1; }
-.quick-btn:hover { background: var(--surface-3); color: var(--text); }
+.panel-footer {
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 -1px 0 rgba(28,25,23,0.04), inset 0 1px 0 rgba(255,255,255,0.5);
+  padding-bottom: 14px;
+}
+.agent-panel.dark .panel-footer { box-shadow: 0 -1px 0 rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03); }
+.quick-cmds { display: flex; gap: 4px; padding: 10px 12px 0; align-items: center; justify-content: flex-start; min-width: 0; overflow: hidden; }
+/* 工具栏按钮：加高到 28px，圆角加大，hover 更丰富 */
+.quick-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-3); font-size: 12px;
+  border-radius: 7px; cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0; height: 28px; box-sizing: border-box; line-height: 1;
+}
+.quick-btn:hover { background: var(--surface-3); color: var(--text); border-color: var(--border-soft); }
 .quick-btn:active { transform: scale(0.96); }
 .quick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .panel-input {
-  padding: 8px 14px 0; position: relative;
+  padding: 8px 12px 0; position: relative;
 }
-/* 一体化输入容器：textarea 和发送按钮共享同一外框/圆角/背景。
-   圆角 12px（底部最大圆角，主交互区），默认带微妙阴影增加浮起质感。 */
+/* 一体化输入容器：textarea 和发送按钮共享同一外框/圆角/背景。 */
 .input-composer {
   display: flex; align-items: flex-end; gap: 6px;
-  padding: 6px 6px 6px 14px;
+  padding: 7px 7px 7px 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(28,25,23,0.04);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  box-shadow: 0 1px 3px rgba(28,25,23,0.06), 0 0 0 0 transparent;
+  transition: border-color 0.18s, box-shadow 0.18s;
 }
 .input-composer.focused {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft-2), 0 1px 2px rgba(28,25,23,0.04);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 3px rgba(28,25,23,0.06);
 }
 /* textarea 无独立边框，由 .input-composer 统一提供。
    overflow 默认 hidden 避免单行 1px 滚动条，has-scroll 满 4 行后切 auto。 */
@@ -2022,27 +2093,31 @@ function onInputKeydown(e: KeyboardEvent) {
 .slash-item.active .slash-icon { color: var(--accent); }
 .slash-name { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
 .slash-desc { font-size: 11px; color: var(--text-5); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* ChatGPT 风圆形发送按钮：嵌在 input-composer 右下角，上箭头暗示"发送"。
-   圆形 + 实心强调色，输入为空时降透明度。 */
+/* 发送按钮：圆形实心，带轻微渐变增加立体感 */
 .send-btn {
   flex-shrink: 0;
-  width: 30px; height: 30px;
-  margin-bottom: 2px;
+  width: 32px; height: 32px;
   border: none; border-radius: 50%;
-  background: var(--accent); color: #fff;
+  background: linear-gradient(145deg, var(--accent-2), var(--accent));
+  color: #fff;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+  box-shadow: 0 2px 6px rgba(193,95,60,0.3);
+  transition: background 0.15s, opacity 0.15s, transform 0.15s, box-shadow 0.15s;
 }
-.send-btn:hover:not(.disabled) { background: var(--accent-hover); }
-.send-btn:active:not(.disabled) { transform: scale(0.9); }
-.send-btn.disabled { opacity: 0.3; cursor: not-allowed; }
-/* 停止按钮：sending 期间替代发送按钮，红色 + 呼吸感，明确可点击终止 */
-.send-btn.stop-btn { background: var(--warn); animation: stop-breath 1.4s ease-in-out infinite; }
-.send-btn.stop-btn:hover { background: var(--warn); filter: brightness(0.88); }
+.send-btn:hover:not(.disabled) {
+  background: linear-gradient(145deg, var(--accent), var(--accent-hover));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(193,95,60,0.4);
+}
+.send-btn:active:not(.disabled) { transform: scale(0.91) translateY(0); box-shadow: 0 1px 3px rgba(193,95,60,0.2); }
+.send-btn.disabled { opacity: 0.28; cursor: not-allowed; box-shadow: none; }
+/* 停止按钮：sending 期间替代发送按钮 */
+.send-btn.stop-btn { background: var(--warn); box-shadow: 0 2px 6px rgba(220,38,38,0.25); animation: stop-breath 1.4s ease-in-out infinite; }
+.send-btn.stop-btn:hover { filter: brightness(0.9); transform: translateY(-1px); }
 @keyframes stop-breath {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
-  50%      { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.2); }
+  0%, 100% { box-shadow: 0 2px 6px rgba(220,38,38,0.25); }
+  50%      { box-shadow: 0 2px 10px rgba(220,38,38,0.45); }
 }
 
 /* 状态行：左右两栏 flex。左=会话统计文本流，右=上下文容量。
