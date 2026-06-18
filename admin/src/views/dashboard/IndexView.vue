@@ -6,7 +6,6 @@ import {
   DocumentTextOutline, PaperPlaneOutline, PeopleOutline,
   ChatbubblesOutline, HeartOutline, StarOutline, EyeOutline,
   RefreshOutline, CashOutline, CreateOutline, GiftOutline,
-  TrendingUpOutline, FlameOutline, TimeOutline,
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts/core'
 import { LineChart, PieChart, BarChart } from 'echarts/charts'
@@ -60,11 +59,11 @@ const ago = (s: string) => { const m = Math.floor((Date.now() - new Date(s).getT
 const statCards = [
   { key: 'postCount', label: '文章', icon: DocumentTextOutline, color: '#3B82F6', bg: '#EFF6FF', to: '/posts' },
   { key: 'publishedCount', label: '已发布', icon: PaperPlaneOutline, color: '#0891B2', bg: '#ECFEFF' },
-  { key: 'totalViews', label: '阅读', icon: EyeOutline, color: '#059669', bg: '#ECFDF5' },
-  { key: 'userCount', label: '用户', icon: PeopleOutline, color: '#DB2777', bg: '#FDF2F8' },
-  { key: 'likeCount', label: '点赞', icon: HeartOutline, color: '#E11D48', bg: '#FFF1F2' },
-  { key: 'favoriteCount', label: '收藏', icon: StarOutline, color: '#CA8A04', bg: '#FEFCE8' },
-  { key: 'pendingCommentCount', label: '待审评论', icon: ChatbubblesOutline, color: '#DC2626', bg: '#FEF2F2', to: '/comments', zeroMuted: true },
+  { key: 'totalViews', label: '阅读', icon: EyeOutline, color: '#10B981', bg: '#ECFDF5' },
+  { key: 'userCount', label: '用户', icon: PeopleOutline, color: '#8B5CF6', bg: '#F5F3FF' },
+  { key: 'likeCount', label: '点赞', icon: HeartOutline, color: '#F43F5E', bg: '#FFF1F2' },
+  { key: 'favoriteCount', label: '收藏', icon: StarOutline, color: '#F59E0B', bg: '#FFFBEB' },
+  { key: 'pendingCommentCount', label: '待审评论', icon: ChatbubblesOutline, color: '#EF4444', bg: '#FEF2F2', to: '/comments', zeroMuted: true },
   { key: 'donation', label: '捐赠', icon: CashOutline, color: '#059669', bg: '#ECFDF5', to: '/donations', value: (s: any) => s.donation && s.donationCount > 0 ? `${s.donation.currency === 'CNY' ? '¥' : '$'}${s.donation.amount}` : '-', accent: (s: any) => s.donation && s.donationCount > 0 },
 ]
 
@@ -129,100 +128,105 @@ onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() 
 
 <template>
   <div class="dash">
-    <!-- Header -->
-    <div class="hdr">
-      <div>
-        <h1 class="hdrt">{{ greet }}，{{ username }}</h1>
-        <p class="hdrs">{{ today }} · 这里是你的后台数据概览</p>
-      </div>
-      <div class="hdrb">
-        <n-button size="small" type="primary" @click="router.push('/posts/create')">
-          <template #icon><n-icon size="14"><CreateOutline /></n-icon></template>写文章
-        </n-button>
-        <n-button size="small" @click="router.push('/membership')" quaternary>
-          <template #icon><n-icon size="14"><GiftOutline /></n-icon></template>会员
-        </n-button>
-        <n-button size="small" :loading="loading" @click="load" quaternary>
-          <template #icon><n-icon size="14"><RefreshOutline /></n-icon></template>
-        </n-button>
-      </div>
-    </div>
-
     <n-spin :show="loading">
-      <div class="body">
+      <div class="dash-body">
 
-        <!-- Stats -->
-        <div class="kpi">
-          <div
-            v-for="card in statCards" :key="card.label"
-            class="kc"
-            :class="{ clk: !!card.to }"
-            @click="card.to && router.push(card.to)"
-          >
-            <div class="kicon" :style="{ background: card.bg, color: card.color }">
-              <n-icon size="28"><component :is="card.icon" /></n-icon>
-            </div>
-            <span class="kv" :class="{ muted: card.zeroMuted && !stats[card.key as keyof DashboardStats], accent: card.accent && card.accent(stats) }">
-              {{ statValue(card) }}
-            </span>
-            <span class="kl">{{ card.label }}</span>
+        <!-- Header -->
+        <div class="dash-hdr">
+          <div>
+            <h1 class="dash-title">{{ greet }}，{{ username }}</h1>
+            <p class="dash-date">{{ today }}</p>
+          </div>
+          <div class="dash-acts">
+            <n-button size="small" type="primary" @click="router.push('/posts/create')">
+              <template #icon><n-icon size="14"><CreateOutline /></n-icon></template>写文章
+            </n-button>
+            <n-button size="small" @click="router.push('/membership')" quaternary>
+              <template #icon><n-icon size="14"><GiftOutline /></n-icon></template>会员
+            </n-button>
+            <n-button size="small" :loading="loading" @click="load" quaternary>
+              <template #icon><n-icon size="14"><RefreshOutline /></n-icon></template>
+            </n-button>
           </div>
         </div>
 
-        <!-- Section -->
-        <div class="sec">
-          <span class="sec-title">数据趋势</span>
-          <div class="sec-line"></div>
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+          <div
+            v-for="card in statCards" :key="card.label"
+            class="kpi-card"
+            :class="{ clickable: !!card.to }"
+            @click="card.to && router.push(card.to)"
+          >
+            <div class="kpi-icon" :style="{ background: card.bg, color: card.color }">
+              <n-icon size="24"><component :is="card.icon" /></n-icon>
+            </div>
+            <div class="kpi-num" :class="{ muted: card.zeroMuted && !(stats as any)[card.key], accent: card.accent && card.accent(stats) }">
+              {{ statValue(card) }}
+            </div>
+            <div class="kpi-label">{{ card.label }}</div>
+          </div>
+        </div>
+
+        <!-- Section Divider -->
+        <div class="sec-bar">
+          <span class="sec-text">数据趋势</span>
+          <span class="sec-line"></span>
         </div>
 
         <!-- Charts -->
-        <div class="charts">
-          <n-card size="small" :bordered="false" class="chart-wide">
-            <template #header>
-              <span class="ch-title"><n-icon size="14" class="ch-icon"><TrendingUpOutline /></n-icon>7天互动趋势</span>
-            </template>
-            <div ref="tcEl" class="echart echart-wide"></div>
+        <div class="chart-row">
+          <n-card size="small" :bordered="false">
+            <template #header><span class="card-hd">7 天互动趋势</span></template>
+            <div ref="tcEl" class="chart-box"></div>
           </n-card>
-          <div class="chart-stack">
-            <n-card size="small" :bordered="false">
-              <template #header>
-                <span class="ch-title">文章状态分布</span>
-              </template>
-              <template #header-extra><span class="ch-extra">共{{ stats.postCount }}篇</span></template>
-              <div ref="pcEl" class="echart"></div>
-            </n-card>
-            <n-card size="small" :bordered="false">
-              <template #header>
-                <span class="ch-title">捐赠趋势</span>
-              </template>
-              <div ref="dcEl" class="echart"></div>
-            </n-card>
-          </div>
-        </div>
-
-        <!-- Bottom -->
-        <div class="lists">
           <n-card size="small" :bordered="false">
             <template #header>
-              <span class="ch-title"><n-icon size="14" class="ch-icon"><FlameOutline /></n-icon>热门文章</span>
+              <span class="card-hd">文章状态分布</span>
             </template>
-            <template #header-extra><span class="lmore" @click="router.push('/posts')">全部</span></template>
-            <div v-if="!stats.topPosts.length" class="lempty">暂无数据</div>
-            <div v-for="(p,i) in stats.topPosts.slice(0,5)" :key="p.id" class="li" @click="router.push(`/posts/${p.id}/edit`)">
-              <span class="lr" :class="'r'+(i+1)">{{ i+1 }}</span>
-              <span class="lt">{{ p.title }}</span>
-              <span class="ls">{{ fmt(p.viewCount) }}阅读 · {{ fmt(p.likeCount) }}赞</span>
+            <template #header-extra>
+              <span class="card-hd-extra">共 {{ stats.postCount }} 篇</span>
+            </template>
+            <div ref="pcEl" class="chart-box"></div>
+          </n-card>
+          <n-card size="small" :bordered="false">
+            <template #header><span class="card-hd">捐赠趋势</span></template>
+            <div ref="dcEl" class="chart-box"></div>
+          </n-card>
+        </div>
+
+        <!-- Bottom Lists -->
+        <div class="list-row">
+          <n-card size="small" :bordered="false">
+            <template #header>
+              <span class="card-hd">热门文章</span>
+            </template>
+            <template #header-extra>
+              <span class="link-text" @click="router.push('/posts')">全部</span>
+            </template>
+            <div v-if="!stats.topPosts.length" class="empty-tip">暂无数据</div>
+            <div
+              v-for="(p, i) in stats.topPosts.slice(0, 5)" :key="p.id"
+              class="list-item"
+              @click="router.push(`/posts/${p.id}/edit`)"
+            >
+              <span class="rank-badge" :class="'rank-' + (i + 1)">{{ i + 1 }}</span>
+              <span class="list-title">{{ p.title }}</span>
+              <span class="list-meta">{{ fmt(p.viewCount) }} 阅读 · {{ fmt(p.likeCount) }} 赞</span>
             </div>
           </n-card>
           <n-card size="small" :bordered="false">
             <template #header>
-              <span class="ch-title"><n-icon size="14" class="ch-icon"><TimeOutline /></n-icon>最近注册</span>
+              <span class="card-hd">最近注册</span>
             </template>
-            <div v-if="!stats.recentUsers.length" class="lempty">暂无数据</div>
-            <div v-for="u in stats.recentUsers.slice(0,5)" :key="u.id" class="li">
-              <n-avatar :size="24" round class="uav">{{ (u.nickname||u.username).charAt(0).toUpperCase() }}</n-avatar>
-              <span class="lt">{{ u.nickname||u.username }}</span>
-              <span class="ls">{{ ago(u.createdAt) }}</span>
+            <div v-if="!stats.recentUsers.length" class="empty-tip">暂无数据</div>
+            <div
+              v-for="u in stats.recentUsers.slice(0, 5)" :key="u.id"
+              class="list-item"
+            >
+              <n-avatar :size="24" round class="user-av">{{ (u.nickname || u.username).charAt(0).toUpperCase() }}</n-avatar>
+              <span class="list-title">{{ u.nickname || u.username }}</span>
+              <span class="list-meta">{{ ago(u.createdAt) }}</span>
             </div>
           </n-card>
         </div>
@@ -233,79 +237,162 @@ onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() 
 </template>
 
 <style scoped>
-.dash { min-height: 100%; background: #F8FAFC; }
-.dash.is-dark { background: var(--n-body-color); }
-.body { display: flex; flex-direction: column; gap: 20px; }
+/* ===== Page ===== */
+.dash {
+  min-height: 100%;
+  padding: 20px 24px 32px;
+  background: var(--n-body-color);
+}
+.dash-body {
+  max-width: 1320px;
+  display: flex; flex-direction: column; gap: 24px;
+}
 
-/* header */
-.hdr { display: flex; align-items: center; justify-content: space-between; }
-.hdrt { margin: 0; font-size: 20px; font-weight: 700; color: var(--n-text-color); letter-spacing: -0.02em; }
-.hdrs { margin: 4px 0 0; font-size: 12px; color: var(--n-text-color-3); }
-.hdrb { display: flex; gap: 6px; align-items: center; }
+/* ===== Header ===== */
+.dash-hdr {
+  display: flex; align-items: flex-start; justify-content: space-between;
+}
+.dash-title {
+  margin: 0;
+  font-size: 20px; font-weight: 700;
+  color: var(--n-text-color);
+  letter-spacing: -0.02em;
+}
+.dash-date {
+  margin: 4px 0 0;
+  font-size: 12.5px; color: var(--n-text-color-3);
+}
+.dash-acts {
+  display: flex; gap: 6px; align-items: center; flex-shrink: 0;
+}
 
-/* KPI cards — vertical cards with icon on top */
-.kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.kc {
+/* ===== KPI Grid — Bento-inspired modular cards ===== */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+.kpi-card {
   background: var(--n-card-color);
-  border: 1px solid var(--n-border-color);
-  border-radius: 12px;
-  padding: 18px 12px;
-  display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center;
-  text-align: center;
-  transition: all .2s;
+  border-radius: 16px;
+  padding: 20px 16px 16px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.02);
+  transition: box-shadow .2s, transform .2s;
 }
-.kc.clk { cursor: pointer; }
-.kc.clk:hover { border-color: var(--n-primary-color); box-shadow: 0 4px 14px rgba(37,99,235,0.08); transform: translateY(-1px); }
-.kicon {
-  width: 48px; height: 48px; border-radius: 12px;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+.kpi-card.clickable { cursor: pointer; }
+.kpi-card.clickable:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
+  transform: translateY(-1px);
 }
-.kl { font-size: 12px; color: var(--n-text-color-3); font-weight: 500; }
-.kv { font-size: 26px; font-weight: 700; color: var(--n-text-color); line-height: 1; letter-spacing: -0.02em; }
-.kv.muted { color: var(--n-text-color-3); }
-.kv.accent { color: #059669; }
+.kpi-icon {
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.kpi-num {
+  font-size: 30px; font-weight: 700;
+  color: var(--n-text-color);
+  line-height: 1; letter-spacing: -0.02em;
+}
+.kpi-num.muted { color: var(--n-text-color-3); }
+.kpi-num.accent { color: #059669; }
+.kpi-label {
+  font-size: 12px; font-weight: 500;
+  color: var(--n-text-color-3);
+}
 
-/* section header */
-.sec { display: flex; align-items: center; gap: 12px; }
-.sec-title { font-size: 15px; font-weight: 700; color: var(--n-text-color); flex-shrink: 0; }
-.sec-line { flex: 1; height: 1px; background: var(--n-border-color); }
+/* ===== Section Divider ===== */
+.sec-bar {
+  display: flex; align-items: center; gap: 14px;
+}
+.sec-text {
+  font-size: 14px; font-weight: 700;
+  color: var(--n-text-color);
+  flex-shrink: 0;
+}
+.sec-line {
+  flex: 1; height: 1px;
+  background: var(--n-divider-color, var(--n-border-color));
+}
 
-/* charts */
-.charts { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
-.chart-stack { display: flex; flex-direction: column; gap: 16px; }
-.ch-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--n-text-color); }
-.ch-icon { color: var(--n-primary-color); }
-.ch-extra { font-size: 11px; color: var(--n-text-color-3); }
-.echart { width: 100%; height: 200px; }
-.echart-wide { height: 416px; }
+/* ===== Chart Row ===== */
+.chart-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.chart-box {
+  width: 100%; height: 220px;
+}
+.card-hd {
+  font-size: 13px; font-weight: 600;
+  color: var(--n-text-color);
+}
+.card-hd-extra {
+  font-size: 11px; color: var(--n-text-color-3);
+}
 
-/* bottom */
-.lists { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+/* ===== List Row ===== */
+.list-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+}
+.link-text {
+  font-size: 12px; font-weight: 500;
+  color: var(--n-primary-color); cursor: pointer;
+}
+.link-text:hover { text-decoration: underline; }
+.empty-tip {
+  padding: 28px; text-align: center;
+  font-size: 12px; color: var(--n-text-color-3);
+}
+.list-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 0;
+  cursor: pointer;
+  border-bottom: 1px solid var(--n-border-color);
+}
+.list-item:last-child { border-bottom: none; }
+.rank-badge {
+  width: 22px; height: 22px; border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; flex-shrink: 0;
+  background: var(--n-fill-color);
+  color: var(--n-text-color-3);
+}
+.rank-badge.rank-1 { background: #FEF3C7; color: #B45309; }
+.rank-badge.rank-2 { background: #E5E7EB; color: #374151; }
+.rank-badge.rank-3 { background: #FEE2E2; color: #991B1B; }
+.list-title {
+  flex: 1; min-width: 0;
+  font-size: 12.5px; color: var(--n-text-color);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.list-meta {
+  font-size: 11px; color: var(--n-text-color-3); flex-shrink: 0;
+}
+.user-av {
+  background: var(--n-fill-color) !important; flex-shrink: 0;
+}
 
-/* list items */
-.lmore { font-size: 11px; color: var(--n-primary-color); cursor: pointer; }
-.lmore:hover { text-decoration: underline; }
-.lempty { padding: 24px; text-align: center; font-size: 12px; color: var(--n-text-color-3); }
-.li { display: flex; align-items: center; gap: 10px; padding: 8px 0; cursor: pointer; border-bottom: 1px solid var(--n-border-color); }
-.li:last-child { border-bottom: none; padding-bottom: 0; }
-.li:first-child { padding-top: 0; }
-.lr { width: 20px; height: 20px; border-radius: 4px; background: var(--n-fill-color); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #6B7280; flex-shrink: 0; }
-.lr.r1 { background: #FEF3C7; color: #B45309; }
-.lr.r2 { background: #E5E7EB; color: #374151; }
-.lr.r3 { background: #FEE2E2; color: #991B1B; }
-.lt { flex: 1; min-width: 0; font-size: 12.5px; color: var(--n-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ls { font-size: 10.5px; color: var(--n-text-color-3); flex-shrink: 0; }
-.uav { background: var(--n-fill-color) !important; }
-
-@media (max-width: 1100px) {
-  .kpi { grid-template-columns: repeat(3,1fr); }
-  .charts { grid-template-columns: 1fr; }
-  .echart-wide { height: 200px; }
-  .chart-stack { display: grid; grid-template-columns: 1fr 1fr; }
+/* ===== Responsive ===== */
+@media (max-width: 1200px) {
+  .kpi-grid { grid-template-columns: repeat(4, 1fr); }
 }
 @media (max-width: 900px) {
-  .kpi { grid-template-columns: repeat(2,1fr); }
-  .chart-stack { grid-template-columns: 1fr; }
-  .lists { grid-template-columns: 1fr; }
+  .dash { padding: 16px 12px 24px; }
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .chart-row { grid-template-columns: 1fr; }
+  .list-row { grid-template-columns: 1fr; }
+  .chart-box { height: 200px; }
+}
+@media (max-width: 640px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .kpi-card { padding: 16px 10px 12px; }
+  .kpi-num { font-size: 24px; }
+  .kpi-icon { width: 42px; height: 42px; }
 }
 </style>
