@@ -6,7 +6,7 @@ import {
   DocumentTextOutline, PaperPlaneOutline, PeopleOutline,
   ChatbubblesOutline, HeartOutline, StarOutline, EyeOutline,
   RefreshOutline, CashOutline, CreateOutline, GiftOutline,
-  BarChartOutline, TrendingUpOutline, FlameOutline, TimeOutline,
+  TrendingUpOutline, FlameOutline, TimeOutline,
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts/core'
 import { LineChart, PieChart, BarChart } from 'echarts/charts'
@@ -160,23 +160,18 @@ onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() 
             @click="card.to && router.push(card.to)"
           >
             <div class="kicon" :style="{ background: card.bg, color: card.color }">
-              <n-icon size="22"><component :is="card.icon" /></n-icon>
+              <n-icon size="28"><component :is="card.icon" /></n-icon>
             </div>
-            <div class="kbody">
-              <span class="kl">{{ card.label }}</span>
-              <span class="kv" :class="{ muted: card.zeroMuted && !stats[card.key as keyof DashboardStats], accent: card.accent && card.accent(stats) }">
-                {{ statValue(card) }}
-              </span>
-            </div>
+            <span class="kv" :class="{ muted: card.zeroMuted && !stats[card.key as keyof DashboardStats], accent: card.accent && card.accent(stats) }">
+              {{ statValue(card) }}
+            </span>
+            <span class="kl">{{ card.label }}</span>
           </div>
         </div>
 
         <!-- Section -->
         <div class="sec">
-          <div class="sec-badge">
-            <n-icon size="14"><BarChartOutline /></n-icon>
-            <span>数据趋势</span>
-          </div>
+          <span class="sec-title">数据趋势</span>
           <div class="sec-line"></div>
         </div>
 
@@ -248,36 +243,31 @@ onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() 
 .hdrs { margin: 4px 0 0; font-size: 12px; color: var(--n-text-color-3); }
 .hdrb { display: flex; gap: 6px; align-items: center; }
 
-/* KPI cards — compact horizontal cards with icon */
-.kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+/* KPI cards — vertical cards with icon on top */
+.kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .kc {
   background: var(--n-card-color);
   border: 1px solid var(--n-border-color);
-  border-radius: 10px;
-  padding: 14px;
-  display: flex; gap: 12px; align-items: center;
+  border-radius: 12px;
+  padding: 18px 12px;
+  display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center;
+  text-align: center;
   transition: all .2s;
 }
 .kc.clk { cursor: pointer; }
-.kc.clk:hover { border-color: var(--n-primary-color); box-shadow: 0 4px 12px rgba(37,99,235,0.08); transform: translateY(-1px); }
+.kc.clk:hover { border-color: var(--n-primary-color); box-shadow: 0 4px 14px rgba(37,99,235,0.08); transform: translateY(-1px); }
 .kicon {
-  width: 42px; height: 42px; border-radius: 10px;
+  width: 48px; height: 48px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.kbody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .kl { font-size: 12px; color: var(--n-text-color-3); font-weight: 500; }
-.kv { font-size: 22px; font-weight: 700; color: var(--n-text-color); line-height: 1; letter-spacing: -0.02em; }
+.kv { font-size: 26px; font-weight: 700; color: var(--n-text-color); line-height: 1; letter-spacing: -0.02em; }
 .kv.muted { color: var(--n-text-color-3); }
 .kv.accent { color: #059669; }
 
 /* section header */
 .sec { display: flex; align-items: center; gap: 12px; }
-.sec-badge {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 12px; border-radius: 20px;
-  background: var(--n-card-color); border: 1px solid var(--n-border-color);
-  font-size: 13px; font-weight: 600; color: var(--n-text-color); flex-shrink: 0;
-}
+.sec-title { font-size: 15px; font-weight: 700; color: var(--n-text-color); flex-shrink: 0; }
 .sec-line { flex: 1; height: 1px; background: var(--n-border-color); }
 
 /* charts */

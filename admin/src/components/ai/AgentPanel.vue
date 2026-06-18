@@ -1219,40 +1219,40 @@ async function scrollToBottom() {
 }
 
 // 双向浮动按钮：根据用户滚动方向，自动切换"回顶部"/"回底部"
-// 注意：panel-body 用 column-reverse，scrollTop 语义与正向相反——
-//   scrollTop = 0  → 视觉底部（最新消息）
-//   scrollTop 增大 → 向上看历史（视觉向上）
-// - 向上滚（看历史）→ 显示"回底部"（回最新）
-// - 向下滚（回最新途中）→ 显示"回顶部"（再看历史）
+// 注意：panel-body 用 column-reverse，Chromium 下 scrollTop 语义为：
+//   scrollTop = 0      → 视觉底部（最新消息）
+//   scrollTop 为负数   → 向上看历史（越负越靠上）
+// 视觉滚动方向与 scrollTop 变化：
+//   视觉向下滚（看更新）= scrollTop 变大（趋向 0）
+//   视觉向上滚（看历史）= scrollTop 变小（更负）
+// 按钮箭头跟随用户滚动方向（直觉），点击则回到相反端。
 const showBackBtn = ref(false)
-const backBtnMode = ref<'top' | 'bottom'>('bottom')
+// arrowDown 表示箭头朝向，跟随用户视觉滚动方向，点击行为也按此方向
+const arrowDown = ref(true)
 let lastScrollTop = 0
 function onScroll() {
   if (!scrollBody.value) return
   const el = scrollBody.value
   const top = el.scrollTop
   const max = el.scrollHeight - el.clientHeight
-  // column-reverse: top 小 = 在底部(最新), top 大 = 在顶部(最旧)
-  const nearBottom = top < 60      // 靠近最新
-  const nearTop = top >= max - 60  // 靠近最旧
-  // 滚动方向：top 减小 = 向下(回最新)；top 增大 = 向上(看历史)
-  const scrollingDown = top < lastScrollTop
+  const nearBottom = top > -60            // 靠近最新
+  const nearTop = top <= -(max - 60)      // 靠近最旧
+  const scrollingUp = top < lastScrollTop // 视觉向上滚
   lastScrollTop = top
-  if (nearTop && nearBottom) { showBackBtn.value = false; return } // 内容不足一屏
-  if (nearBottom) { showBackBtn.value = false; return } // 已在最新处，无需按钮
-  if (nearTop && !scrollingDown) { showBackBtn.value = false; return } // 在最旧处且还在向上看，隐藏
-  // 向下滚(回最新) → 显示"回顶部"再看历史；向上滚(看历史) → 显示"回底部"回最新
-  backBtnMode.value = scrollingDown ? 'top' : 'bottom'
+  if (max <= 0) { showBackBtn.value = false; return }
+  if (nearBottom) { showBackBtn.value = false; return }
+  if (nearTop && scrollingUp) { showBackBtn.value = false; return }
+  // 视觉向下滚 → 箭头朝下（点击回最新）；视觉向上滚 → 箭头朝上（点击回顶部）
+  arrowDown.value = !scrollingUp
   showBackBtn.value = true
 }
 function onBackBtnClick() {
   if (!scrollBody.value) return
-  if (backBtnMode.value === 'top') {
-    // 回顶部(最旧)：column-reverse 下 = scrollTop 最大
-    scrollBody.value.scrollTo({ top: scrollBody.value.scrollHeight, behavior: 'smooth' })
-  } else {
-    // 回底部(最新)：column-reverse 下 = scrollTop = 0
+  // 点击行为 = 箭头方向：向下箭头→滚向最新(0)；向上箭头→滚向最旧(-max)
+  if (arrowDown.value) {
     scrollBody.value.scrollTo({ top: 0, behavior: 'smooth' })
+  } else {
+    scrollBody.value.scrollTo({ top: -scrollBody.value.scrollHeight, behavior: 'smooth' })
   }
 }
 function onInputKeydown(e: KeyboardEvent) {
@@ -1361,19 +1361,19 @@ function onInputKeydown(e: KeyboardEvent) {
             </div>
           </div>
         </template>
-
-        <!-- 双向浮动按钮：根据滚动方向自动切换 回顶部/回底部 -->
-        <transition name="back-top">
-          <button
-            v-if="showBackBtn"
-            class="back-top-btn"
-            :title="backBtnMode === 'top' ? '回到顶部' : '回到最新'"
-            @click="onBackBtnClick"
-          >
-            <n-icon :size="16"><ArrowUpOutline v-if="backBtnMode === 'top'" /><ArrowDownOutline v-else /></n-icon>
-          </button>
-        </transition>
       </div>
+
+      <!-- 双向浮动按钮：放在 panel-body 外，用 absolute 定位，不受 column-reverse 影响 -->
+      <transition name="back-top">
+        <button
+          v-if="showBackBtn"
+          class="back-top-btn"
+          :title="arrowDown ? '回到最新' : '回到顶部'"
+          @click="onBackBtnClick"
+        >
+          <n-icon :size="16"><ArrowDownOutline v-if="arrowDown" /><ArrowUpOutline v-else /></n-icon>
+        </button>
+      </transition>
 
       <!-- 底部：快捷指令 + token统计 + 输入 -->
       <div class="panel-footer">
@@ -1603,16 +1603,17 @@ function onInputKeydown(e: KeyboardEvent) {
 .history-loading { margin: auto; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: #a8a29e; font-size: 12px; }
 .history-loading .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-/* 返回顶部浮动按钮 */
+/* 双向浮动按钮：absolute 定位浮在 panel-body 右下角（footer 上方），
+   不放在 panel-body 内，避免受 column-reverse 布局影响 */
 .back-top-btn {
-  position: sticky; bottom: 10px; margin-left: auto;
-  width: 30px; height: 30px; flex-shrink: 0;
+  position: absolute; right: 14px; bottom: 150px;
+  width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
   border: 1px solid #e7e5e4; border-radius: 50%;
   background: #ffffff; color: #44403c; cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
   transition: background 0.15s, color 0.15s, box-shadow 0.15s;
-  z-index: 5;
+  z-index: 10;
 }
 .back-top-btn:hover { background: #c15f3c; color: #fff; box-shadow: 0 2px 10px rgba(193,95,60,0.35); }
 .back-top-enter-active, .back-top-leave-active { transition: opacity 0.2s, transform 0.2s; }
