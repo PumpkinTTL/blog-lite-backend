@@ -803,6 +803,10 @@ async function handleSend() {
       currentAssistantItem = assistantItem
       await scrollToBottom()
 
+      // 本轮工具卡片引用：按 call.id 收集，执行时直接取引用，不靠全局 find。
+      // 解决某些模型对多轮同名工具返回相同 tool_call.id，导致 find 跨轮命中旧卡片、
+      // 新卡片永远停留在"等待(pending)"的问题。
+      const stepToolItems = new Map<string, RenderItem>()
       const result = await streamChat(
         buildGatewayMessages(),
         buildContext(),
@@ -812,7 +816,9 @@ async function handleSend() {
         },
         (calls) => {
           for (const c of calls) {
-            addRenderItem({ id: nextId(), kind: 'tool', toolCall: c, toolStatus: 'pending' })
+            if (stepToolItems.has(c.id)) continue
+            const ti = addRenderItem({ id: nextId(), kind: 'tool', toolCall: c, toolStatus: 'pending' })
+            stepToolItems.set(c.id, ti)
           }
           scrollToBottom()
         },
@@ -846,7 +852,7 @@ async function handleSend() {
       if (result.toolCalls.length === 0) break
 
       for (const call of result.toolCalls) {
-        const item = renderItems.value.find((r) => r.toolCall?.id === call.id)
+        const item = stepToolItems.get(call.id)
         if (item) item.toolStatus = 'running'
         await nextTick()
         let output: string
