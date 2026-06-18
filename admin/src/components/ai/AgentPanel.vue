@@ -1298,7 +1298,7 @@ function onInputKeydown(e: KeyboardEvent) {
           <span>加载历史对话…</span>
         </div>
         <div v-else-if="renderItems.length === 0" class="empty-hint">
-          <div class="empty-icon"><n-icon :size="32"><SparklesOutline /></n-icon></div>
+          <div class="empty-icon"><n-icon :size="22"><SparklesOutline /></n-icon></div>
           <p class="empty-title">{{ title }}</p>
           <p class="empty-desc">{{ subtitle }}</p>
           <div class="empty-tips">
@@ -1595,7 +1595,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .cs-option.active { color: #c15f3c; background: rgba(193,95,60,0.08); }
 .cs-option.disabled { color: #a8a29e; cursor: default; }
 
-.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 14px; display: flex; flex-direction: column-reverse; gap: 12px; background: #fafaf9; }
+.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 14px; display: flex; flex-direction: column-reverse; gap: 10px; background: #fafaf9; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
 .panel-body::-webkit-scrollbar-track { background: transparent; }
@@ -1620,9 +1620,9 @@ function onInputKeydown(e: KeyboardEvent) {
 .back-top-enter-from, .back-top-leave-to { opacity: 0; transform: translateY(6px); }
 
 .empty-hint { margin: auto; text-align: center; }
-.empty-icon { width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 14px; background: #f5f5f4; border: 1px solid #e7e5e4; display: flex; align-items: center; justify-content: center; color: #c15f3c; }
-.empty-title { margin: 0; font-size: 15px; font-weight: 600; color: #1c1917; }
-.empty-desc { margin: 4px 0 12px; font-size: 12px; color: #78716c; }
+.empty-icon { width: 44px; height: 44px; margin: 0 auto 10px; border-radius: 12px; background: #f5f5f4; border: 1px solid #e7e5e4; display: flex; align-items: center; justify-content: center; color: #c15f3c; }
+.empty-title { margin: 0; font-size: 14px; font-weight: 600; color: #1c1917; }
+.empty-desc { margin: 3px 0 10px; font-size: 11.5px; color: #78716c; }
 .empty-tips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .tip-chip { font-size: 11px; padding: 3px 9px; border-radius: 6px; background: #f5f5f4; border: 1px solid #e7e5e4; color: #57534e; }
 
@@ -1639,11 +1639,12 @@ function onInputKeydown(e: KeyboardEvent) {
 .ai-bubble-wrap { flex-direction: column; align-items: flex-start; }
 .msg-ai .ai-content { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 
-.avatar { flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; width: 24px; height: 24px; border-radius: 50%; }
-.avatar-ai { background: #c15f3c; }
+.avatar { flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; width: 28px; height: 28px; border-radius: 50%; }
+/* AI 头像：土橙微渐变，更立体，不破坏 Claude 暖色调 */
+.avatar-ai { background: linear-gradient(135deg, #d97757 0%, #c15f3c 100%); box-shadow: 0 1px 3px rgba(193,95,60,0.3); }
 .avatar-ai.thinking { animation: avatar-pulse 1.4s ease-in-out infinite; }
 @keyframes avatar-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(193,95,60,0.4); } 50% { box-shadow: 0 0 0 6px rgba(193,95,60,0); } }
-.avatar-user { background: #44403c; font-size: 11px; font-weight: 600; }
+.avatar-user { background: #44403c; font-size: 12px; font-weight: 600; }
 
 .bubble { padding: 9px 13px; border-radius: 12px; font-size: 13px; line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
 .bubble-user { background: #e7e5e4; color: #1c1917; border-top-right-radius: 4px; }
@@ -1712,8 +1713,8 @@ function onInputKeydown(e: KeyboardEvent) {
 .slash-item.active .slash-icon { color: #c15f3c; }
 .slash-name { font-size: 12px; font-weight: 600; color: #1c1917; white-space: nowrap; }
 .slash-desc { font-size: 11px; color: #a8a29e; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.send-btn { flex-shrink: 0; width: 34px; height: 34px; border: none; border-radius: 8px; background: #1c1917; color: #fafaf9; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, opacity 0.15s; }
-.send-btn:hover { background: #292524; }
+.send-btn { flex-shrink: 0; width: 34px; height: 34px; border: none; border-radius: 8px; background: #c15f3c; color: #fafaf9; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, opacity 0.15s; }
+.send-btn:hover { background: #a84d2e; }
 .send-btn.disabled { opacity: 0.3; cursor: not-allowed; }
 /* 停止按钮：sending 期间替代发送按钮，红色 + 呼吸感，明确可点击终止 */
 .send-btn.stop-btn { background: #dc2626; animation: stop-breath 1.4s ease-in-out infinite; }
