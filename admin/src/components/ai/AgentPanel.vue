@@ -491,6 +491,142 @@ async function executeTool(
         truncated: total > end,
       })
     }
+    case 'read_section_by_heading': {
+      // 按标题定位读取一节：从匹配标题行到下一个同级或更高级标题（或文末）
+      const heading = toStr(args.heading, 200).trim()
+      if (!heading) return fail('heading 不能为空')
+      const lines = f.content.split('\n')
+      // 找到标题所在行（匹配 # 后的文本，忽略大小写和首尾空格）
+      const target = heading.toLowerCase()
+      let headIdx = -1
+      let headLevel = 0
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^(#{1,6})\s+(.*)$/)
+        if (m && m[2].trim().toLowerCase() === target) {
+          headIdx = i
+          headLevel = m[1].length
+          break
+        }
+      }
+      if (headIdx === -1) return fail(`未找到标题: ${heading}`)
+      // 找下一个同级或更高级标题
+      let endIdx = lines.length
+      for (let i = headIdx + 1; i < lines.length; i++) {
+        const m = lines[i].match(/^(#{1,6})\s+/)
+        if (m && m[1].length <= headLevel) { endIdx = i; break }
+      }
+      const section = lines.slice(headIdx, endIdx).join('\n')
+      return JSON.stringify({
+        heading: lines[headIdx],
+        level: headLevel,
+        startLine: headIdx + 1,
+        endLine: endIdx,
+        content: section,
+        lineCount: endIdx - headIdx,
+      })
+    }
+    case 'get_outline': {
+      // 提取所有标题层级 + 行号，数据量小，让 AI 先看结构再决定改哪
+      const lines = f.content.split('\n')
+      const outline: { level: number; text: string; line: number }[] = []
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^(#{1,6})\s+(.*)$/)
+        if (m) outline.push({ level: m[1].length, text: m[2].trim(), line: i + 1 })
+      }
+      return JSON.stringify({
+        outline,
+        totalHeadings: outline.length,
+        totalLines: lines.length,
+        hint: outline.length === 0 ? '正文无标题，考虑用 Markdown 标题组织结构' : undefined,
+      })
+    }
+    case 'insert_after_heading': {
+      // 在指定标题所在节的末尾插入内容
+      const heading = toStr(args.heading, 200).trim()
+      const text = toStr(args.text, 100000)
+      if (!heading) return fail('heading 不能为空')
+      if (!text) return fail('text 不能为空')
+      const lines = f.content.split('\n')
+      const target = heading.toLowerCase()
+      let headIdx = -1
+      let headLevel = 0
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^(#{1,6})\s+(.*)$/)
+        if (m && m[2].trim().toLowerCase() === target) {
+          headIdx = i
+          headLevel = m[1].length
+          break
+        }
+      }
+      if (headIdx === -1) return fail(`未找到标题: ${heading}`)
+      // 节末尾 = 下一个同级或更高级标题前，或文末
+      let endIdx = lines.length
+      for (let i = headIdx + 1; i < lines.length; i++) {
+        const m = lines[i].match(/^(#{1,6})\s+/)
+        if (m && m[1].length <= headLevel) { endIdx = i; break }
+      }
+      lines.splice(endIdx, 0, text)
+      f.content = lines.join('\n')
+      return JSON.stringify({ ok: true, insertedAfterLine: endIdx, heading: lines[headIdx] })
+    }
+    case 'move_lines': {
+      // 移动行范围到新位置：切出 → 插入
+      const lines = f.content.split('\n')
+      const total = lines.length
+      if (total === 0) return fail('正文为空')
+      let fromStart = clamp(toInt(args.fromStart, 1), 1, total)
+      let fromEnd = clamp(toInt(args.fromEnd, fromStart), 1, total)
+      if (fromStart > fromEnd) [fromStart, fromEnd] = [fromEnd, fromStart]
+      // 目标行号要基于"删除后"的行号语义：先 clamp 原始值，删除后修正
+      let toAfter = clamp(toInt(args.toAfterLine, 0), 0, total)
+      // 切出要移动的行
+      const moved = lines.splice(fromStart - 1, fromEnd - fromStart + 1)
+      // 修正插入位置：原 toAfter 若在移动范围之后，需减去移动的行数
+      if (toAfter >= fromEnd) toAfter -= moved.length
+      toAfter = clamp(toAfter, 0, lines.length)
+      lines.splice(toAfter, 0, ...moved)
+      f.content = lines.join('\n')
+      return JSON.stringify({
+        ok: true,
+        movedLines: moved.length,
+        fromRange: `${fromStart}-${fromEnd}`,
+        insertedAfterLine: toAfter,
+      })
+    }
+    case 'wrap_text': {
+      // 给正文中已有文本包裹标记，等价于 find(text) → replace(text → marker+text+marker)
+      const text = toStr(args.text, 10000)
+      const marker = toStr(args.marker, 10)
+      if (!text) return fail('text 不能为空')
+      if (!marker) return fail('marker 不能为空')
+      const idx = f.content.indexOf(text)
+      if (idx === -1) return fail(`正文中未找到文本: ${text.slice(0, 50)}`)
+      const wrapped = marker + text + marker
+      f.content = f.content.slice(0, idx) + wrapped + f.content.slice(idx + text.length)
+      return JSON.stringify({ ok: true, wrapped: 1, marker })
+    }
+    case 'deduplicate_lines': {
+      // 合并连续空行为单个，去除行尾空格
+      const lines = f.content.split('\n').map((l) => l.replace(/\s+$/, ''))
+      const result: string[] = []
+      let prevBlank = false
+      let mergedBlanks = 0
+      for (const l of lines) {
+        const isBlank = l.trim() === ''
+        if (isBlank) {
+          if (prevBlank) { mergedBlanks++; continue }
+          prevBlank = true
+        } else {
+          prevBlank = false
+        }
+        result.push(l)
+      }
+      // 去除开头/结尾多余空行
+      while (result.length && result[0].trim() === '') result.shift()
+      while (result.length && result[result.length - 1].trim() === '') result.pop()
+      f.content = result.join('\n')
+      return JSON.stringify({ ok: true, mergedBlankLines: mergedBlanks })
+    }
     case 'update_title': {
       const v = toStr(args.title, 200)
       if (!v.trim()) return fail('title 不能为空')
@@ -537,6 +673,8 @@ async function executeTool(
       const replaceText = toStr(args.replaceText, 10000)
       if (!findText) return fail('findText 不能为空')
       const scope = toStr(args.scope, 20) || 'content'
+      // occurrence: 0=全部(默认), 正数=第n个, -1=最后一个
+      const occurrence = toInt(args.occurrence, 0)
       let target = ''
       let setter: ((v: string) => void) | null = null
       if (scope === 'content') { target = f.content; setter = (v) => { f.content = v } }
@@ -544,12 +682,36 @@ async function executeTool(
       else if (scope === 'subtitle') { target = f.subtitle; setter = (v) => { f.subtitle = v } }
       else if (scope === 'summary') { target = f.summary; setter = (v) => { f.summary = v } }
       else return fail(`未知 scope: ${scope}`)
-      const before = target
-      const after = before.split(findText).join(replaceText)
-      const count = before.split(findText).length - 1
-      if (count === 0) return JSON.stringify({ ok: true, scope, replaced: 0, message: '未找到匹配文本' })
-      setter(after)
-      return JSON.stringify({ ok: true, scope, replaced: count })
+      // 收集所有匹配位置
+      const positions: number[] = []
+      let from = 0
+      while (true) {
+        const idx = target.indexOf(findText, from)
+        if (idx === -1) break
+        positions.push(idx)
+        from = idx + findText.length
+      }
+      if (positions.length === 0) return JSON.stringify({ ok: true, scope, replaced: 0, message: '未找到匹配文本' })
+      // 决定要替换哪些位置
+      let targets: number[]
+      if (occurrence === 0) {
+        targets = positions // 全部
+      } else if (occurrence > 0) {
+        targets = occurrence <= positions.length ? [positions[occurrence - 1]] : []
+      } else {
+        // 负数：-1 是最后一个
+        const i = positions.length + occurrence
+        targets = i >= 0 ? [positions[i]] : []
+      }
+      if (targets.length === 0) return JSON.stringify({ ok: true, scope, replaced: 0, message: `只有 ${positions.length} 处匹配，无第 ${occurrence} 处` })
+      // 从后往前替换，避免位置偏移
+      targets.sort((a, b) => b - a)
+      let result = target
+      for (const pos of targets) {
+        result = result.slice(0, pos) + replaceText + result.slice(pos + findText.length)
+      }
+      setter(result)
+      return JSON.stringify({ ok: true, scope, replaced: targets.length, totalMatches: positions.length })
     }
     case 'delete_lines': {
       const lines = f.content.split('\n')

@@ -25,6 +25,8 @@ watch(
 const NAME_LABEL: Record<string, string> = {
   get_article: '读取文章',
   get_content_section: '读取正文片段',
+  read_section_by_heading: '按标题读取',
+  get_outline: '提取大纲',
   update_title: '修改标题',
   update_subtitle: '修改副标题',
   update_summary: '修改摘要',
@@ -32,8 +34,12 @@ const NAME_LABEL: Record<string, string> = {
   append_content: '追加正文',
   replace_content: '替换正文',
   insert_content_at: '插入正文',
+  insert_after_heading: '按标题插入',
   find_and_replace: '查找替换',
   delete_lines: '删除行',
+  move_lines: '移动行',
+  wrap_text: '包裹标记',
+  deduplicate_lines: '清理排版',
   get_word_count: '字数统计',
   web_search: '联网搜索',
 }

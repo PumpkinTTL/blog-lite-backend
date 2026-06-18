@@ -34,6 +34,8 @@ export const POST_AGENT_SYSTEM_PROMPT = `你是一个专业的博客写作助手
 【可用工具】（在用户前端执行）
 - get_article：读取当前文章的完整字段（标题、副标题、摘要、slug、正文前 2000 字）。当你需要确认当前内容时调用。
 - get_content_section：读取正文指定行范围（参数 startLine, endLine，从 1 开始）。正文较长时分段读取。
+- read_section_by_heading：按标题读取某一节内容。参数 heading（string，标题文本，不含 # 号）。返回该标题到下一个同级或更高级标题之间的全部正文。不知道行号时用这个。
+- get_outline：提取正文大纲（所有标题层级 + 对应行号）。数据量小，先看结构再决定改哪，省 token。
 
 【修改类工具】
 - update_title：修改标题。参数 title（string，≤200字）。
@@ -43,8 +45,12 @@ export const POST_AGENT_SYSTEM_PROMPT = `你是一个专业的博客写作助手
 - append_content：在正文末尾追加内容。参数 text（string）。
 - replace_content：整体替换正文。参数 content（string，完整的 Markdown 正文）。慎用，会覆盖全部内容。
 - insert_content_at：在正文指定行后插入。参数 afterLine（number，0 表示插到最前）, text（string）。
-- find_and_replace：在正文中查找并替换文本。参数 findText（string）, replaceText（string）, scope（string，可选，title/subtitle/summary/content，默认 content）。仅在指定字段内替换所有匹配项。findText 为空时报错。
+- insert_after_heading：在指定标题所在节的末尾插入内容。参数 heading（string，标题文本，不含 # 号）, text（string）。标题定位比行号更可靠，优先使用。
+- find_and_replace：在正文中查找并替换文本。参数 findText（string）, replaceText（string）, scope（string，可选，title/subtitle/summary/content，默认 content）, occurrence（integer，可选，替换第几个匹配，0=全部，1=第一个，-1=最后一个，默认 0）。findText 为空时报错。
 - delete_lines：删除正文指定行范围。参数 startLine（number，从1开始）, endLine（number，含）。行号越界时自动收敛到正文范围。
+- move_lines：移动正文行范围到新位置。参数 fromStart（number）, fromEnd（number）, toAfterLine（number，0 表示移到最前）。用于调整段落/章节顺序。
+- wrap_text：给正文中已有的文本包裹 Markdown 标记。参数 text（string，正文中存在的原文）, marker（string，包裹标记，如 ** 或 * 或 \` 或 >）。等价于把原文替换为 marker+原文+marker。
+- deduplicate_lines：清理正文排版，合并连续空行为单个空行，去除行尾空格。无参数。
 - get_word_count：统计正文字数、行数、各信息字段长度。无参数。用于评估文章规模、判断是否需要分段处理。
 
 【联网工具】
@@ -218,7 +224,7 @@ export const POST_AGENT_TOOLS: AiTool[] = [
     type: 'function',
     function: {
       name: 'find_and_replace',
-      description: '在文章指定字段内查找并替换所有匹配文本',
+      description: '在文章指定字段内查找并替换匹配文本（可控制替换第几个）',
       parameters: {
         type: 'object',
         properties: {
@@ -228,6 +234,10 @@ export const POST_AGENT_TOOLS: AiTool[] = [
             type: 'string',
             enum: ['title', 'subtitle', 'summary', 'content'],
             description: '在哪个字段操作，默认 content',
+          },
+          occurrence: {
+            type: 'integer',
+            description: '替换第几个匹配：0=全部（默认），1=第一个，2=第二个，-1=最后一个',
           },
         },
         required: ['findText', 'replaceText'],
@@ -247,6 +257,82 @@ export const POST_AGENT_TOOLS: AiTool[] = [
         },
         required: ['startLine', 'endLine'],
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'insert_after_heading',
+      description: '在指定标题所在节的末尾插入内容（标题定位，比行号可靠）',
+      parameters: {
+        type: 'object',
+        properties: {
+          heading: { type: 'string', description: '标题文本（不含 # 号前缀）' },
+          text: { type: 'string', description: '要插入的 Markdown 文本' },
+        },
+        required: ['heading', 'text'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'move_lines',
+      description: '移动正文行范围到新位置（调整段落/章节顺序）',
+      parameters: {
+        type: 'object',
+        properties: {
+          fromStart: { type: 'integer', minimum: 1, description: '要移动的起始行（从1开始）' },
+          fromEnd: { type: 'integer', minimum: 1, description: '要移动的结束行（含）' },
+          toAfterLine: { type: 'integer', minimum: 0, description: '移到第几行之后（0=移到最前）' },
+        },
+        required: ['fromStart', 'fromEnd', 'toAfterLine'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'wrap_text',
+      description: '给正文中已有的文本包裹 Markdown 标记（如加粗、斜体、代码、引用）',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: '正文中存在的原文（将整体包裹）' },
+          marker: { type: 'string', description: '包裹标记，如 ** 或 * 或 ` 或 >' },
+        },
+        required: ['text', 'marker'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'deduplicate_lines',
+      description: '清理正文排版：合并连续空行为单个空行，去除行尾空格',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_section_by_heading',
+      description: '按标题读取正文某一节内容（标题到下一个同级或更高级标题之间）',
+      parameters: {
+        type: 'object',
+        properties: {
+          heading: { type: 'string', description: '标题文本（不含 # 号前缀）' },
+        },
+        required: ['heading'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_outline',
+      description: '提取正文大纲：所有标题层级及对应行号',
+      parameters: { type: 'object', properties: {}, required: [] },
     },
   },
   {
