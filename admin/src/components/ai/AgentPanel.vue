@@ -842,10 +842,11 @@ async function togglePanel() {
   open.value = !open.value
   if (open.value) {
     ensureDefaultPos()
-    // column-reverse 布局：DOM 挂载即 scrollTop=0（视觉底部=最新消息），
-    // 无需任何滚动校正，彻底消除跳变闪烁。
+    // 先让面板骨架渲染出来（transition 先播），再异步初始化/加载历史，
+    // 避免历史消息的 MarkdownRender 同步渲染卡住首帧。
     await nextTick()
     if (scrollBody.value) scrollBody.value.scrollTop = 0
+    requestAnimationFrame(() => { initOnFirstOpen() })
   }
 }
 
@@ -1216,8 +1217,25 @@ async function persistConversation(newPostId?: number): Promise<void> {
 
 defineExpose({ persistConversation })
 
-onMounted(() => { loadProviders(); document.addEventListener('click', closeDropdowns) })
-watch(() => props.postId, () => { historyLoaded.value = false; loadHistory() }, { immediate: true })
+onMounted(() => { document.addEventListener('click', closeDropdowns) })
+// 历史加载懒到首次打开面板时触发（避免进页面即发请求，且与打开动作合并为一次）。
+// providers 同理懒加载。首次打开标志位保证只执行一次。
+let inited = false
+async function initOnFirstOpen() {
+  if (inited) return
+  inited = true
+  loadProviders()
+  if (props.postId) {
+    historyLoaded.value = false
+    await loadHistory()
+  } else {
+    historyLoaded.value = true
+  }
+}
+watch(() => props.postId, () => {
+  // postId 变化（切换文章）时重新加载历史；首次打开已由 initOnFirstOpen 处理。
+  if (inited) { historyLoaded.value = false; loadHistory() }
+})
 onBeforeUnmount(() => {
   document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDragMove)
@@ -1301,17 +1319,16 @@ function onInputKeydown(e: KeyboardEvent) {
     >
       <!-- 头部 -->
       <div class="panel-head" @mousedown="startDrag">
-        <div class="head-title">
+        <div class="head-left">
           <div class="head-icon-badge">
             <i class="ico" :style="{ fontSize: 15 + 'px' }"><SparklesOutline /></i>
           </div>
-          <div class="head-title-group">
-            <span class="head-name">{{ title }}</span>
-            <span class="head-desc">{{ subtitle }}</span>
-          </div>
+          <span class="head-name">{{ title }}</span>
           <span v-if="tokenStats.rounds > 0" class="head-mini-info">{{ tokenStats.rounds }}轮</span>
         </div>
-        <div class="head-actions">
+        <div class="head-right">
+          <!-- AI 响应状态指示点 -->
+          <span v-if="sending || compacting" class="head-status-dot" :title="compacting ? '正在压缩…' : '正在生成…'" />
           <button class="head-btn" @click.stop="toggleFullscreen" :title="isFullscreen ? '还原' : '全屏'">
             <i class="ico" :style="{ fontSize: 15 + 'px' }"><ContractOutline v-if="isFullscreen" /><ExpandOutline v-else /></i>
           </button>
@@ -1705,9 +1722,13 @@ function onInputKeydown(e: KeyboardEvent) {
 /* 全屏时消息流居中限宽（对标 ChatGPT/Claude 全屏阅读宽度 ~820px），
    用 padding 让内容区居中，避免宽屏上内容散成难看的窄条。 */
 .agent-panel.fullscreen .panel-body { padding-left: max(14px, calc(50% - 410px)); padding-right: max(14px, calc(50% - 410px)); }
-.head-mini-info { font-size: 10.5px; color: var(--text-5); font-weight: 500; margin-left: 4px; padding: 1px 6px; background: var(--surface-4); border-radius: 4px; }
-
-/* 头像徽章：土橙软渐变底色，比单色更立体 */
+/* 轮次pill：紧贴标题，弱化色让标题更突出 */
+.head-mini-info {
+  font-size: 10px; color: var(--text-5); font-weight: 600;
+  padding: 1px 6px; background: var(--surface-4);
+  border-radius: 4px; white-space: nowrap; flex-shrink: 0;
+}
+/* 头像徽章：土橙软渐变底色 + 微边框 + 阴影，比裸图标更立体 */
 .head-icon-badge {
   width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
   background: linear-gradient(145deg, var(--accent-soft-2) 0%, rgba(193,95,60,0.18) 100%);
@@ -1720,25 +1741,35 @@ function onInputKeydown(e: KeyboardEvent) {
   background: linear-gradient(145deg, rgba(224,131,98,0.16) 0%, rgba(224,131,98,0.1) 100%);
   box-shadow: 0 1px 4px rgba(224,131,98,0.18);
 }
-/* 标题组：主标题 + 副标题上下叠 */
-.head-title-group { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.head-desc { font-size: 10.5px; color: var(--text-5); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* 头部：surface-2 + 底部细微投影，强化与消息区的分界 */
+/* 头部：surface-2 底色 + 底部分界线 */
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px 10px 14px;
-  background: linear-gradient(to bottom, var(--surface-2) 0%, var(--surface-2) 100%);
+  padding: 10px 12px 10px 14px;
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
   border-radius: 16px 16px 0 0;
   cursor: grab; user-select: none;
-  box-shadow: 0 1px 0 rgba(28,25,23,0.04), inset 0 1px 0 rgba(255,255,255,0.6);
+  box-shadow: 0 1px 0 rgba(28,25,23,0.04);
 }
 .agent-panel.dark .panel-head { box-shadow: 0 1px 0 rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03); }
 .panel-head:active { cursor: grabbing; }
-.head-title { display: inline-flex; align-items: center; gap: 10px; min-width: 0; flex: 1; overflow: hidden; }
-.head-name { font-size: 13.5px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
-.head-actions { display: flex; gap: 2px; flex-shrink: 0; }
+/* 左侧：icon徽章 + 标题 + 轮次pill，单行紧凑排列 */
+.head-left { display: inline-flex; align-items: center; gap: 9px; flex: 1; min-width: 0; overflow: hidden; }
+/* 右侧：状态点 + 操作按钮 */
+.head-right { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.head-name { font-size: 13.5px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; white-space: nowrap; }
+/* AI 响应状态指示点：sending/compacting 时显示，呼吸动画 */
+.head-status-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--accent);
+  margin-right: 4px;
+  animation: status-breath 1.4s ease-in-out infinite;
+}
+@keyframes status-breath {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.75); }
+}
 .head-btn { width: 28px; height: 28px; border: none; background: transparent; color: var(--text-4); cursor: pointer; border-radius: 7px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
 .head-btn:hover { background: var(--surface-4); color: var(--text); }
 .head-btn:disabled { opacity: 0.4; cursor: not-allowed; }
