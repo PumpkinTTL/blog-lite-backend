@@ -7,7 +7,7 @@ import {
   RemoveOutline,
   SendOutline, BulbOutline, ChevronDownOutline,
   SparklesOutline, ContractOutline, HappyOutline, ColorPaletteOutline, CubeOutline,
-  StopOutline,
+  StopOutline, ArrowUpOutline, ArrowDownOutline, SyncOutline,
 } from '@vicons/ionicons5'
 import { streamChat, streamCompact, streamWebSearch } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext, AiUsage } from '../../api/ai'
@@ -47,6 +47,8 @@ const message = useMessage()
 // === 面板状态 ===
 const open = ref(false)
 const dragging = ref(false)
+// 打开面板定位底部时短暂隐藏内容，避免瞬时跳变 11 万px 造成"先在顶部闪一下再到 底"的视觉抖动
+const panelScrolling = ref(false)
 const panelPos = reactive({ left: 0, top: 0 })
 
 const form = computed<ArticleForm>(() =>
@@ -813,12 +815,55 @@ function startDrag(e: MouseEvent) {
   document.addEventListener('mouseup', stopDrag)
   e.preventDefault()
 }
-function togglePanel() {
+async function togglePanel() {
   open.value = !open.value
   if (open.value) {
     ensureDefaultPos()
-    nextTick(() => scrollToBottom())
+    if (historyLoading.value) {
+      for (let i = 0; i < 50 && historyLoading.value; i++) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+    }
+    // 先隐藏内容，定位底部后再显示，避免瞬时跳变大段内容造成视觉闪烁
+    panelScrolling.value = true
+    await scrollToBottom()
+    // 等一帧让滚动应用 + 校正一次，再恢复可见
+    await nextTick()
+    followBottomUntilStable()
+    panelScrolling.value = false
   }
+}
+
+/**
+ * 持续校正滚动到底部，直到 scrollHeight 连续两帧不再变化为止。
+ * 只在离底部超过 80px（明显没到底）时才补滚，避免小幅重排也滚动造成抖动。
+ */
+function followBottomUntilStable() {
+  if (!scrollBody.value) return
+  let lastHeight = -1
+  let stableCount = 0
+  let frames = 0
+  const maxFrames = 90
+  const tick = () => {
+    if (!scrollBody.value) return
+    const sh = scrollBody.value.scrollHeight
+    const cur = scrollBody.value.scrollTop
+    const max = sh - scrollBody.value.clientHeight
+    // 离底部超过 80px 才补滚；小幅重排（<80px）视觉无感，不滚动以免抖动
+    if (max - cur > 80) {
+      scrollBody.value.scrollTop = sh
+    }
+    if (sh === lastHeight) {
+      stableCount++
+      if (stableCount >= 2 || frames >= maxFrames) return
+    } else {
+      stableCount = 0
+    }
+    lastHeight = sh
+    frames++
+    requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
 }
 
 // === 上下文快照 ===
@@ -1092,6 +1137,7 @@ function applyQuickCmd(cmd: QuickCmd) {
 
 // === 历史持久化 ===
 const historyLoaded = ref(false)
+const historyLoading = ref(false)
 async function loadHistory() {
   if (!props.postId) {
     messages.value = []
@@ -1101,6 +1147,7 @@ async function loadHistory() {
     historyLoaded.value = true
     return
   }
+  historyLoading.value = true
   try {
     const res = await getConversationByPostId(props.postId)
     const data = res.data
@@ -1126,8 +1173,11 @@ async function loadHistory() {
   } catch { /* 静默 */ }
   finally {
     historyLoaded.value = true
-    await nextTick()
-    scrollToBottom()
+    historyLoading.value = false
+    // 面板此时多半未打开（scrollBody 为 null），滚动会空转。
+    // 真正的首次打开滚动由 togglePanel 负责（它会等加载完 + 多帧校正）。
+    // 这里仅在面板恰好已打开时兜底滚一次。
+    if (open.value) await scrollToBottom()
   }
 }
 
@@ -1202,7 +1252,57 @@ function toggleThink(id: string) {
 }
 async function scrollToBottom() {
   await nextTick()
-  if (scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+  if (!scrollBody.value) {
+    // 面板尚未挂载（open=false）：轮询等到就绪再滚。
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 50))
+      if (scrollBody.value) break
+    }
+  }
+  if (!scrollBody.value) return
+  const el = scrollBody.value
+  el.scrollTop = el.scrollHeight
+  requestAnimationFrame(() => {
+    if (scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+  })
+}
+
+// 双向浮动按钮：根据用户滚动方向，自动切换"回顶部"/"回底部"
+// - 向上滚（在看历史）→ 显示"回顶部"
+// - 向下滚且未到底（在回程）→ 显示"回底部"
+// - 已在顶部或底部附近 → 隐藏
+const showBackBtn = ref(false)
+const backBtnMode = ref<'top' | 'bottom'>('bottom') // top=回顶部, bottom=回底部
+let lastScrollTop = 0
+function onScroll() {
+  if (!scrollBody.value) return
+  const el = scrollBody.value
+  const top = el.scrollTop
+  const max = el.scrollHeight - el.clientHeight
+  const nearTop = top < 60
+  const nearBottom = top >= max - 60
+  // 判断方向：和上次相比
+  const scrollingUp = top < lastScrollTop
+  lastScrollTop = top
+  // 已在两端附近：隐藏（避免紧贴顶/底时还显示按钮）
+  if (nearTop && nearBottom) { showBackBtn.value = false; return } // 内容不足一屏
+  if (nearBottom) {
+    // 到底了：如果正在向下滚到 底，隐藏；但如果之前在中间往回滚没到底，保持底部按钮无意义，隐藏
+    showBackBtn.value = false
+    return
+  }
+  if (nearTop && scrollingUp) { showBackBtn.value = false; return }
+  // 根据方向决定按钮：向上滚→回顶部；向下滚→回底部
+  backBtnMode.value = scrollingUp ? 'top' : 'bottom'
+  showBackBtn.value = true
+}
+function onBackBtnClick() {
+  if (!scrollBody.value) return
+  if (backBtnMode.value === 'top') {
+    scrollBody.value.scrollTo({ top: 0, behavior: 'smooth' })
+  } else {
+    scrollBody.value.scrollTo({ top: scrollBody.value.scrollHeight, behavior: 'smooth' })
+  }
 }
 function onInputKeydown(e: KeyboardEvent) {
   // 斜杠菜单打开时优先处理（方向键/回车/Tab/Esc），拦截默认 Enter 发送
@@ -1240,8 +1340,13 @@ function onInputKeydown(e: KeyboardEvent) {
       </div>
 
       <!-- 消息流 -->
-      <div ref="scrollBody" class="panel-body">
-        <div v-if="renderItems.length === 0" class="empty-hint">
+      <div ref="scrollBody" class="panel-body" :class="{ 'panel-scrolling': panelScrolling }" @scroll="onScroll">
+        <!-- 历史加载中 -->
+        <div v-if="historyLoading" class="history-loading">
+          <n-icon :size="18" class="spin"><SyncOutline /></n-icon>
+          <span>加载历史对话…</span>
+        </div>
+        <div v-else-if="renderItems.length === 0" class="empty-hint">
           <div class="empty-icon"><n-icon :size="32"><SparklesOutline /></n-icon></div>
           <p class="empty-title">{{ title }}</p>
           <p class="empty-desc">{{ subtitle }}</p>
@@ -1305,6 +1410,18 @@ function onInputKeydown(e: KeyboardEvent) {
             </div>
           </div>
         </template>
+
+        <!-- 双向浮动按钮：根据滚动方向自动切换 回顶部/回底部 -->
+        <transition name="back-top">
+          <button
+            v-if="showBackBtn"
+            class="back-top-btn"
+            :title="backBtnMode === 'top' ? '回到顶部' : '回到最新'"
+            @click="onBackBtnClick"
+          >
+            <n-icon :size="16"><ArrowUpOutline v-if="backBtnMode === 'top'" /><ArrowDownOutline v-else /></n-icon>
+          </button>
+        </transition>
       </div>
 
       <!-- 底部：快捷指令 + token统计 + 输入 -->
@@ -1527,10 +1644,30 @@ function onInputKeydown(e: KeyboardEvent) {
 .cs-option.active { color: #c15f3c; background: rgba(193,95,60,0.08); }
 .cs-option.disabled { color: #a8a29e; cursor: default; }
 
-.panel-body { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: #fafaf9; }
+.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: #fafaf9; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
 .panel-body::-webkit-scrollbar-track { background: transparent; }
+/* 打开面板定位底部时短暂隐藏内容，避免瞬时跳变造成视觉抖动 */
+.panel-body.panel-scrolling { visibility: hidden; }
+/* 历史加载占位 */
+.history-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: #a8a29e; font-size: 12px; }
+.history-loading .spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* 返回顶部浮动按钮 */
+.back-top-btn {
+  position: sticky; bottom: 10px; margin-left: auto;
+  width: 30px; height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid #e7e5e4; border-radius: 50%;
+  background: #ffffff; color: #44403c; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  z-index: 5;
+}
+.back-top-btn:hover { background: #c15f3c; color: #fff; box-shadow: 0 2px 10px rgba(193,95,60,0.35); }
+.back-top-enter-active, .back-top-leave-active { transition: opacity 0.2s, transform 0.2s; }
+.back-top-enter-from, .back-top-leave-to { opacity: 0; transform: translateY(6px); }
 
 .empty-hint { margin: auto; text-align: center; }
 .empty-icon { width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 14px; background: #f5f5f4; border: 1px solid #e7e5e4; display: flex; align-items: center; justify-content: center; color: #c15f3c; }
