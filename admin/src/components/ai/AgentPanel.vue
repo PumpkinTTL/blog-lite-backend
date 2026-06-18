@@ -803,10 +803,8 @@ async function handleSend() {
       currentAssistantItem = assistantItem
       await scrollToBottom()
 
-      // 本轮工具卡片引用：按 call.id 收集，执行时直接取引用，不靠全局 find。
-      // 解决某些模型对多轮同名工具返回相同 tool_call.id，导致 find 跨轮命中旧卡片、
-      // 新卡片永远停留在"等待(pending)"的问题。
-      const stepToolItems = new Map<string, RenderItem>()
+      // 卡片在实际执行到该工具时才创建（见下方执行循环），避免 AI 一次并行规划
+      // 多个搜索时出现一排"等待中"卡片——用户永远只看到当前正在执行的那一个。
       const result = await streamChat(
         buildGatewayMessages(),
         buildContext(),
@@ -814,13 +812,8 @@ async function handleSend() {
           assistantItem.replyText = (assistantItem.replyText ?? '') + tok
           scrollToBottom()
         },
-        (calls) => {
-          for (const c of calls) {
-            if (stepToolItems.has(c.id)) continue
-            const ti = addRenderItem({ id: nextId(), kind: 'tool', toolCall: c, toolStatus: 'pending' })
-            stepToolItems.set(c.id, ti)
-          }
-          scrollToBottom()
+        () => {
+          // 收到 tool_calls 事件时不创建卡片，留到执行循环按序创建
         },
         selectedModel.value ?? undefined,
         (think) => {
@@ -852,20 +845,21 @@ async function handleSend() {
       if (result.toolCalls.length === 0) break
 
       for (const call of result.toolCalls) {
-        const item = stepToolItems.get(call.id)
-        if (item) item.toolStatus = 'running'
+        // 执行到该工具时才创建卡片并立即设为 running，避免提前渲染一排"等待中"
+        const item = addRenderItem({ id: nextId(), kind: 'tool', toolCall: call, toolStatus: 'running' })
         await nextTick()
+        scrollToBottom()
         let output: string
         try {
           output = await executeTool(call, (msg) => {
             // 流式工具（web_search）的进度回调：更新当前工具卡片
-            if (item) item.toolProgress = msg
+            item.toolProgress = msg
           })
-          if (item) { item.toolStatus = 'success'; item.toolResult = output; item.toolProgress = undefined }
+          item.toolStatus = 'success'; item.toolResult = output; item.toolProgress = undefined
           message.success(`已执行：${call.function.name}`)
         } catch (e) {
           output = JSON.stringify({ ok: false, error: e instanceof Error ? e.message : '执行失败' })
-          if (item) { item.toolStatus = 'error'; item.toolResult = output; item.toolProgress = undefined }
+          item.toolStatus = 'error'; item.toolResult = output; item.toolProgress = undefined
           message.error(`工具执行失败：${call.function.name}`)
         }
         const toolMsg: AiChatMessage = { role: 'tool', tool_call_id: call.id, content: output } as AiChatMessage
