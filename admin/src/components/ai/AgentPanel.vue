@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import {
-  NIcon, NInput, useMessage, NTooltip,
-} from 'naive-ui'
+import { useMessage } from 'naive-ui'
 import {
   RemoveOutline,
-  SendOutline, BulbOutline, ChevronDownOutline,
+  BulbOutline, ChevronDownOutline,
   SparklesOutline, ContractOutline, HappyOutline, ColorPaletteOutline, CubeOutline,
-  StopOutline, ArrowUpOutline, ArrowDownOutline, SyncOutline,
+  StopOutline, ArrowUpSharp, ArrowUpOutline, ArrowDownOutline, SyncOutline,
   LayersOutline, DocumentTextOutline,
 } from '@vicons/ionicons5'
 import { streamChat, streamCompact, streamWebSearch } from '../../api/ai'
@@ -58,6 +56,7 @@ const form = computed<ArticleForm>(() =>
 // === 对话状态 ===
 const messages = ref<AiChatMessage[]>([])
 const inputText = ref('')
+const inputFocused = ref(false)
 const sending = ref(false)
 const compacting = ref(false)
 /** 对话中断控制器：sending 期间用户点"停止"时 abort，终止 streamChat fetch */
@@ -296,8 +295,26 @@ const renderItems = ref<RenderItem[]>([])
 // 为保持"旧消息在上、新消息在下"，渲染顺序需反转：最新的（数组末尾）放在 DOM 最前。
 const reversedRenderItems = computed(() => [...renderItems.value].reverse())
 const scrollBody = ref<HTMLElement | null>(null)
-const inputRef = ref<any>(null)
+const inputRef = ref<HTMLTextAreaElement | null>(null)
 const thinkExpanded = ref<Set<string>>(new Set())
+
+/**
+ * 输入框自适应高度：替代 naive-ui n-input 的 autosize。
+ * minRows=1 对应单行最小高度（min-height:34px），maxRows=4 超过则出现滚动条。
+ * 通过 scrollHeight 重置高度实现，v-model 变化时也触发。
+ * overflow 默认 hidden 避免单行时出现 1px 滚动条，达到 max-height 才切 auto。
+ */
+function autoResizeInput() {
+  const el = inputRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  const max = 96
+  const h = Math.min(el.scrollHeight, max)
+  el.style.height = h + 'px'
+  // 内容超出 max-height 时才启用滚动条
+  el.classList.toggle('has-scroll', el.scrollHeight > max)
+}
+watch(inputText, () => nextTick(autoResizeInput))
 
 let itemSeq = 0
 const nextId = () => `m${++itemSeq}`
@@ -1268,7 +1285,7 @@ function onInputKeydown(e: KeyboardEvent) {
 <template>
   <!-- 悬浮触发器 -->
   <div class="robot-trigger" :class="{ active: open, dark: isDark }" @click="togglePanel">
-    <n-icon :size="22"><SparklesOutline /></n-icon>
+    <i class="ico" :style="{ fontSize: 22 + 'px' }"><SparklesOutline /></i>
     <span v-if="!open && !sending" class="robot-pulse" />
     <span v-if="sending || compacting" class="robot-badge" />
   </div>
@@ -1283,13 +1300,13 @@ function onInputKeydown(e: KeyboardEvent) {
       <!-- 头部 -->
       <div class="panel-head" @mousedown="startDrag">
         <div class="head-title">
-          <n-icon :size="16" class="head-icon"><SparklesOutline /></n-icon>
+          <i class="ico head-icon" :style="{ fontSize: 16 + 'px' }"><SparklesOutline /></i>
           <span class="head-name">{{ title }}</span>
           <span v-if="tokenStats.rounds > 0" class="head-mini-info">{{ tokenStats.rounds }}轮</span>
         </div>
         <div class="head-actions">
           <button class="head-btn" @click.stop="open = false" title="收起">
-            <n-icon :size="15"><RemoveOutline /></n-icon>
+            <i class="ico" :style="{ fontSize: 15 + 'px' }"><RemoveOutline /></i>
           </button>
         </div>
       </div>
@@ -1298,11 +1315,11 @@ function onInputKeydown(e: KeyboardEvent) {
       <div ref="scrollBody" class="panel-body" @scroll="onScroll">
         <!-- 历史加载中 -->
         <div v-if="historyLoading" class="history-loading">
-          <n-icon :size="18" class="spin"><SyncOutline /></n-icon>
+          <i class="ico spin" :style="{ fontSize: 18 + 'px' }"><SyncOutline /></i>
           <span>加载历史对话…</span>
         </div>
         <div v-else-if="renderItems.length === 0" class="empty-hint">
-          <div class="empty-icon"><n-icon :size="22"><SparklesOutline /></n-icon></div>
+          <div class="empty-icon"><i class="ico" :style="{ fontSize: 22 + 'px' }"><SparklesOutline /></i></div>
           <p class="empty-title">{{ title }}</p>
           <p class="empty-desc">{{ subtitle }}</p>
           <div class="empty-tips">
@@ -1322,16 +1339,16 @@ function onInputKeydown(e: KeyboardEvent) {
           <!-- AI 消息：靠左，头像在气泡左边 -->
           <div v-else-if="item.kind === 'assistant'" class="msg msg-ai">
             <div class="avatar avatar-ai" :class="{ thinking: item.streaming }">
-              <n-icon :size="13"><SparklesOutline /></n-icon>
+              <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
             </div>
             <div class="bubble-wrap ai-bubble-wrap">
               <div class="ai-content">
                 <!-- 思考折叠块 -->
                 <div v-if="item.thinkText" class="think-block" :class="{ expanded: thinkExpanded.has(item.id) || item.streaming }">
                   <div class="think-head" @click="!item.streaming && toggleThink(item.id)">
-                    <n-icon :size="12" class="think-icon"><BulbOutline /></n-icon>
+                    <i class="ico think-icon" :style="{ fontSize: 12 + 'px' }"><BulbOutline /></i>
                     <span class="think-label">思考过程</span>
-                    <n-icon v-if="!item.streaming" :size="11" class="think-chevron" :class="{ rotated: thinkExpanded.has(item.id) }"><ChevronDownOutline /></n-icon>
+                    <i v-if="!item.streaming" class="ico think-chevron" :class="{ rotated: thinkExpanded.has(item.id) }" :style="{ fontSize: 11 + 'px' }"><ChevronDownOutline /></i>
                     <span v-if="item.streaming" class="think-streaming">思考中</span>
                   </div>
                   <div class="think-collapse">
@@ -1343,9 +1360,9 @@ function onInputKeydown(e: KeyboardEvent) {
                   {{ item.replyText }}
                   <span v-if="item.streaming" class="cursor">▋</span>
                 </div>
-                <!-- 加载点 -->
-                <div v-else-if="item.streaming && !item.thinkText" class="typing-dots">
-                  <span></span><span></span><span></span>
+                <!-- 加载动画：claude code 风像素流——方块大小固定，横向位置/亮度不规则变化，像数据流在流动 -->
+                <div v-else-if="item.streaming && !item.thinkText" class="pixel-loader">
+                  <i></i><i></i><i></i><i></i><i></i><i></i>
                 </div>
                 <!-- 单轮 token（消息下方小字） -->
                 <div v-if="itemUsage[item.id] && !item.streaming" class="item-usage">
@@ -1358,7 +1375,7 @@ function onInputKeydown(e: KeyboardEvent) {
           <!-- 工具调用：带头像，与 AI 文本气泡结构一致（avatar + content） -->
           <div v-else class="msg msg-tool">
             <div class="avatar avatar-ai avatar-tool">
-              <n-icon :size="13"><SparklesOutline /></n-icon>
+              <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
             </div>
             <div class="tool-card-wrap">
               <ToolCallCard :call="item.toolCall!" :status="item.toolStatus || 'pending'" :result="item.toolResult" :progress="item.toolProgress" />
@@ -1375,7 +1392,7 @@ function onInputKeydown(e: KeyboardEvent) {
           :title="arrowDown ? '回到最新' : '回到顶部'"
           @click="onBackBtnClick"
         >
-          <n-icon :size="16"><ArrowDownOutline v-if="arrowDown" /><ArrowUpOutline v-else /></n-icon>
+          <i class="ico" :style="{ fontSize: 16 + 'px' }"><ArrowDownOutline v-if="arrowDown" /><ArrowUpOutline v-else /></i>
         </button>
       </transition>
 
@@ -1383,20 +1400,22 @@ function onInputKeydown(e: KeyboardEvent) {
       <div class="panel-footer">
         <!-- 快捷指令按钮 + 模型选择下拉（同一行） -->
         <div class="quick-cmds">
-          <n-tooltip v-for="cmd in quickCmds" :key="cmd.label" trigger="hover" :z-index="10010">
-            <template #trigger>
-              <button class="quick-btn" :disabled="sending || compacting" @click="applyQuickCmd(cmd)">
-                <n-icon :size="13"><component :is="cmd.icon" /></n-icon>
-                <span>{{ cmd.label }}</span>
-              </button>
-            </template>
-            {{ cmd.desc }}
-          </n-tooltip>
+          <button
+            v-for="cmd in quickCmds"
+            :key="cmd.label"
+            class="quick-btn"
+            :disabled="sending || compacting"
+            :title="cmd.desc"
+            @click="applyQuickCmd(cmd)"
+          >
+            <i class="ico" :style="{ fontSize: 13 + 'px' }"><component :is="cmd.icon" /></i>
+            <span>{{ cmd.label }}</span>
+          </button>
           <!-- 提供商下拉 -->
           <div class="custom-select" @click.stop="provDropdownOpen = !provDropdownOpen">
             <div class="cs-trigger">
               <span class="cs-text">{{ activeProvider?.name || '提供商' }}</span>
-              <n-icon :size="12"><ChevronDownOutline /></n-icon>
+              <i class="ico" :style="{ fontSize: 12 + 'px' }"><ChevronDownOutline /></i>
             </div>
             <div v-if="provDropdownOpen" class="cs-menu" @click.stop>
               <div
@@ -1411,7 +1430,7 @@ function onInputKeydown(e: KeyboardEvent) {
           <div class="custom-select model-select" @click.stop="modelDropdownOpen = !modelDropdownOpen">
             <div class="cs-trigger">
               <span class="cs-text">{{ activeModelLabel || '模型' }}</span>
-              <n-icon :size="12"><ChevronDownOutline /></n-icon>
+              <i class="ico" :style="{ fontSize: 12 + 'px' }"><ChevronDownOutline /></i>
             </div>
             <div v-if="modelDropdownOpen" class="cs-menu" @click.stop>
               <div
@@ -1433,38 +1452,44 @@ function onInputKeydown(e: KeyboardEvent) {
               class="slash-item" :class="{ active: i === slashMenuIndex }"
               @click="selectSlashCommand(cmd)" @mouseenter="slashMenuIndex = i"
             >
-              <n-icon :size="13" class="slash-icon"><component :is="cmd.icon" /></n-icon>
+              <i class="ico slash-icon" :style="{ fontSize: 13 + 'px' }"><component :is="cmd.icon" /></i>
               <span class="slash-name">{{ cmd.name }}</span>
               <span class="slash-desc">{{ cmd.desc }}</span>
             </div>
           </div>
-          <n-input
-            ref="inputRef"
-            v-model:value="inputText"
-            type="textarea"
-            :autosize="{ minRows: 1, maxRows: 4 }"
-            :placeholder="compacting ? '正在压缩历史…' : '输入指令，/ 查看命令，Enter 发送'"
-            :disabled="sending || compacting"
-            @keydown.capture="onInputKeydown"
-          />
-          <!-- 发送 / 停止 按钮：sending 时切换为停止按钮（可点击终止生成） -->
-          <button
-            v-if="sending"
-            class="send-btn stop-btn"
-            title="停止生成"
-            @click="stopGeneration"
-          >
-            <n-icon :size="16"><StopOutline /></n-icon>
-          </button>
-          <button
-            v-else
-            class="send-btn"
-            :class="{ disabled: !inputText.trim() || compacting }"
-            :disabled="!inputText.trim() || compacting"
-            @click="handleSend"
-          >
-            <n-icon :size="16"><SendOutline /></n-icon>
-          </button>
+          <!-- 输入框 + 发送按钮一体化容器：共享边框和圆角，彻底消除对齐问题 -->
+          <div class="input-composer" :class="{ focused: inputFocused }">
+            <textarea
+              ref="inputRef"
+              v-model="inputText"
+              class="chat-input"
+              rows="1"
+              :placeholder="compacting ? '正在压缩历史…' : '输入指令，/ 查看命令，Enter 发送'"
+              :disabled="sending || compacting"
+              @keydown.capture="onInputKeydown"
+              @input="autoResizeInput"
+              @focus="inputFocused = true"
+              @blur="inputFocused = false"
+            ></textarea>
+            <!-- 发送 / 停止 按钮：ChatGPT 风圆形上箭头，嵌在输入容器右下角 -->
+            <button
+              v-if="sending"
+              class="send-btn stop-btn"
+              title="停止生成"
+              @click="stopGeneration"
+            >
+              <i class="ico" :style="{ fontSize: 14 + 'px' }"><StopOutline /></i>
+            </button>
+            <button
+              v-else
+              class="send-btn"
+              :class="{ disabled: !inputText.trim() || compacting }"
+              :disabled="!inputText.trim() || compacting"
+              @click="handleSend"
+            >
+              <i class="ico" :style="{ fontSize: 15 + 'px' }"><ArrowUpSharp /></i>
+            </button>
+          </div>
         </div>
 
         <!-- 会话级 token 统计 + 上下文占用进度条 -->
@@ -1472,7 +1497,7 @@ function onInputKeydown(e: KeyboardEvent) {
           <!-- 第一行：累计消耗（算钱用）+ 摘要胶囊 -->
           <span class="ctx-stat">
             <span class="ctx-rounds">
-              <n-icon :size="11"><LayersOutline /></n-icon>
+              <i class="ico" :style="{ fontSize: 11 + 'px' }"><LayersOutline /></i>
               {{ tokenStats.rounds }}轮
             </span>
             <!-- 摘要胶囊：和轮次同属元信息，放一起 -->
@@ -1481,7 +1506,7 @@ function onInputKeydown(e: KeyboardEvent) {
               class="ctx-pill-compacted"
               :title="`历史已摘要化（释放约 ${formatTokens(compactionTokens)} token）${compactionReleasedAt ? ' · ' + formatCompactTime(compactionReleasedAt) : ''}`"
             >
-              <n-icon :size="11"><DocumentTextOutline /></n-icon>
+              <i class="ico" :style="{ fontSize: 11 + 'px' }"><DocumentTextOutline /></i>
               摘要-{{ formatTokens(compactionTokens) }}
             </span>
             <span class="ctx-divider">·</span>
@@ -1516,7 +1541,7 @@ function onInputKeydown(e: KeyboardEvent) {
             <div class="picker-head">
               <span class="picker-title">选择模型</span>
               <span class="picker-hint">↑↓ 选择 · Enter 确认 · Esc 关闭</span>
-              <button class="picker-close" @click="modelPickerOpen = false"><n-icon :size="16"><RemoveOutline /></n-icon></button>
+              <button class="picker-close" @click="modelPickerOpen = false"><i class="ico" :style="{ fontSize: 16 + 'px' }"><RemoveOutline /></i></button>
             </div>
             <div class="picker-body">
               <div v-for="p in providers" :key="p.id" class="picker-group">
@@ -1547,6 +1572,23 @@ function onInputKeydown(e: KeyboardEvent) {
 
 <style scoped>
 /* ===== Claude 风：暖灰米色 + 土橙强调 ===== */
+/* 通用图标容器：替代 naive-ui 的 n-icon。
+   用 font-size 驱动 svg 尺寸（vicons 图标 viewBox 自适应），
+   line-height:0 消除 SVG 基线偏移，flex 行内对齐更稳。 */
+.ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  font-style: normal;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.ico :deep(svg) {
+  width: 1em;
+  height: 1em;
+  display: block;
+}
 /* 色彩令牌系统：浅色（Claude 米色家族）为默认基线，.dark 覆盖为深色家族。
    每个令牌语义明确：bg/surface/border/text-strong/text/text-muted/accent/warn */
 .agent-panel {
@@ -1782,11 +1824,43 @@ function onInputKeydown(e: KeyboardEvent) {
   opacity: 1;
 }
 
-.typing-dots { display: inline-flex; gap: 4px; padding: 11px 13px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; border-top-left-radius: 4px; }
-.typing-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-5); animation: typing 1.2s ease-in-out infinite; }
-.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-5px); opacity: 1; } }
+/* claude code 风像素流：6 个固定大小方块，各自横向位置 + 亮度不规则跳变。
+   不是转圈、不是直线扫描，而是像素在游走、聚散，像数据流在涌动。
+   每个方块独立 keyframes + 不同时长，避免整齐划一的机械感。 */
+.pixel-loader {
+  display: inline-flex; align-items: center;
+  height: 12px;                   /* 固定容器高度，方块垂直居中，永不撑大气泡 */
+  padding: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px; border-top-left-radius: 4px;
+  overflow: hidden;
+}
+.pixel-loader i {
+  width: 4px; height: 4px;        /* 方块大小永远不变 */
+  background: var(--accent);
+  border-radius: 1px;
+  margin: 0 1px;
+  flex-shrink: 0;
+  opacity: 0.15;
+  animation: px-drift 1.4s infinite;
+}
+/* 每个方块用不同时长 + 负延迟，让它们各自独立游走，形成不规则的像素流 */
+.pixel-loader i:nth-child(1) { animation-duration: 1.1s; animation-delay: 0s; }
+.pixel-loader i:nth-child(2) { animation-duration: 0.9s; animation-delay: -0.3s; }
+.pixel-loader i:nth-child(3) { animation-duration: 1.3s; animation-delay: -0.6s; }
+.pixel-loader i:nth-child(4) { animation-duration: 1.0s; animation-delay: -0.15s; }
+.pixel-loader i:nth-child(5) { animation-duration: 1.2s; animation-delay: -0.45s; }
+.pixel-loader i:nth-child(6) { animation-duration: 0.95s; animation-delay: -0.75s; }
+/* transform: translateX 让方块在 ±2px 范围内游走，配合 opacity 闪烁，
+   视觉上像素在聚散流动，像贪吃蛇身体时短时长 */
+@keyframes px-drift {
+  0%   { opacity: 0.15; transform: translateX(0); }
+  25%  { opacity: 1;    transform: translateX(2px); }
+  50%  { opacity: 0.4;  transform: translateX(-1px); }
+  75%  { opacity: 0.9;  transform: translateX(1px); }
+  100% { opacity: 0.15; transform: translateX(0); }
+}
 
 .cursor { display: inline-block; color: var(--accent); margin-left: 1px; animation: blink 0.9s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
@@ -1798,16 +1872,40 @@ function onInputKeydown(e: KeyboardEvent) {
 .quick-btn:hover { background: var(--surface-3); border-color: var(--text-6); color: var(--text); }
 .quick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.panel-input { display: flex; gap: 8px; padding: 8px 12px; align-items: flex-end; position: relative; }
-/* n-input Claude 风格：柔和边框 + 聚焦时土橙光环 */
-.panel-input :deep(.n-input) { --n-border-radius: 10px !important; }
-.panel-input :deep(.n-input .n-input__border),
-.panel-input :deep(.n-input .n-input__state-border) { border-width: 1px !important; border-color: var(--border) !important; border-radius: 10px !important; }
-.panel-input :deep(.n-input--focus .n-input__state-border) {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px var(--accent-soft-2) !important;
+.panel-input {
+  padding: 8px 12px; position: relative;
 }
-.panel-input :deep(.n-input__textarea-el) { font-size: 13px; line-height: 1.6; }
+/* 一体化输入容器：textarea 和发送按钮共享同一外框/圆角/背景，
+   彻底解决两者独立圆角导致的高度/对齐错位。聚焦光环作用于整个容器。 */
+.input-composer {
+  display: flex; align-items: flex-end; gap: 4px;
+  padding: 5px 5px 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-composer.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft-2);
+}
+/* textarea 无独立边框，由 .input-composer 统一提供。
+   overflow 默认 hidden 避免单行 1px 滚动条，has-scroll 满 4 行后切 auto。 */
+.chat-input {
+  flex: 1; min-width: 0;
+  padding: 6px 0;
+  border: none; background: transparent;
+  color: var(--text);
+  font-size: 13px; line-height: 1.5;
+  font-family: inherit;
+  resize: none; outline: none;
+  min-height: 24px;        /* 单行内容高度 */
+  max-height: 96px;        /* maxRows≈4 行 */
+  overflow-y: hidden;
+}
+.chat-input.has-scroll { overflow-y: auto; }
+.chat-input::placeholder { color: var(--text-5); }
+.chat-input:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* 斜杠命令菜单 */
 .slash-menu { position: absolute; bottom: calc(100% + 4px); left: 12px; right: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-pop); z-index: 10010; overflow: hidden; }
@@ -1818,8 +1916,20 @@ function onInputKeydown(e: KeyboardEvent) {
 .slash-item.active .slash-icon { color: var(--accent); }
 .slash-name { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
 .slash-desc { font-size: 11px; color: var(--text-5); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.send-btn { flex-shrink: 0; width: 34px; height: 34px; border: none; border-radius: 8px; background: var(--accent); color: var(--bg); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, opacity 0.15s; }
-.send-btn:hover { background: var(--accent-hover); }
+/* ChatGPT 风圆形发送按钮：嵌在 input-composer 右下角，上箭头暗示"发送"。
+   圆形 + 实心强调色，输入为空时降透明度。 */
+.send-btn {
+  flex-shrink: 0;
+  width: 30px; height: 30px;
+  margin-bottom: 2px;
+  border: none; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+}
+.send-btn:hover:not(.disabled) { background: var(--accent-hover); }
+.send-btn:active:not(.disabled) { transform: scale(0.9); }
 .send-btn.disabled { opacity: 0.3; cursor: not-allowed; }
 /* 停止按钮：sending 期间替代发送按钮，红色 + 呼吸感，明确可点击终止 */
 .send-btn.stop-btn { background: var(--warn); animation: stop-breath 1.4s ease-in-out infinite; }
@@ -1832,8 +1942,8 @@ function onInputKeydown(e: KeyboardEvent) {
 /* 底部 token 统计 + 上下文进度条 */
 .ctx-foot { padding: 4px 14px 9px; display: flex; flex-direction: column; gap: 5px; }
 .ctx-stat { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-5); font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
-/* 统一胶囊规范：固定高度 18px，圆角 5px，inline-flex 居中，n-icon line-height:0 消除间隙。
-   两个胶囊视觉对等：淡背景 + 同色细边框 + 深文字，呼应主题色家族。 */
+/* 统一胶囊规范：固定高度 18px，圆角 5px，inline-flex 居中。
+   内部 .ico 已内置 line-height:0，无需额外覆盖。 */
 .ctx-rounds, .ctx-pill-compacted {
   display: inline-flex; align-items: center; gap: 3px;
   height: 18px; padding: 0 7px; box-sizing: border-box;
@@ -1841,8 +1951,6 @@ function onInputKeydown(e: KeyboardEvent) {
   white-space: nowrap; flex-shrink: 0;
   border: 1px solid transparent;
 }
-.ctx-rounds :deep(.n-icon),
-.ctx-pill-compacted :deep(.n-icon) { line-height: 0; flex-shrink: 0; }
 /* 轮次：土橙主色家族 */
 .ctx-rounds {
   background: var(--accent-soft);

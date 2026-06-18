@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
-import { NIcon } from 'naive-ui'
 import { CheckmarkCircle, CloseCircle, SyncCircle, ChevronDownOutline } from '@vicons/ionicons5'
 import type { AiToolCall } from '../../api/ai'
 
@@ -183,19 +182,19 @@ const statusText = computed(() => {
     <!-- 头部：工具调用标签 + 状态点 + 工具名 + 状态 -->
     <div class="tool-head" @click="expanded = !expanded">
       <span v-if="status !== 'success'" class="tool-call-label">
-        <n-icon :size="11" class="tool-label-icon"><component :is="statusIcon" /></n-icon>
+        <i class="ico tool-label-icon" :style="{ fontSize: 11 + 'px' }"><component :is="statusIcon" /></i>
         <span>工具调用</span>
       </span>
       <span v-if="status !== 'success'" class="tool-status-dot" :style="{ background: statusColor }" :class="{ spinning: status === 'running' }" />
       <span class="tool-name">{{ label }}</span>
       <span class="tool-tag">{{ call.function.name }}</span>
       <span class="tool-status-text" :style="{ color: statusColor }">
-        <n-icon :size="12"><component :is="statusIcon" /></n-icon>
+        <i class="ico" :style="{ fontSize: 12 + 'px' }"><component :is="statusIcon" /></i>
         {{ statusText }}
       </span>
-      <n-icon :size="12" class="tool-chevron" :class="{ rotated: expanded }">
+      <i class="ico tool-chevron" :class="{ rotated: expanded }" :style="{ fontSize: 12 + 'px' }">
         <ChevronDownOutline />
-      </n-icon>
+      </i>
     </div>
 
     <!-- 参数概览（展开才显示，折叠态更干净） -->
@@ -267,6 +266,13 @@ const statusText = computed(() => {
 </template>
 
 <style scoped>
+/* 通用图标容器（与 AgentPanel 的 .ico 定义一致）：font-size 驱动 svg，line-height:0 消除基线偏移 */
+.ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  line-height: 0; font-style: normal; vertical-align: middle; flex-shrink: 0;
+}
+.ico :deep(svg) { width: 1em; height: 1em; display: block; }
+
 .tool-card {
   padding: 9px 11px;
   border-radius: 8px;
