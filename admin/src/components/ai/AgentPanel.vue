@@ -8,6 +8,7 @@ import {
   SendOutline, BulbOutline, ChevronDownOutline,
   SparklesOutline, ContractOutline, HappyOutline, ColorPaletteOutline, CubeOutline,
   StopOutline, ArrowUpOutline, ArrowDownOutline, SyncOutline,
+  LayersOutline, DocumentTextOutline,
 } from '@vicons/ionicons5'
 import { streamChat, streamCompact, streamWebSearch } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext, AiUsage } from '../../api/ai'
@@ -118,6 +119,7 @@ const contextWarn = computed(() => contextLimit.value > 0 && contextPercent.valu
 /** token 数格式化为 K 单位（与 picker-model-ctx 一致）：1234 → 1.2K，<1000 原样 */
 function formatTokens(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0'
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2).replace(/\.?0+$/, '') + 'M'
   if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K'
   return String(n)
 }
@@ -1465,9 +1467,26 @@ function onInputKeydown(e: KeyboardEvent) {
 
         <!-- 会话级 token 统计 + 上下文占用进度条 -->
         <div v-if="tokenStats.rounds > 0" class="ctx-foot">
-          <!-- 第一行：累计消耗（算钱用） -->
+          <!-- 第一行：累计消耗（算钱用）+ 摘要胶囊 -->
           <span class="ctx-stat">
-            {{ tokenStats.rounds }}轮 · 累计 ↑{{ tokenStats.totalPrompt }} ↓{{ tokenStats.totalCompletion }} = {{ tokenStats.totalPrompt + tokenStats.totalCompletion }}
+            <span class="ctx-rounds">
+              <n-icon :size="11"><LayersOutline /></n-icon>
+              {{ tokenStats.rounds }}轮
+            </span>
+            <!-- 摘要胶囊：和轮次同属元信息，放一起 -->
+            <span
+              v-if="compactionSummary"
+              class="ctx-pill-compacted"
+              :title="`历史已摘要化（释放约 ${formatTokens(compactionTokens)} token）${compactionReleasedAt ? ' · ' + formatCompactTime(compactionReleasedAt) : ''}`"
+            >
+              <n-icon :size="11"><DocumentTextOutline /></n-icon>
+              摘要-{{ formatTokens(compactionTokens) }}
+            </span>
+            <span class="ctx-divider">·</span>
+            <span class="ctx-tokens">
+              <span class="ctx-tok-up">↑{{ formatTokens(tokenStats.totalPrompt) }}</span>
+              <span class="ctx-tok-down">↓{{ formatTokens(tokenStats.totalCompletion) }}</span>
+            </span>
           </span>
           <!-- 第二行：上下文占用进度条（防溢出用，对齐模型 maxContextTokens） -->
           <div v-if="contextLimit > 0" class="ctx-progress" :class="{ warn: contextWarn }">
@@ -1475,15 +1494,8 @@ function onInputKeydown(e: KeyboardEvent) {
             <div class="ctx-progress-bar">
               <div class="ctx-progress-fill" :style="{ width: contextPercent + '%' }"></div>
             </div>
-            <span class="ctx-progress-text">{{ contextUsed }} / {{ contextLimit }} ({{ contextPercent }}%)</span>
-            <!-- 压缩胶囊：嵌在进度条行末尾，不独占行 -->
-            <span
-              v-if="compactionSummary"
-              class="ctx-pill-compacted"
-              :title="`历史已摘要化（释放约 ${formatTokens(compactionTokens)} token）${compactionReleasedAt ? ' · ' + formatCompactTime(compactionReleasedAt) : ''}`"
-            >
-              摘要-{{ formatTokens(compactionTokens) }}
-            </span>
+            <span class="ctx-progress-text"><span class="used">{{ formatTokens(contextUsed) }}</span> / {{ formatTokens(contextLimit) }}</span>
+            <span class="ctx-progress-pct">{{ contextPercent }}%</span>
           </div>
         </div>
       </div>
@@ -1550,19 +1562,28 @@ function onInputKeydown(e: KeyboardEvent) {
 
 .agent-panel {
   position: fixed; width: 480px; height: 660px; z-index: 10001;
-  background: #fafaf9; border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(28,25,23,0.18), 0 0 0 1px rgba(28,25,23,0.06);
+  background: #fafaf9; border-radius: 16px;
+  /* 双层阴影：贴近细描边 + 远距离柔光，悬浮稳重感 */
+  box-shadow:
+    0 0 0 1px rgba(28,25,23,0.08),
+    0 4px 12px rgba(28,25,23,0.08),
+    0 24px 56px rgba(28,25,23,0.16);
   display: flex; flex-direction: column; overflow: visible;
 }
-.head-mini-info { font-size: 10px; color: #a8a29e; font-weight: 400; margin-left: 4px; }
+.head-mini-info { font-size: 10.5px; color: #a8a29e; font-weight: 500; margin-left: 4px; padding: 1px 6px; background: #e7e5e4; border-radius: 4px; }
 
-.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; background: #f5f5f4; border-bottom: 1px solid #e7e5e4; border-radius: 12px 12px 0 0; cursor: grab; user-select: none; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #f0eeec; border-bottom: 1px solid #e7e5e4; border-radius: 16px 16px 0 0; cursor: grab; user-select: none; }
 .panel-head:active { cursor: grabbing; }
-.head-title { display: inline-flex; align-items: center; gap: 8px; }
-.head-icon { color: #c15f3c; }
-.head-name { font-size: 13.5px; font-weight: 600; color: #1c1917; }
+.head-title { display: inline-flex; align-items: center; gap: 9px; }
+/* 图标容器：淡土橙底色圆角块，像 Claude logo 容器，比裸图标更有质感 */
+.head-icon {
+  width: 26px; height: 26px; border-radius: 8px;
+  background: rgba(193,95,60,0.12); color: #c15f3c;
+  display: flex; align-items: center; justify-content: center;
+}
+.head-name { font-size: 14px; font-weight: 700; color: #1c1917; letter-spacing: -0.01em; }
 .head-actions { display: flex; gap: 2px; }
-.head-btn { width: 26px; height: 26px; border: none; background: transparent; color: #78716c; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
+.head-btn { width: 28px; height: 28px; border: none; background: transparent; color: #78716c; cursor: pointer; border-radius: 7px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
 .head-btn:hover { background: #e7e5e4; color: #1c1917; }
 .head-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -1597,7 +1618,8 @@ function onInputKeydown(e: KeyboardEvent) {
 
 .panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 14px; display: flex; flex-direction: column-reverse; gap: 10px; background: #fafaf9; }
 .panel-body::-webkit-scrollbar { width: 6px; }
-.panel-body::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
+.panel-body::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; transition: background 0.15s; }
+.panel-body::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
 .panel-body::-webkit-scrollbar-track { background: transparent; }
 /* 历史加载占位 */
 .history-loading { margin: auto; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: #a8a29e; font-size: 12px; }
@@ -1651,7 +1673,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .bubble-ai { background: #ffffff; color: #1c1917; border: 1px solid #e7e5e4; border-top-left-radius: 4px; display: inline-block; }
 
 /* 单轮 token 小字 */
-.item-usage { font-size: 10px; color: #a8a29e; margin-top: 3px; padding: 0 4px; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
+.item-usage { font-size: 10.5px; color: #a8a29e; margin-top: 3px; padding: 0 4px; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
 
 /* 思考折叠块 */
 .think-block { width: 100%; border-radius: 8px; border-top-left-radius: 4px; background: #f5f5f4; border: 1px solid #e7e5e4; overflow: hidden; margin-bottom: 5px; }
@@ -1696,13 +1718,22 @@ function onInputKeydown(e: KeyboardEvent) {
 @keyframes blink { 50% { opacity: 0; } }
 
 /* 底部 */
-.panel-footer { border-top: 1px solid #e7e5e4; background: #fafaf9; border-radius: 0 0 12px 12px; }
+.panel-footer { border-top: 1px solid #e7e5e4; background: #fafaf9; border-radius: 0 0 16px 16px; }
 .quick-cmds { display: flex; gap: 6px; padding: 8px 12px 0; align-items: center; min-width: 0; overflow: hidden; }
 .quick-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #e7e5e4; background: #ffffff; color: #57534e; font-size: 11px; border-radius: 6px; cursor: pointer; transition: all 0.15s; flex-shrink: 0; height: 26px; box-sizing: border-box; }
 .quick-btn:hover { background: #f5f5f4; border-color: #d6d3d1; color: #1c1917; }
 .quick-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .panel-input { display: flex; gap: 8px; padding: 8px 12px; align-items: flex-end; position: relative; }
+/* n-input Claude 风格：柔和边框 + 聚焦时土橙光环 */
+.panel-input :deep(.n-input) { --n-border-radius: 10px !important; }
+.panel-input :deep(.n-input .n-input__border),
+.panel-input :deep(.n-input .n-input__state-border) { border-width: 1px !important; border-color: #e7e5e4 !important; border-radius: 10px !important; }
+.panel-input :deep(.n-input--focus .n-input__state-border) {
+  border-color: #c15f3c !important;
+  box-shadow: 0 0 0 3px rgba(193,95,60,0.12) !important;
+}
+.panel-input :deep(.n-input__textarea-el) { font-size: 13px; line-height: 1.6; }
 
 /* 斜杠命令菜单 */
 .slash-menu { position: absolute; bottom: calc(100% + 4px); left: 12px; right: 12px; background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; box-shadow: 0 8px 24px rgba(28,25,23,0.12); z-index: 10010; overflow: hidden; }
@@ -1725,31 +1756,71 @@ function onInputKeydown(e: KeyboardEvent) {
 }
 
 /* 底部 token 统计 + 上下文进度条 */
-.ctx-foot { padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 4px; }
-.ctx-stat { font-size: 10px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
-.ctx-progress { display: flex; align-items: center; gap: 6px; }
-.ctx-progress-label { font-size: 9.5px; color: #a8a29e; flex-shrink: 0; }
-.ctx-progress-bar { width: 90px; height: 5px; background: #e7e5e4; border-radius: 3px; overflow: hidden; flex-shrink: 0; }
-.ctx-progress-fill { height: 100%; background: #c15f3c; border-radius: 3px; transition: width 0.3s ease, background 0.2s; }
-.ctx-progress.warn .ctx-progress-fill { background: #dc2626; }
-.ctx-progress-text { font-size: 9.5px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; white-space: nowrap; margin-left: auto; }
-.ctx-progress.warn .ctx-progress-text { color: #dc2626; }
-
-/* 压缩胶囊：嵌在进度条行末尾，不独占行 */
-.ctx-pill-compacted {
-  flex-shrink: 0;
-  font-size: 9px;
-  color: #16a34a;
-  background: rgba(22, 163, 74, 0.1);
-  border: 1px solid rgba(22, 163, 74, 0.25);
-  padding: 1px 6px;
-  border-radius: 8px;
-  margin-left: 4px;
-  white-space: nowrap;
-  cursor: help;
-  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-  line-height: 1.4;
+.ctx-foot { padding: 4px 14px 9px; display: flex; flex-direction: column; gap: 5px; }
+.ctx-stat { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: #a8a29e; font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
+/* 统一胶囊规范：固定高度 18px，圆角 5px，inline-flex 居中，n-icon line-height:0 消除间隙。
+   两个胶囊视觉对等：淡背景 + 同色细边框 + 深文字，呼应主题色家族。 */
+.ctx-rounds, .ctx-pill-compacted {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 18px; padding: 0 7px; box-sizing: border-box;
+  border-radius: 5px; font-size: 10px; font-weight: 600; line-height: 1;
+  white-space: nowrap; flex-shrink: 0;
+  border: 1px solid transparent;
 }
+.ctx-rounds :deep(.n-icon),
+.ctx-pill-compacted :deep(.n-icon) { line-height: 0; flex-shrink: 0; }
+/* 轮次：土橙主色家族 */
+.ctx-rounds {
+  background: rgba(193,95,60,0.08);
+  color: #b3512d;
+  border-color: rgba(193,95,60,0.22);
+}
+/* 摘要：暖琥珀次色家族，与轮次区分但同属暖色系 */
+.ctx-pill-compacted {
+  background: rgba(120,113,108,0.07);
+  color: #57534e;
+  border-color: rgba(120,113,108,0.2);
+  font-weight: 500;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  cursor: help;
+}
+.ctx-divider { color: #d6d3d1; }
+.ctx-tokens { display: inline-flex; gap: 6px; }
+.ctx-tok-up { color: #78716c; }
+.ctx-tok-down { color: #a8a29e; }
+/* 上下文进度条：单行紧凑，无底色，进度条 flex 自适应。
+   结构：标签 | 进度条…… | 当前/上限 | 百分比胶囊 */
+.ctx-progress { display: flex; align-items: center; gap: 8px; }
+.ctx-progress-label {
+  font-size: 10.5px; color: #a8a29e; font-weight: 600; flex-shrink: 0;
+}
+.ctx-progress.warn .ctx-progress-label { color: #dc2626; }
+.ctx-progress-bar {
+  flex: 1; min-width: 40px; height: 4px;
+  background: rgba(28,25,23,0.08); border-radius: 999px; overflow: hidden;
+}
+.ctx-progress-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #d4724e, #c15f3c);
+  box-shadow: 0 0 0 1px rgba(193,95,60,0.08);
+  transition: width 0.4s cubic-bezier(0.16,1,0.3,1), background 0.2s;
+}
+.ctx-progress.warn .ctx-progress-fill {
+  background: linear-gradient(90deg, #f87171, #dc2626);
+}
+.ctx-progress-text {
+  font-size: 10px; color: #a8a29e; flex-shrink: 0;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.ctx-progress-text .used { color: #57534e; font-weight: 600; }
+.ctx-progress.warn .ctx-progress-text .used { color: #dc2626; }
+.ctx-progress-pct {
+  font-size: 10px; color: #c15f3c; font-weight: 700; flex-shrink: 0;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+}
+.ctx-progress.warn .ctx-progress-pct { color: #dc2626; }
 
 .panel-enter-active, .panel-leave-active { transition: opacity 0.25s cubic-bezier(0.16,1,0.3,1), transform 0.25s cubic-bezier(0.16,1,0.3,1); }
 .panel-enter-from, .panel-leave-to { opacity: 0; transform: translateY(16px) scale(0.94); }
