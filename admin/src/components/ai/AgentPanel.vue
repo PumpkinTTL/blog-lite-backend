@@ -293,12 +293,55 @@ interface RenderItem {
   toolProgress?: string
 }
 const renderItems = ref<RenderItem[]>([])
-// column-reverse 布局下，DOM 第一个元素显示在视觉底部。
-// 为保持"旧消息在上、新消息在下"，渲染顺序需反转：最新的（数组末尾）放在 DOM 最前。
-const reversedRenderItems = computed(() => [...renderItems.value].reverse())
+// === 窗口化渲染（virtualization）：只渲染可视区附近的条目，其余靠 spacer 撑高。
+// renderItems 保持正序（时间正序，数组末尾=最新）。正常 column 布局下最新在视觉底部。
+// 不动 renderItems 数组和 reactive 对象引用，只做视图层切片。
 const scrollBody = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const thinkExpanded = ref<Set<string>>(new Set())
+
+// 窗口配置：可视区前后各留 BUFFER 条缓冲，避免滚动时频繁重建
+const WINDOW_HALF = 15          // 单侧缓冲条数
+// 高度估算（未测量前的兜底值）：user 气泡 / assistant markdown / tool 卡片
+const EST_HEIGHT: Record<string, number> = { user: 56, assistant: 160, tool: 72 }
+const DEFAULT_EST = 100
+
+// 窗口索引范围 [start, end)
+const winStart = ref(0)
+const winEnd = ref(0)
+// 真实高度缓存：id → 测得的高度（ResizeObserver 填充）
+const itemHeights = ref<Record<string, number>>({})
+// 估算单条高度：优先用实测值，否则按 kind 估算
+function estHeightOf(item: RenderItem): number {
+  const measured = itemHeights.value[item.id]
+  if (measured) return measured
+  return EST_HEIGHT[item.kind] ?? DEFAULT_EST
+}
+// 上方 spacer 高度（winStart 之前所有条目的估算高度之和）
+const aboveHeight = computed(() => {
+  let h = 0
+  for (let i = 0; i < winStart.value; i++) h += estHeightOf(renderItems.value[i])
+  return h
+})
+// 下方 spacer 高度（winEnd 之后所有条目）
+const belowHeight = computed(() => {
+  let h = 0
+  for (let i = winEnd.value; i < renderItems.value.length; i++) h += estHeightOf(renderItems.value[i])
+  return h
+})
+// 可视区条目切片。流式中的 item（streaming===true）强制纳入窗口末尾，避免流式回调写入但无渲染。
+const visibleItems = computed(() => {
+  let end = winEnd.value
+  // pin 流式 item：若最后一条正在流式，确保它在窗口内
+  const lastIdx = renderItems.value.length - 1
+  if (lastIdx >= 0) {
+    const last = renderItems.value[lastIdx]
+    if (last.streaming && lastIdx >= end) end = lastIdx + 1
+  }
+  return renderItems.value.slice(winStart.value, end)
+})
+// 记录当前是否贴底（流式时只在贴底才 auto-scroll，避免打断用户看历史）
+let stickToBottom = true
 
 /**
  * 输入框自适应高度：替代 naive-ui n-input 的 autosize。
@@ -842,11 +885,21 @@ async function togglePanel() {
   open.value = !open.value
   if (open.value) {
     ensureDefaultPos()
-    // 先让面板骨架渲染出来（transition 先播），再异步初始化/加载历史，
-    // 避免历史消息的 MarkdownRender 同步渲染卡住首帧。
     await nextTick()
-    if (scrollBody.value) scrollBody.value.scrollTop = 0
-    requestAnimationFrame(() => { initOnFirstOpen() })
+    // 首次打开有历史要异步加载，用 opening（opacity:0）消除渲染跳动；
+    // 再次打开历史已在内存，无需 opening（直接显示）。
+    const isFirst = !inited
+    if (isFirst) scrollBody.value?.classList.add('opening')
+    updateWindow()
+    requestAnimationFrame(() => {
+      initOnFirstOpen().finally(() => {
+        nextTick(() => {
+          if (scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+          updateWindow()
+          if (isFirst) scrollBody.value?.classList.remove('opening')
+        })
+      })
+    })
   }
 }
 
@@ -896,12 +949,12 @@ async function handleCompact() {
       selectedModel.value ?? undefined,
       (tok) => {
         compactItem.replyText = (compactItem.replyText ?? '') + tok
-        scrollToBottom()
+        maybeStickBottom()
       },
       (think) => {
         compactItem.thinkText = (compactItem.thinkText ?? '') + think
         thinkExpanded.value.add(compactItem.id)
-        scrollToBottom()
+        maybeStickBottom()
       },
     )
     compactItem.streaming = false
@@ -1009,7 +1062,7 @@ async function handleSend() {
         buildContext(),
         (tok) => {
           assistantItem.replyText = (assistantItem.replyText ?? '') + tok
-          scrollToBottom()
+          maybeStickBottom()
         },
         () => {
           // 收到 tool_calls 事件时不创建卡片，留到执行循环按序创建
@@ -1018,7 +1071,7 @@ async function handleSend() {
         (think) => {
           assistantItem.thinkText = (assistantItem.thinkText ?? '') + think
           thinkExpanded.value.add(assistantItem.id)
-          scrollToBottom()
+          maybeStickBottom()
         },
         (usage: AiUsage) => {
           // 记录单步真实 usage（agent 一轮可能多步，循环结束才提交本轮）
@@ -1166,6 +1219,7 @@ async function loadHistory() {
 
 function rebuildRenderFromHistory() {
   renderItems.value = []
+  itemHeights.value = {}   // 历史重建生成新 id，清空旧高度缓存
   thinkExpanded.value.clear()
   const toolResults = new Map<string, string>()
   for (const m of messages.value) {
@@ -1217,7 +1271,7 @@ async function persistConversation(newPostId?: number): Promise<void> {
 
 defineExpose({ persistConversation })
 
-onMounted(() => { document.addEventListener('click', closeDropdowns) })
+onMounted(() => { document.addEventListener('click', closeDropdowns); ensureResizeObserver() })
 // 历史加载懒到首次打开面板时触发（避免进页面即发请求，且与打开动作合并为一次）。
 // providers 同理懒加载。首次打开标志位保证只执行一次。
 let inited = false
@@ -1241,58 +1295,145 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)
   document.removeEventListener('click', closeDropdowns)
+  resizeObserver?.disconnect()
   // 离开页面/卸载前把当前对话落库，避免未点"保存文章"就关闭导致丢失
   void persistConversation()
 })
 function closeDropdowns() { slashMenuOpen.value = false }
 
+// === 窗口化高度测量：ResizeObserver 监听已渲染条目的真实高度 ===
+// 实测值写入 itemHeights，aboveHeight/belowHeight 用它修正滚动条长度。
+// 节流：rAF 合并同一帧的多次回调，避免流式时高频触发。
+let measureScheduled = false
+let resizeObserver: ResizeObserver | null = null
+function ensureResizeObserver() {
+  if (resizeObserver || typeof ResizeObserver === 'undefined') return
+  resizeObserver = new ResizeObserver(() => {
+    if (measureScheduled) return
+    measureScheduled = true
+    requestAnimationFrame(() => {
+      measureScheduled = false
+      const el = scrollBody.value
+      if (!el) return
+      // 遍历当前渲染的 msg 元素，读 offsetHeight 更新缓存
+      const nodes = el.querySelectorAll<HTMLElement>('[data-id]')
+      let changed = false
+      nodes.forEach((node) => {
+        const id = node.dataset.id
+        if (!id) return
+        const h = node.offsetHeight
+        if (h && itemHeights.value[id] !== h) {
+          itemHeights.value[id] = h
+          changed = true
+        }
+      })
+      // 高度变化时（markdown 渲染完撑高）重算窗口，保证 spacer 同步
+      if (changed) updateWindow()
+    })
+  })
+}
+// observe/unobserve 由 panel-body 内 visibleItems 变化驱动（watch visibleItems）
+watch(visibleItems, async () => {
+  await nextTick()
+  if (!resizeObserver || !scrollBody.value) return
+  // 重新 observe 当前渲染的 msg 元素（旧的已卸载会自动断开）
+  scrollBody.value.querySelectorAll<HTMLElement>('[data-id]').forEach((node) => {
+    resizeObserver!.observe(node)
+  })
+}, { flush: 'post' })
+
 function toggleThink(id: string) {
   if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)
   else thinkExpanded.value.add(id)
 }
+// 根据滚动位置更新窗口范围 [start, end)。
+// column 布局：scrollTop=0 在顶部（最旧），越大越靠底部（最新）。
+// 累加估算高度，找到"视口中心"对应的条目索引，前后各取 WINDOW_HALF。
+function updateWindow() {
+  const el = scrollBody.value
+  if (!el) return
+  const items = renderItems.value
+  const n = items.length
+  if (n === 0) { winStart.value = 0; winEnd.value = 0; return }
+  // 视口中心对应的滚动偏移
+  const viewportCenter = el.scrollTop + el.clientHeight / 2
+  // 累加高度找到视口中心落在哪个条目
+  let acc = 0
+  let centerIdx = Math.floor(n / 2)  // 兜底
+  for (let i = 0; i < n; i++) {
+    const h = estHeightOf(items[i])
+    if (acc + h >= viewportCenter) { centerIdx = i; break }
+    acc += h
+    centerIdx = i
+  }
+  const start = Math.max(0, centerIdx - WINDOW_HALF)
+  const end = Math.min(n, centerIdx + WINDOW_HALF)
+  // 首次或条目很少时全量渲染
+  if (n <= WINDOW_HALF * 2) {
+    winStart.value = 0
+    winEnd.value = n
+  } else {
+    // 贴底时（流式/新消息/打开历史）强制窗口滑到末尾，确保最新条目可见
+    if (stickToBottom) {
+      winStart.value = Math.max(0, n - WINDOW_HALF * 2)
+      winEnd.value = n
+    } else {
+      winStart.value = start
+      winEnd.value = end
+    }
+  }
+}
 async function scrollToBottom() {
   await nextTick()
   if (!scrollBody.value) return
-  // column-reverse 布局下，scrollTop=0 即"最新消息处（视觉底部）"。
-  // 新消息追加后默认就在底部，这里只需把用户拉回最新位置。
-  scrollBody.value.scrollTop = 0
+  // column 布局：滚到底 = scrollTop 最大值
+  scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+  stickToBottom = true
+  // 直接设 scrollTop 不触发 scroll 事件，手动更新窗口覆盖末尾新条目
+  updateWindow()
+}
+// 流式时调用：仅当用户当前贴底（stickToBottom）才自动滚动，
+// 用户向上看历史时不打断。比 column-reverse 时代的无脑 scrollToBottom 更友好。
+function maybeStickBottom() {
+  if (!stickToBottom) return
+  if (!scrollBody.value) return
+  scrollBody.value.scrollTop = scrollBody.value.scrollHeight
 }
 
-// 双向浮动按钮：根据用户滚动方向，自动切换"回顶部"/"回底部"
-// 注意：panel-body 用 column-reverse，Chromium 下 scrollTop 语义为：
-//   scrollTop = 0      → 视觉底部（最新消息）
-//   scrollTop 为负数   → 向上看历史（越负越靠上）
-// 视觉滚动方向与 scrollTop 变化：
-//   视觉向下滚（看更新）= scrollTop 变大（趋向 0）
-//   视觉向上滚（看历史）= scrollTop 变小（更负）
-// 按钮箭头跟随用户滚动方向（直觉），点击则回到相反端。
+// 双向浮动按钮 + 窗口更新（column 布局，scrollTop≥0 标准语义）。
+//   scrollTop = 0            → 视觉顶部（最旧消息）
+//   scrollTop = scrollHeight → 视觉底部（最新消息）
+//   贴底（nearBottom）时记录 stickToBottom，流式 auto-scroll 只在贴底时生效。
+// 按钮箭头跟随用户视觉滚动方向（直觉），点击则回到相反端。
 const showBackBtn = ref(false)
-// arrowDown 表示箭头朝向，跟随用户视觉滚动方向，点击行为也按此方向
 const arrowDown = ref(true)
 let lastScrollTop = 0
 function onScroll() {
-  if (!scrollBody.value) return
   const el = scrollBody.value
+  if (!el) return
   const top = el.scrollTop
   const max = el.scrollHeight - el.clientHeight
-  const nearBottom = top > -60            // 靠近最新
-  const nearTop = top <= -(max - 60)      // 靠近最旧
-  const scrollingUp = top < lastScrollTop // 视觉向上滚
+  const nearBottom = top >= max - 60     // 靠近最新（底部）
+  const nearTop = top <= 60              // 靠近最旧（顶部）
+  const scrollingDown = top > lastScrollTop  // 视觉向下滚（看更新）
   lastScrollTop = top
+  stickToBottom = nearBottom
+  // 更新窗口范围（窗口化核心）
+  updateWindow()
   if (max <= 0) { showBackBtn.value = false; return }
   if (nearBottom) { showBackBtn.value = false; return }
-  if (nearTop && scrollingUp) { showBackBtn.value = false; return }
-  // 视觉向下滚 → 箭头朝下（点击回最新）；视觉向上滚 → 箭头朝上（点击回顶部）
-  arrowDown.value = !scrollingUp
+  if (nearTop && !scrollingDown) { showBackBtn.value = false; return }
+  // 视觉向下滚 → 箭头朝下（点击回最新）；向上滚 → 箭头朝上（点击回最旧）
+  arrowDown.value = scrollingDown
   showBackBtn.value = true
 }
 function onBackBtnClick() {
   if (!scrollBody.value) return
-  // 点击行为 = 箭头方向：向下箭头→滚向最新(0)；向上箭头→滚向最旧(-max)
+  // 点击行为 = 箭头方向：向下箭头→滚向最新(底部)；向上箭头→滚向最旧(顶部)
   if (arrowDown.value) {
-    scrollBody.value.scrollTo({ top: 0, behavior: 'smooth' })
+    scrollBody.value.scrollTo({ top: scrollBody.value.scrollHeight, behavior: 'smooth' })
   } else {
-    scrollBody.value.scrollTo({ top: -scrollBody.value.scrollHeight, behavior: 'smooth' })
+    scrollBody.value.scrollTo({ top: 0, behavior: 'smooth' })
   }
 }
 function onInputKeydown(e: KeyboardEvent) {
@@ -1338,7 +1479,7 @@ function onInputKeydown(e: KeyboardEvent) {
         </div>
       </div>
 
-      <!-- 消息流 -->
+      <!-- 消息流（窗口化：上下 spacer 撑高，中间只渲染 visibleItems 切片） -->
       <div ref="scrollBody" class="panel-body" @scroll="onScroll">
         <!-- 历史加载中 -->
         <div v-if="historyLoading" class="history-loading">
@@ -1357,9 +1498,11 @@ function onInputKeydown(e: KeyboardEvent) {
           <p class="empty-hint-slash">输入 <code>/</code> 查看快捷命令</p>
         </div>
 
-        <template v-for="item in reversedRenderItems" :key="item.id">
+        <!-- 上方占位：撑起 winStart 之前所有条目的估算高度，保证滚动条正确 -->
+        <div v-if="aboveHeight > 0" class="win-spacer" :style="{ height: aboveHeight + 'px' }"></div>
+        <template v-for="item in visibleItems" :key="item.id">
           <!-- 用户消息：靠右，头像在气泡右边 -->
-          <div v-if="item.kind === 'user'" class="msg msg-user">
+          <div v-if="item.kind === 'user'" class="msg msg-user" :data-id="item.id">
             <div class="bubble-wrap">
               <div class="bubble bubble-user">{{ item.text }}</div>
             </div>
@@ -1367,7 +1510,7 @@ function onInputKeydown(e: KeyboardEvent) {
           </div>
 
           <!-- AI 消息：靠左，头像在气泡左边 -->
-          <div v-else-if="item.kind === 'assistant'" class="msg msg-ai">
+          <div v-else-if="item.kind === 'assistant'" class="msg msg-ai" :data-id="item.id">
             <div class="avatar avatar-ai" :class="{ thinking: item.streaming }">
               <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
             </div>
@@ -1409,7 +1552,7 @@ function onInputKeydown(e: KeyboardEvent) {
           </div>
 
           <!-- 工具调用：带头像，与 AI 文本气泡结构一致（avatar + content） -->
-          <div v-else class="msg msg-tool">
+          <div v-else class="msg msg-tool" :data-id="item.id">
             <div class="avatar avatar-ai avatar-tool">
               <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
             </div>
@@ -1418,9 +1561,11 @@ function onInputKeydown(e: KeyboardEvent) {
             </div>
           </div>
         </template>
+        <!-- 下方占位：撑起 winEnd 之后所有条目的估算高度 -->
+        <div v-if="belowHeight > 0" class="win-spacer" :style="{ height: belowHeight + 'px' }"></div>
       </div>
 
-      <!-- 双向浮动按钮：放在 panel-body 外，用 absolute 定位，不受 column-reverse 影响 -->
+      <!-- 双向浮动按钮：放在 panel-body 外，用 absolute 定位，不受列表布局影响 -->
       <transition name="back-top">
         <button
           v-if="showBackBtn"
@@ -1806,12 +1951,17 @@ function onInputKeydown(e: KeyboardEvent) {
 .model-chip-name { color: var(--text-2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .model-chip:hover:not(:disabled) .model-chip-name { color: var(--accent); }
 
-/* 消息流：gap 加大到 16px，消息间有呼吸感；padding 16px 更宽松 */
-.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: flex; flex-direction: column-reverse; gap: 16px; background: var(--bg); }
+/* 消息流：正常 column 布局（scrollTop≥0 标准语义），gap 16px 呼吸感，padding 16px。
+   窗口化：上下用 spacer div 撑高，中间只渲染可视区条目。
+   .opening 打开瞬间 opacity:0，历史渲染完滚到底后再淡入，消除 column 下打开跳动。 */
+.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; background: var(--bg); transition: opacity 0.2s ease; }
+.panel-body.opening { opacity: 0; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: var(--text-6); border-radius: 3px; transition: background 0.15s; }
 .panel-body::-webkit-scrollbar-thumb:hover { background: var(--text-5); }
 .panel-body::-webkit-scrollbar-track { background: transparent; }
+/* 窗口化占位条：撑起非渲染区域的高度，flex-shrink:0 保证不被压缩 */
+.win-spacer { flex-shrink: 0; width: 100%; }
 /* 历史加载占位 */
 .history-loading { margin: auto; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: var(--text-5); font-size: 12px; }
 .history-loading .spin { animation: spin 0.9s linear infinite; }
