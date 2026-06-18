@@ -161,11 +161,15 @@ onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() 
           </div>
           <div class="kc clk" @click="router.push('/comments')">
             <span class="kl">待审评论</span>
-            <span class="kv">{{ fmt(stats.pendingCommentCount) }}</span>
+            <span class="kv" :class="{ muted: !stats.pendingCommentCount }">{{ fmt(stats.pendingCommentCount) }}</span>
           </div>
           <div v-if="donation && stats.donationCount > 0" class="kc clk" @click="router.push('/donations')">
             <span class="kl">捐赠</span>
-            <span class="kv">{{ donation.currency === 'CNY' ? '¥' : '$' }}{{ donation.amount }}</span>
+            <span class="kv accent">{{ donation.currency === 'CNY' ? '¥' : '$' }}{{ donation.amount }}</span>
+          </div>
+          <div v-else class="kc">
+            <span class="kl">捐赠</span>
+            <span class="kv muted">-</span>
           </div>
         </div>
 
@@ -258,6 +262,8 @@ onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() 
 .kc.clk:hover { box-shadow: 0 4px 16px rgba(15,23,42,0.08), 0 1px 3px rgba(15,23,42,0.04); transform: translateY(-1px); }
 .kl { font-size: 12px; font-weight: 500; color: var(--n-text-color-3); padding-left: 16px; }
 .kv { font-size: 28px; font-weight: 700; color: var(--n-text-color); line-height: 1; letter-spacing: -0.03em; }
+.kv.muted { color: var(--n-text-color-3); }
+.kv.accent { color: #059669; }
 
 /* charts */
 .sec { display: flex; align-items: center; gap: 16px; }
