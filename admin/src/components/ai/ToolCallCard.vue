@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
-import { CheckmarkCircle, CloseCircle, SyncCircle, ChevronDownOutline } from '@vicons/ionicons5'
 import type { AiToolCall } from '../../api/ai'
 
 type Status = 'pending' | 'running' | 'success' | 'error'
@@ -13,7 +12,7 @@ const props = defineProps<{
   progress?: string
 }>()
 
-// 折叠状态：running 时展开（看进度），success/error 后自动收起。用户仍可手动点开。
+// 折叠状态：running 时展开（看进度），success/error 后自动收起。
 const expanded = ref(props.status === 'running')
 watch(
   () => props.status,
@@ -21,8 +20,6 @@ watch(
 )
 
 // 是否为"实时流式完成"：挂载时已是 success 视为历史回放，不播揭示动画。
-// 只有 running→success 的实时转换才播逐条出现动画（首次见证）。
-// 历史/滚动重现的已完成卡片直接全量展示，避免 setInterval 重跑导致卡顿。
 const isLiveReveal = ref(props.status === 'running')
 
 // 工具名中文映射
@@ -51,48 +48,48 @@ const NAME_LABEL: Record<string, string> = {
 const label = computed(() => NAME_LABEL[props.call.function.name] || props.call.function.name)
 const isWebSearch = computed(() => props.call.function.name === 'web_search')
 
-// 参数解析为 key-value 数组（结构化展示）
+// 工具种类：读取/写入/搜索/其他
+const toolKind = computed(() => {
+  const n = props.call.function.name
+  if (n === 'web_search') return 'search'
+  if (n.startsWith('get_') || n === 'read_section_by_heading' || n === 'get_outline') return 'read'
+  if (n.startsWith('update_') || n.startsWith('append_') || n.startsWith('replace_') ||
+      n.startsWith('insert_') || n === 'find_and_replace' || n.startsWith('delete_') ||
+      n.startsWith('move_') || n === 'wrap_text' || n === 'deduplicate_lines') return 'write'
+  return 'tool'
+})
+
+// 参数解析为 key-value 数组
 type KV = { key: string; value: string }
 const argsList = computed(() => {
   try {
     const obj = JSON.parse(props.call.function.arguments || '{}')
-    const list: KV[] = Object.entries(obj).map(([k, v]) => ({
+    return Object.entries(obj).map(([k, v]) => ({
       key: k,
       value: typeof v === 'string' ? v : JSON.stringify(v),
-    }))
-    return list
+    })) as KV[]
   } catch {
-    return [{ key: '(原始)', value: props.call.function.arguments }]
+    return [{ key: '原始', value: props.call.function.arguments }]
   }
 })
 
-// 结果解析为 key-value 数组（非 web_search 工具用）
+// 结果解析（非 web_search）
 const resultList = computed(() => {
-  // web_search 用专属的卡片式列表，不走通用 kv 展示
-  if (isWebSearch.value) return [] as KV[]
-  if (!props.result) return [] as KV[]
+  if (isWebSearch.value || !props.result) return [] as KV[]
   try {
     const obj = JSON.parse(props.result)
-    const list: KV[] = Object.entries(obj).map(([k, v]) => ({
+    return Object.entries(obj).map(([k, v]) => ({
       key: k,
       value: typeof v === 'string' ? v : JSON.stringify(v),
-    }))
-    return list
+    })) as KV[]
   } catch {
-    return [{ key: '(原始)', value: props.result.slice(0, 200) }]
+    return [{ key: '原始', value: props.result.slice(0, 200) }]
   }
 })
 
-/* ============ web_search 专属：逐条渲染动画 ============ */
-type SearchResultItem = {
-  title: string
-  url: string
-  content: string
-  score: number
-}
-/** 已揭示的结果（逐条 push，驱动动画） */
+/* ============ web_search 专属 ============ */
+type SearchResultItem = { title: string; url: string; content: string; score: number }
 const revealedResults = ref<SearchResultItem[]>([])
-/** 搜索元信息（answer / responseTime / 总数） */
 const searchMeta = ref<{ answer: string | null; responseTime: number; total: number } | null>(null)
 let revealTimer: ReturnType<typeof setInterval> | null = null
 
@@ -100,19 +97,10 @@ function clearRevealTimer() {
   if (revealTimer) { clearInterval(revealTimer); revealTimer = null }
 }
 
-// 从 url 提取域名（卡片右下角显示来源）
 function domainOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return url.slice(0, 40)
-  }
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url.slice(0, 30) }
 }
 
-// watch result：success 时解析搜索结果。
-// - 实时流式完成（isLiveReveal）：启动逐条揭示动画，模拟"结果一条条出现"。
-// - 历史回放/滚动重现（挂载即 success）：直接全量展示，不启动 setInterval，
-//   避免每张卡片挂载都重跑定时器导致快速滚动卡顿。
 watch(
   () => [props.result, props.status] as const,
   ([result, status]) => {
@@ -125,28 +113,15 @@ watch(
     try {
       const parsed = JSON.parse(result)
       const all: SearchResultItem[] = Array.isArray(parsed.results) ? parsed.results : []
-      searchMeta.value = {
-        answer: parsed.answer ?? null,
-        responseTime: parsed.responseTime ?? 0,
-        total: all.length,
-      }
-      // 历史回放：直接全量，不播动画
-      if (!isLiveReveal.value) {
-        revealedResults.value = all
-        return
-      }
-      // 实时完成：逐条揭示动画（仅本次实时转换触发一次）
+      searchMeta.value = { answer: parsed.answer ?? null, responseTime: parsed.responseTime ?? 0, total: all.length }
+      if (!isLiveReveal.value) { revealedResults.value = all; return }
       revealedResults.value = []
       clearRevealTimer()
       let idx = 0
       revealTimer = setInterval(() => {
-        if (idx >= all.length) {
-          clearRevealTimer()
-          return
-        }
-        revealedResults.value.push(all[idx])
-        idx++
-      }, 150)
+        if (idx >= all.length) { clearRevealTimer(); return }
+        revealedResults.value.push(all[idx++])
+      }, 140)
     } catch {
       revealedResults.value = []
       searchMeta.value = null
@@ -157,320 +132,542 @@ watch(
 
 onBeforeUnmount(clearRevealTimer)
 
-// 截断长文本用于摘要展示
-function truncate(s: string, max: number): string {
+function truncate(s: string, max: number) {
   return s.length > max ? s.slice(0, max) + '…' : s
 }
-
-const statusIcon = computed(() => {
-  switch (props.status) {
-    case 'running': return SyncCircle
-    case 'success': return CheckmarkCircle
-    case 'error': return CloseCircle
-    default: return SyncCircle
-  }
-})
-
-const statusColor = computed(() => {
-  switch (props.status) {
-    case 'running': return 'var(--accent)'
-    case 'success': return 'var(--success)'
-    case 'error': return 'var(--warn)'
-    default: return 'var(--text-5)'
-  }
-})
 
 const statusText = computed(() => {
   switch (props.status) {
     case 'running': return '执行中'
     case 'success': return '完成'
-    case 'error': return '失败'
-    default: return '等待'
+    case 'error':   return '失败'
+    default:        return '等待'
   }
 })
 </script>
 
 <template>
-  <div class="tool-card" :class="`is-${status}`">
-    <!-- 头部：工具调用标签 + 状态点 + 工具名 + 状态 -->
-    <div class="tool-head" @click="expanded = !expanded">
-      <span v-if="status !== 'success'" class="tool-call-label">
-        <i class="ico tool-label-icon" :style="{ fontSize: 11 + 'px' }"><component :is="statusIcon" /></i>
-        <span>工具调用</span>
+  <!-- 与 think-block 同族：surface-3 底 + border + border-radius，无侧边彩条 -->
+  <div class="tc-card" :class="`is-${status}`">
+
+    <!-- 头部：点击折叠/展开 -->
+    <div class="tc-head" @click="expanded = !expanded">
+
+      <!-- 工具类型图标（纯内联 SVG，无外部依赖） -->
+      <span class="tc-icon-wrap" :class="`kind-${toolKind}`">
+        <!-- 联网搜索 -->
+        <svg v-if="toolKind === 'search'" viewBox="0 0 20 20" fill="none">
+          <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M13 13l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <!-- 读取 -->
+        <svg v-else-if="toolKind === 'read'" viewBox="0 0 20 20" fill="none">
+          <rect x="4" y="3" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M7 7h6M7 10h6M7 13h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        <!-- 写入/编辑 -->
+        <svg v-else-if="toolKind === 'write'" viewBox="0 0 20 20" fill="none">
+          <path d="M13.5 3.5a2 2 0 0 1 2.828 2.828l-8.5 8.5L4 16l1.172-3.828 8.328-8.672z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+        <!-- 其他工具 -->
+        <svg v-else viewBox="0 0 20 20" fill="none">
+          <path d="M8 3a1 1 0 0 0-1 1v1.17A5 5 0 0 0 5 9.17V15a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9.17A5 5 0 0 0 13 5.17V4a1 1 0 0 0-1-1H8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M8 3v2M12 3v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        <!-- 状态角标 -->
+        <span class="tc-status-dot" :class="`dot-${status}`">
+          <!-- running：旋转圆弧 -->
+          <svg v-if="status === 'running'" viewBox="0 0 10 10" class="spin-svg">
+            <circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="16 6" stroke-linecap="round"/>
+          </svg>
+          <!-- success：对勾 -->
+          <svg v-else-if="status === 'success'" viewBox="0 0 10 10">
+            <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+          <!-- error：叉 -->
+          <svg v-else-if="status === 'error'" viewBox="0 0 10 10">
+            <path d="M3 3l4 4M7 3l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+          </svg>
+        </span>
       </span>
-      <span v-if="status !== 'success'" class="tool-status-dot" :style="{ background: statusColor }" :class="{ spinning: status === 'running' }" />
-      <span class="tool-name">{{ label }}</span>
-      <span class="tool-tag">{{ call.function.name }}</span>
-      <span class="tool-status-text" :style="{ color: statusColor }">
-        <i class="ico" :style="{ fontSize: 12 + 'px' }"><component :is="statusIcon" /></i>
-        {{ statusText }}
-      </span>
-      <i class="ico tool-chevron" :class="{ rotated: expanded }" :style="{ fontSize: 12 + 'px' }">
-        <ChevronDownOutline />
-      </i>
+
+      <!-- 工具名 + 类型标签 -->
+      <div class="tc-title-wrap">
+        <span class="tc-name">{{ label }}</span>
+        <span class="tc-sub">{{ isWebSearch ? '联网搜索' : '工具调用' }}</span>
+      </div>
+
+      <!-- 状态文字 -->
+      <span class="tc-status-text" :class="`st-${status}`">{{ statusText }}</span>
+
+      <!-- 折叠箭头 -->
+      <svg class="tc-chevron" :class="{ rotated: expanded }" viewBox="0 0 16 16" fill="none">
+        <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
     </div>
 
-    <!-- 参数概览（展开才显示，折叠态更干净） -->
-    <div v-if="expanded && argsList.length > 0" class="tool-section">
-      <div v-for="arg in argsList" :key="arg.key" class="kv-row">
-        <span class="kv-key">{{ arg.key }}</span>
-        <span class="kv-val">{{ truncate(arg.value, 80) }}</span>
-      </div>
+    <!-- running 时底部细进度条 -->
+    <div v-if="status === 'running'" class="tc-progress-bar">
+      <div class="tc-progress-fill"></div>
     </div>
 
-    <!-- 流式进度（仅 running 期间，如 web_search 的"正在搜索…"） -->
-    <div v-if="progress && status === 'running'" class="tool-section tool-progress-section">
-      <div class="kv-row">
-        <span class="kv-key">进度</span>
-        <span class="kv-val kv-progress">{{ progress }}</span>
-      </div>
+    <!-- 流式进度文本（web_search "正在搜索…"） -->
+    <div v-if="progress && status === 'running'" class="tc-progress-label">
+      <span class="tc-blink-dot"></span>
+      {{ progress }}
     </div>
 
-    <!-- web_search 专属：紧凑卡片式结果，逐条揭示动画 -->
-    <div v-if="isWebSearch && status === 'success' && searchMeta" class="tool-section tool-search-section">
-      <div class="search-meta">
-        共 {{ searchMeta.total }} 条{{ searchMeta.responseTime ? ` · ${searchMeta.responseTime}s` : '' }}
-      </div>
-      <transition-group name="search-item" tag="div" class="search-list">
-        <a
-          v-for="(r, i) in revealedResults"
-          :key="r.url || i"
-          :href="r.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="search-item"
-          :title="r.title"
-        >
-          <span class="search-item-main">
-            <span class="search-item-title">{{ truncate(r.title || '(无标题)', 44) }}</span>
-            <span class="search-item-domain">{{ domainOf(r.url) }}</span>
-          </span>
-          <span v-if="r.content" class="search-item-snippet">{{ truncate(r.content, 90) }}</span>
-        </a>
-      </transition-group>
-    </div>
+    <!-- ===== 展开内容 ===== -->
+    <div v-if="expanded" class="tc-body">
 
-    <!-- 其他工具：通用 key-value 结果展示 -->
-    <div v-else-if="!isWebSearch && resultList.length > 0" class="tool-section tool-result-section">
-      <div v-for="r in resultList" :key="r.key" class="kv-row">
-        <span class="kv-key">{{ r.key }}</span>
-        <span class="kv-val">{{ truncate(r.value, 80) }}</span>
-      </div>
-    </div>
-
-    <!-- 展开详情（靠 expanded 控制）：id + 完整参数/结果 JSON -->
-    <div v-if="expanded" class="tool-detail">
-      <div class="detail-row">
-        <span class="detail-label">call_id</span>
-        <code class="detail-val">{{ call.id || '(无)' }}</code>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">参数（原始）</span>
-      </div>
-      <pre class="detail-code">{{ call.function.arguments || '{}' }}</pre>
-      <template v-if="result">
-        <div class="detail-row">
-          <span class="detail-label">结果（原始）</span>
+      <!-- 参数 -->
+      <div v-if="argsList.length > 0" class="tc-section">
+        <div class="tc-section-title">参数</div>
+        <div class="tc-kv-block">
+          <div v-for="arg in argsList" :key="arg.key" class="tc-kv-row">
+            <span class="tc-kv-key">{{ arg.key }}</span>
+            <span class="tc-kv-val">{{ truncate(arg.value, 120) }}</span>
+          </div>
         </div>
-        <pre class="detail-code">{{ result }}</pre>
-      </template>
+      </div>
+
+      <!-- web_search 结果 -->
+      <div v-if="isWebSearch && status === 'success' && searchMeta" class="tc-section">
+        <div class="tc-section-title">
+          搜索结果
+          <span class="tc-section-meta">{{ searchMeta.total }} 条{{ searchMeta.responseTime ? ` · ${searchMeta.responseTime}s` : '' }}</span>
+        </div>
+        <transition-group name="sr" tag="div" class="tc-search-list">
+          <a
+            v-for="(r, i) in revealedResults"
+            :key="r.url || i"
+            :href="r.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="tc-search-item"
+          >
+            <div class="tc-sr-top">
+              <span class="tc-sr-num">{{ i + 1 }}</span>
+              <span class="tc-sr-domain">{{ domainOf(r.url) }}</span>
+              <svg class="tc-sr-link" viewBox="0 0 12 12" fill="none">
+                <path d="M2 10L9 3M5 3h4v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="tc-sr-title">{{ truncate(r.title || '(无标题)', 50) }}</div>
+            <div v-if="r.content" class="tc-sr-snippet">{{ truncate(r.content, 90) }}</div>
+          </a>
+        </transition-group>
+      </div>
+
+      <!-- 其他工具结果 -->
+      <div v-else-if="!isWebSearch && resultList.length > 0" class="tc-section">
+        <div class="tc-section-title tc-section-title-ok">结果</div>
+        <div class="tc-kv-block">
+          <div v-for="r in resultList" :key="r.key" class="tc-kv-row">
+            <span class="tc-kv-key">{{ r.key }}</span>
+            <span class="tc-kv-val tc-kv-val-ok">{{ truncate(r.value, 120) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 原始数据（call_id + JSON） -->
+      <div class="tc-raw">
+        <span class="tc-raw-id-label">call_id</span>
+        <code class="tc-raw-id">{{ call.id || '(无)' }}</code>
+        <details class="tc-details">
+          <summary>原始参数 / 结果</summary>
+          <pre class="tc-pre">{{ call.function.arguments || '{}' }}</pre>
+          <template v-if="result">
+            <div class="tc-raw-id-label" style="margin-top:6px">结果</div>
+            <pre class="tc-pre">{{ result }}</pre>
+          </template>
+        </details>
+      </div>
+
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 通用图标容器（与 AgentPanel 的 .ico 定义一致）：font-size 驱动 svg，line-height:0 消除基线偏移 */
-.ico {
-  display: inline-flex; align-items: center; justify-content: center;
-  line-height: 0; font-style: normal; vertical-align: middle; flex-shrink: 0;
-}
-.ico :deep(svg) { width: 1em; height: 1em; display: block; }
+/* =====================================================================
+   ToolCallCard — 完全融入 AgentPanel 的 Claude 风暖灰体系
+   颜色层次：卡片(surface) > 展开区(surface-2) > 内容块(surface-3)
+   绝无侧边彩条，间距与 msg/think-block/bubble 全部统一。
+   ===================================================================== */
 
-.tool-card {
-  padding: 9px 11px;
+/* ---- 主卡片 -------------------------------------------------------- */
+.tc-card {
   border-radius: 8px;
+  border-top-left-radius: 4px;        /* 与 think-block、pixel-loader 保持同族 */
   background: var(--surface);
   border: 1px solid var(--border);
+  overflow: hidden;
   font-size: 12px;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
-.tool-card.is-running {
-  border-color: var(--accent);
-  background: var(--accent-bg);
-  /* 呼吸效果：外发光脉动，1.6s 一个周期 */
-  animation: tool-breath 1.6s ease-in-out infinite;
+.tc-card.is-running {
+  border-color: var(--accent-border);
+  animation: tc-breath 2s ease-in-out infinite;
 }
-@keyframes tool-breath {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(193, 95, 60, 0); }
-  50%      { box-shadow: 0 0 0 3px rgba(193, 95, 60, 0.15); }
+.tc-card.is-error {
+  border-color: rgba(220, 38, 38, 0.22);
 }
-/* running 时"工具调用"标签轻微明灭，增强呼吸感 */
-.tool-card.is-running .tool-call-label { animation: label-fade 1.6s ease-in-out infinite; }
-@keyframes label-fade {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.45; }
+@keyframes tc-breath {
+  0%, 100% { box-shadow: none; }
+  50%       { box-shadow: 0 0 0 3px var(--accent-soft); }
 }
-.tool-card.is-success { border-color: var(--border); }
-.tool-card.is-error { border-color: var(--warn); background: var(--error-bg); }
 
-/* 头部内"工具调用"标签（和工具名同一行） */
-.tool-call-label {
-  display: inline-flex;
+/* ---- 头部 ---------------------------------------------------------- */
+.tc-head {
+  display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 8px;
+  padding: 8px 10px 8px 10px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 8px 8px 0 0;
+  border-top-left-radius: 4px;
+  transition: background 0.14s;
+}
+.tc-head:hover { background: var(--surface-2); }
+
+/* ---- 工具类型图标 -------------------------------------------------- */
+.tc-icon-wrap {
+  position: relative;
+  width: 26px; height: 26px;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 7px;
+  background: var(--surface-3);
+  color: var(--text-4);
+  border: 1px solid var(--border);
+}
+.tc-icon-wrap.kind-read  { color: var(--text-3); }
+.tc-icon-wrap.kind-write {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+.tc-icon-wrap.kind-search {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+.tc-icon-wrap svg { width: 13px; height: 13px; display: block; flex-shrink: 0; }
+
+/* 状态角标（右下角小徽标） */
+.tc-status-dot {
+  position: absolute;
+  right: -4px; bottom: -4px;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+}
+.tc-status-dot svg { width: 8px; height: 8px; display: block; }
+.dot-running { color: var(--accent); }
+.dot-success { color: var(--success); }
+.dot-error   { color: var(--warn); }
+.dot-pending { opacity: 0; }
+.spin-svg { animation: tc-spin 1s linear infinite; }
+@keyframes tc-spin { to { transform: rotate(360deg); } }
+
+/* ---- 标题区 -------------------------------------------------------- */
+.tc-title-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tc-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tc-sub {
   font-size: 10px;
   color: var(--text-5);
-  padding-right: 6px;
-  margin-right: 2px;
-  border-right: 1px solid var(--border);
+  line-height: 1.2;
+  letter-spacing: 0.1px;
 }
-.tool-label-icon { color: var(--accent); }
 
-/* 头部 */
-.tool-head {
+/* ---- 状态文字（轻量胶囊，不抢眼但有辨识度） ----------------------- */
+.tc-status-text {
+  font-size: 10.5px;
+  font-weight: 500;
+  flex-shrink: 0;
+  color: var(--text-5);
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  letter-spacing: 0.1px;
+}
+.st-running {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+.st-success {
+  color: var(--success);
+  background: rgba(22,163,74,0.07);
+  border-color: rgba(22,163,74,0.16);
+}
+.st-error {
+  color: var(--warn);
+  background: rgba(220,38,38,0.07);
+  border-color: rgba(220,38,38,0.16);
+}
+
+/* ---- 折叠箭头 ------------------------------------------------------ */
+.tc-chevron {
+  width: 12px; height: 12px; flex-shrink: 0;
+  color: var(--text-6);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: block;
+}
+.tc-chevron.rotated { transform: rotate(180deg); }
+
+/* ---- running 进度条 ------------------------------------------------ */
+.tc-progress-bar {
+  height: 2px;
+  background: var(--surface-4);
+  overflow: hidden;
+}
+.tc-progress-fill {
+  height: 100%;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: tc-slide 1.5s ease-in-out infinite;
+}
+@keyframes tc-slide { 0% { transform: translateX(-180%); } 100% { transform: translateX(480%); } }
+
+/* ---- 进度文本 ------------------------------------------------------ */
+.tc-progress-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  cursor: pointer;
-  user-select: none;
-}
-.tool-status-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.tool-status-dot.spinning { animation: dot-pulse 1s ease-in-out infinite; }
-@keyframes dot-pulse { 50% { opacity: 0.4; } }
-.tool-name { font-weight: 600; color: var(--text); }
-.tool-tag {
-  font-size: 10px;
-  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--surface-3);
-  color: var(--text-4);
-  letter-spacing: 0.3px;
-}
-.tool-status-text {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  padding: 5px 9px;
   font-size: 11px;
-  font-weight: 500;
+  color: var(--accent);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border-soft);
 }
-.tool-chevron { color: var(--text-5); transition: transform 0.2s; }
-.tool-chevron.rotated { transform: rotate(180deg); }
+.tc-blink-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: tc-blink 1.1s ease-in-out infinite;
+}
+@keyframes tc-blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
 
-/* 参数/结果 区块 */
-.tool-section {
-  margin-top: 7px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--border);
+/* ---- 展开内容体 ---------------------------------------------------- */
+.tc-body {
+  padding: 9px 10px 11px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-2);
 }
-.tool-result-section .kv-val { color: var(--success); }
 
-/* ============ web_search 结果：单行紧凑列表 ============ */
-.tool-search-section { padding-top: 7px; }
-.search-meta { font-size: 10px; color: var(--text-5); margin-bottom: 4px; }
-.search-list { display: flex; flex-direction: column; gap: 2px; }
-.search-item {
-  display: flex; flex-direction: column; gap: 2px;
-  padding: 5px 7px;
-  border-radius: 5px;
-  background: var(--bg);
-  border: 1px solid var(--surface-2);
-  text-decoration: none;
-  transition: border-color 0.12s, background 0.12s;
-  line-height: 1.4;
+/* ---- 区块 ---------------------------------------------------------- */
+.tc-section { display: flex; flex-direction: column; gap: 5px; }
+.tc-section-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-5);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 0 1px;
 }
-.search-item:hover { background: var(--surface); border-color: var(--border); }
-/* 第一行：标题 + 域名 */
-.search-item-main {
-  display: flex; align-items: baseline; gap: 6px;
+.tc-section-title-ok { color: var(--success); }
+.tc-section-meta {
+  font-weight: 400;
+  color: var(--text-6);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10px;
+}
+
+/* ---- kv 参数/结果块 ------------------------------------------------ */
+.tc-kv-block {
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.tc-kv-row {
+  display: grid;
+  grid-template-columns: minmax(56px, max-content) 1fr;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  align-items: baseline;
+  padding: 1px 0;
+}
+/* 相邻行之间画分隔线 */
+.tc-kv-row + .tc-kv-row {
+  border-top: 1px solid var(--border-soft);
+}
+.tc-kv-key {
+  color: var(--text-5);
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.tc-kv-val {
+  color: var(--text-2);
+  word-break: break-all;
   min-width: 0;
 }
-/* 标题：主体，可省略 */
-.search-item-title {
-  font-size: 11.5px; color: var(--text); font-weight: 500;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  flex: 1;
+.tc-kv-val-ok { color: var(--success); }
+
+/* ---- web_search 结果列表 ------------------------------------------ */
+.tc-search-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
-.search-item:hover .search-item-title { color: var(--accent); }
-/* 来源域名：标题右侧灰色等宽小字 */
-.search-item-domain {
-  font-size: 9px; color: var(--text-5);
+.tc-search-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  text-decoration: none;
+  transition: border-color 0.14s, background 0.14s;
+}
+.tc-search-item:hover {
+  background: var(--surface-2);
+  border-color: var(--accent-border);
+}
+/* 顶行：序号 + 域名 + 链接图标 */
+.tc-sr-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 1px;
+}
+/* 序号小胶囊 */
+.tc-sr-num {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-6);
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   flex-shrink: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: 40%;
+  min-width: 14px;
+  height: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-3);
+  border-radius: 3px;
+  padding: 0 3px;
 }
-/* 第二行：内容摘要，2行截断 */
-.search-item-snippet {
-  font-size: 10.5px; color: var(--text-4); line-height: 1.45;
+.tc-sr-domain {
+  font-size: 10px;
+  color: var(--text-5);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0;
+}
+.tc-sr-link {
+  width: 10px; height: 10px;
+  flex-shrink: 0;
+  color: var(--text-6);
+  opacity: 0;
+  transition: opacity 0.14s;
+  display: block;
+}
+.tc-search-item:hover .tc-sr-link   { opacity: 1; color: var(--accent); }
+.tc-search-item:hover .tc-sr-domain { color: var(--text-3); }
+.tc-search-item:hover .tc-sr-num    { background: var(--accent-soft); color: var(--accent); }
+
+.tc-sr-title {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tc-search-item:hover .tc-sr-title { color: var(--accent); }
+
+.tc-sr-snippet {
+  font-size: 10.5px;
+  color: var(--text-4);
+  line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* 逐条揭示动画 */
-.search-item-enter-active { transition: all 0.2s ease; }
-.search-item-enter-from { opacity: 0; transform: translateX(-4px); }
-/* 进度区块（running 期间） */
-.tool-progress-section .kv-progress { color: var(--accent); }
+/* 逐条入场动画 */
+.sr-enter-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.sr-enter-from   { opacity: 0; transform: translateY(-3px); }
 
-.kv-row {
+/* ---- 原始数据 ------------------------------------------------------ */
+.tc-raw {
   display: flex;
-  gap: 8px;
-  line-height: 1.6;
-  font-size: 11px;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
 }
-.kv-key {
-  flex-shrink: 0;
-  color: var(--text-5);
-  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-  min-width: 60px;
-}
-.kv-val {
-  color: var(--text-3);
-  word-break: break-all;
-  flex: 1;
-}
-
-/* 展开详情 */
-.tool-detail {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-.detail-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-bottom: 3px;
-}
-.detail-label {
-  font-size: 10px;
-  color: var(--text-5);
+.tc-raw-id-label {
+  font-size: 9.5px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  color: var(--text-5);
 }
-.detail-val {
+.tc-raw-id {
+  display: inline;
   font-size: 10px;
   color: var(--text-4);
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-}
-.detail-code {
-  margin: 0 0 6px;
-  padding: 7px;
+  word-break: break-all;
   background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.tc-details { font-size: 11px; }
+.tc-details summary {
+  font-size: 10.5px;
+  color: var(--text-5);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 3px 0;
+  transition: color 0.14s;
+}
+.tc-details summary:hover { color: var(--text-3); }
+.tc-details summary::-webkit-details-marker { display: none; }
+.tc-pre {
+  margin: 5px 0 0;
+  padding: 7px 9px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
   border-radius: 5px;
   font-size: 10.5px;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--text-2);
-  max-height: 140px;
+  max-height: 120px;
   overflow: auto;
+  line-height: 1.5;
 }
+.tc-pre::-webkit-scrollbar { width: 4px; }
+.tc-pre::-webkit-scrollbar-thumb { background: var(--text-6); border-radius: 2px; }
 </style>

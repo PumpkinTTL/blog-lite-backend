@@ -2107,6 +2107,61 @@ function onInputKeydown(e: KeyboardEvent) {
   background: transparent;
   padding: 0;
 }
+/* ===== 代码语法高亮（highlight.js，明色：GitHub Light 风克制配色） =====
+   不引 highlight.js 的整套主题文件（会和 surface 配色打架），按 token class
+   手写配色，对齐画布暖米白基调。 */
+.ai-reply :deep(.hljs) { color: var(--text); }
+.ai-reply :deep(.hljs-comment),
+.ai-reply :deep(.hljs-quote) { color: var(--text-5); font-style: italic; }
+.ai-reply :deep(.hljs-keyword),
+.ai-reply :deep(.hljs-selector-tag),
+.ai-reply :deep(.hljs-literal),
+.ai-reply :deep(.hljs-type) { color: #b31d8c; }
+.ai-reply :deep(.hljs-string),
+.ai-reply :deep(.hljs-meta-string),
+.ai-reply :deep(.hljs-doctag) { color: #0a7d36; }
+.ai-reply :deep(.hljs-number),
+.ai-reply :deep(.hljs-symbol),
+.ai-reply :deep(.hljs-bullet) { color: #a8600f; }
+.ai-reply :deep(.hljs-title),
+.ai-reply :deep(.hljs-title.function_),
+.ai-reply :deep(.hljs-section),
+.ai-reply :deep(.hljs-name) { color: #6f42c1; }
+.ai-reply :deep(.hljs-attr),
+.ai-reply :deep(.hljs-attribute),
+.ai-reply :deep(.hljs-variable),
+.ai-reply :deep(.hljs-template-variable) { color: #a86a00; }
+.ai-reply :deep(.hljs-built_in),
+.ai-reply :deep(.hljs-builtin-name),
+.ai-reply :deep(.hljs-class .hljs-title) { color: #005cc5; }
+.ai-reply :deep(.hljs-tag) { color: var(--text-4); }
+.ai-reply :deep(.hljs-meta) { color: var(--text-5); }
+/* ===== 代码语法高亮（暗色：调亮 + 去饱和，适配暖黑画布） ===== */
+.ai-reply.dark :deep(.hljs) { color: var(--text-2); }
+.ai-reply.dark :deep(.hljs-comment),
+.ai-reply.dark :deep(.hljs-quote) { color: var(--text-5); }
+.ai-reply.dark :deep(.hljs-keyword),
+.ai-reply.dark :deep(.hljs-selector-tag),
+.ai-reply.dark :deep(.hljs-literal),
+.ai-reply.dark :deep(.hljs-type) { color: #ff7eb6; }
+.ai-reply.dark :deep(.hljs-string),
+.ai-reply.dark :deep(.hljs-meta-string),
+.ai-reply.dark :deep(.hljs-doctag) { color: #7ee787; }
+.ai-reply.dark :deep(.hljs-number),
+.ai-reply.dark :deep(.hljs-symbol),
+.ai-reply.dark :deep(.hljs-bullet) { color: #f0a868; }
+.ai-reply.dark :deep(.hljs-title),
+.ai-reply.dark :deep(.hljs-title.function_),
+.ai-reply.dark :deep(.hljs-section),
+.ai-reply.dark :deep(.hljs-name) { color: #d2a8ff; }
+.ai-reply.dark :deep(.hljs-attr),
+.ai-reply.dark :deep(.hljs-attribute),
+.ai-reply.dark :deep(.hljs-variable),
+.ai-reply.dark :deep(.hljs-template-variable) { color: #ffa657; }
+.ai-reply.dark :deep(.hljs-built_in),
+.ai-reply.dark :deep(.hljs-builtin-name) { color: #79c0ff; }
+.ai-reply.dark :deep(.hljs-tag) { color: var(--text-4); }
+.ai-reply.dark :deep(.hljs-meta) { color: var(--text-5); }
 /* 引用块：中性灰底（不再用暖橙 accent-bg，避免背景偏红），左侧细边框区分 */
 .ai-reply :deep(blockquote) {
   margin: 12px 0; padding: 8px 16px;

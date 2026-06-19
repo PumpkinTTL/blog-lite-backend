@@ -19,19 +19,35 @@
 import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
+// highlight.js：纯同步语法高亮，渲染时一次性算好 HTML，渲染完即静止，
+// 不破坏 markdown-it 静态渲染带来的滚动稳定性（绝不用 Shiki 等异步高亮）。
+import hljs from 'highlight.js/lib/common'
 
 const props = defineProps<{
   content: string
 }>()
 
 // markdown-it 单例：全应用共享一个解析器实例，避免重复初始化开销。
-// 开启：代码高亮占位（code 标签）、表格、删除线、链接转义等聊天常用特性。
+// 开启：代码高亮（highlight 回调）、表格、删除线、链接转义等聊天常用特性。
 // 关闭：html 内联（安全），typographer（不需要）。
 const md = new MarkdownIt({
   html: false,        // 禁止原始 HTML（配合 DOMPurify 双保险）
   breaks: true,       // 单换行转 <br>（聊天场景）
   linkify: true,      // 自动识别链接
   typographer: false,
+  // 代码高亮：highlight.js 同步着色，输出带 .hljs class 的 HTML。
+  // 命中已知语言则高亮，否则返回空串让 markdown-it 走默认 escape（灰底纯文本）。
+  highlight(str, lang) {
+    const language = lang && hljs.getLanguage(lang) ? lang : ''
+    if (language) {
+      try {
+        return '<pre><code class="hljs language-' + language + '">'
+          + hljs.highlight(str, { language, ignoreIllegal: true }).value
+          + '</code></pre>'
+      } catch { /* fallthrough */ }
+    }
+    return '' // 空 → markdown-it 用默认转义包一层 <pre><code>
+  },
 })
 
 // 安全起见：markdown-it 已经禁了 html，但再过一遍 DOMPurify 防止任何注入。
@@ -43,7 +59,7 @@ const ALLOWED_TAGS = [
   'a', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
   'input',
 ]
-const ALLOWED_ATTR = ['href', 'title', 'src', 'alt', 'target', 'rel', 'type', 'checked', 'disabled']
+const ALLOWED_ATTR = ['href', 'title', 'src', 'alt', 'target', 'rel', 'type', 'checked', 'disabled', 'class']
 
 // 渲染：content → HTML → 净化。computed 缓存，content 不变不重算。
 // DOMPurify.sanitize 返回 string（默认 RETURN_DOM 为 false）。
