@@ -293,53 +293,29 @@ interface RenderItem {
   toolProgress?: string
 }
 const renderItems = ref<RenderItem[]>([])
-// === 窗口化渲染（virtualization）：只渲染可视区附近的条目，其余靠 spacer 撑高。
-// renderItems 保持正序（时间正序，数组末尾=最新）。正常 column 布局下最新在视觉底部。
-// 不动 renderItems 数组和 reactive 对象引用，只做视图层切片。
+// === 底部锚定 + 向上分页懒加载 ===
+// renderItems 是完整数据源（正序，末尾=最新），始终保留用于落库/压缩/重放。
+// 视图只渲染尾部 N 条（visibleCount 从 PAGE 起步），滚动到顶部时向前再加载 PAGE 条。
+// 新消息始终 push 到末尾 → 底部自然增长，sticky 时贴底，无 spacer、无高度估算、无 ResizeObserver。
+// scrollHeight 恒等于真实 DOM 高度，三个滚动 bug 从根因消失。
 const scrollBody = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const thinkExpanded = ref<Set<string>>(new Set())
 
-// 窗口配置：可视区前后各留 BUFFER 条缓冲，避免滚动时频繁重建
-const WINDOW_HALF = 15          // 单侧缓冲条数
-// 高度估算（未测量前的兜底值）：user 气泡 / assistant markdown / tool 卡片
-const EST_HEIGHT: Record<string, number> = { user: 56, assistant: 160, tool: 72 }
-const DEFAULT_EST = 100
-
-// 窗口索引范围 [start, end)
-const winStart = ref(0)
-const winEnd = ref(0)
-// 真实高度缓存：id → 测得的高度（ResizeObserver 填充）
-const itemHeights = ref<Record<string, number>>({})
-// 估算单条高度：优先用实测值，否则按 kind 估算
-function estHeightOf(item: RenderItem): number {
-  const measured = itemHeights.value[item.id]
-  if (measured) return measured
-  return EST_HEIGHT[item.kind] ?? DEFAULT_EST
-}
-// 上方 spacer 高度（winStart 之前所有条目的估算高度之和）
-const aboveHeight = computed(() => {
-  let h = 0
-  for (let i = 0; i < winStart.value; i++) h += estHeightOf(renderItems.value[i])
-  return h
-})
-// 下方 spacer 高度（winEnd 之后所有条目）
-const belowHeight = computed(() => {
-  let h = 0
-  for (let i = winEnd.value; i < renderItems.value.length; i++) h += estHeightOf(renderItems.value[i])
-  return h
-})
-// 可视区条目切片。流式中的 item（streaming===true）强制纳入窗口末尾，避免流式回调写入但无渲染。
+// 向上分页：每次到顶加载多少条
+const PAGE_SIZE = 50
+// 当前已展开渲染的条目数（从末尾向前数）。起步只渲染最后一页。
+const visibleCount = ref(PAGE_SIZE)
+// 可视切片 = renderItems 的末尾 visibleCount 条。
+// 发送/工具/压缩等 push 到 renderItems 时，新条目天然落进切片尾部。
 const visibleItems = computed(() => {
-  let end = winEnd.value
-  // pin 流式 item：若最后一条正在流式，确保它在窗口内
-  const lastIdx = renderItems.value.length - 1
-  if (lastIdx >= 0) {
-    const last = renderItems.value[lastIdx]
-    if (last.streaming && lastIdx >= end) end = lastIdx + 1
-  }
-  return renderItems.value.slice(winStart.value, end)
+  const n = renderItems.value.length
+  if (n === 0) return []
+  const start = Math.max(0, n - visibleCount.value)
+  return renderItems.value.slice(start)
 })
+// 还有更早的历史未渲染（顶部"加载更多"判断用）
+const hasMoreAbove = computed(() => visibleCount.value < renderItems.value.length)
 // 记录当前是否贴底（流式时只在贴底才 auto-scroll，避免打断用户看历史）
 let stickToBottom = true
 
@@ -888,16 +864,14 @@ async function togglePanel() {
     await nextTick()
     const isFirst = !inited
     if (isFirst) scrollBody.value?.classList.add('opening')
-    // 打开即贴底（最高优先级）：保证后续 ResizeObserver 补滚生效。
-    // 关闭时已重置方向累积量，这里同步清零防首次 scroll 方向误判。
+    // 打开即贴底，方向量清零防首次 scroll 误判
     stickToBottom = true
     lastScrollTop = 0
     scrollDirAccum = 0
-    updateWindow()
-    // 第一帧推一次：v-if 挂载后立即定位到底
+    // 第一帧：v-if 挂载后即刻贴底（无 spacer，scrollHeight 已是真实值）
     forceScrollBottom()
-    // 第二帧再推一次：异步加载历史（首次）或 DOM 重建（二次打开）+
-    // MarkdownRender 异步撑高都稳定后，确保仍贴底。
+    // 第二帧：首次异步加载历史 / 二次打开 DOM 重建 / MarkdownRender 异步撑高
+    // 都稳定后再贴底一次，兜底定位。
     requestAnimationFrame(() => {
       initOnFirstOpen().finally(() => {
         nextTick(() => {
@@ -907,7 +881,6 @@ async function togglePanel() {
       })
     })
   } else {
-    // 关闭时清零方向量，避免下次打开时 scrollTop 从 0 跳到 max 的方向误判
     lastScrollTop = 0
     scrollDirAccum = 0
   }
@@ -1229,7 +1202,7 @@ async function loadHistory() {
 
 function rebuildRenderFromHistory() {
   renderItems.value = []
-  itemHeights.value = {}   // 历史重建生成新 id，清空旧高度缓存
+  visibleCount.value = PAGE_SIZE   // 重置可视页：只渲染最后一页，向上滚动时再分页加载
   thinkExpanded.value.clear()
   const toolResults = new Map<string, string>()
   for (const m of messages.value) {
@@ -1281,7 +1254,7 @@ async function persistConversation(newPostId?: number): Promise<void> {
 
 defineExpose({ persistConversation })
 
-onMounted(() => { document.addEventListener('click', closeDropdowns); ensureResizeObserver() })
+onMounted(() => { document.addEventListener('click', closeDropdowns) })
 // 历史加载懒到首次打开面板时触发（避免进页面即发请求，且与打开动作合并为一次）。
 // providers 同理懒加载。首次打开标志位保证只执行一次。
 let inited = false
@@ -1305,145 +1278,72 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)
   document.removeEventListener('click', closeDropdowns)
-  resizeObserver?.disconnect()
   // 离开页面/卸载前把当前对话落库，避免未点"保存文章"就关闭导致丢失
   void persistConversation()
 })
 function closeDropdowns() { slashMenuOpen.value = false }
 
-// === 窗口化高度测量：ResizeObserver 监听已渲染条目的真实高度 ===
-// 实测值写入 itemHeights，aboveHeight/belowHeight 用它修正滚动条长度。
-// 节流：rAF 合并同一帧的多次回调，避免流式时高频触发。
-let measureScheduled = false
-let resizeObserver: ResizeObserver | null = null
-function ensureResizeObserver() {
-  if (resizeObserver || typeof ResizeObserver === 'undefined') return
-  resizeObserver = new ResizeObserver(() => {
-    if (measureScheduled) return
-    measureScheduled = true
-    requestAnimationFrame(() => {
-      measureScheduled = false
-      const el = scrollBody.value
-      if (!el) return
-      // 遍历当前渲染的 msg 元素，读 offsetHeight 更新缓存
-      const nodes = el.querySelectorAll<HTMLElement>('[data-id]')
-      let changed = false
-      nodes.forEach((node) => {
-        const id = node.dataset.id
-        if (!id) return
-        const h = node.offsetHeight
-        if (h && itemHeights.value[id] !== h) {
-          itemHeights.value[id] = h
-          changed = true
-        }
-      })
-      // 高度变化时（markdown 渲染完撑高）重算窗口，保证 spacer 同步。
-      if (changed) updateWindow()
-      // 贴底补滚【无条件】：二次打开时 itemHeights 已缓存，DOM 高度与缓存相同
-      // → changed=false，但 scrollTop 仍可能停在估算高度对应的位置而非真正底部。
-      // 只要 sticky 就补滚到底，保证打开/渲染稳定后始终贴最新。
-      if (stickToBottom && scrollBody.value) {
-        scrollBody.value.scrollTop = scrollBody.value.scrollHeight
-      }
-    })
-  })
-}
-// observe/unobserve 由 panel-body 内 visibleItems 变化驱动（watch visibleItems）
-watch(visibleItems, async () => {
-  await nextTick()
-  if (!resizeObserver || !scrollBody.value) return
-  // 重新 observe 当前渲染的 msg 元素（旧的已卸载会自动断开）
-  scrollBody.value.querySelectorAll<HTMLElement>('[data-id]').forEach((node) => {
-    resizeObserver!.observe(node)
-  })
-}, { flush: 'post' })
+// === 滚动管理（无 spacer 版）===
+// 无 spacer → scrollHeight 恒等于真实 DOM 高度，scrollTop 语义稳定。
+// 仅需：贴底判断、向上到顶分页加载、双向浮动按钮。
 
 function toggleThink(id: string) {
   if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)
   else thinkExpanded.value.add(id)
 }
-// 根据滚动位置更新窗口范围 [start, end)。
-// column 布局：scrollTop=0 在顶部（最旧），越大越靠底部（最新）。
-// 累加估算高度，找到"视口中心"对应的条目索引，前后各取 WINDOW_HALF。
-function updateWindow() {
+
+/** 向上分页加载：到顶时把 visibleCount 向前扩 PAGE_SIZE 条。
+ *  关键：保留用户当前视觉位置（无缝衔接）。
+ *  做法——加载前记 scrollHeight，DOM 更新后 scrollTop 补上新旧高度差，
+ *  用户看到的内容纹丝不动，仿佛上面一直就有这些消息。 */
+async function loadMoreAbove() {
+  if (!hasMoreAbove.value || loadingMore.value) return
+  loadingMore.value = true
   const el = scrollBody.value
-  if (!el) return
-  const items = renderItems.value
-  const n = items.length
-  if (n === 0) { winStart.value = 0; winEnd.value = 0; return }
-  // 视口中心对应的滚动偏移
-  const viewportCenter = el.scrollTop + el.clientHeight / 2
-  // 累加高度找到视口中心落在哪个条目
-  let acc = 0
-  let centerIdx = Math.floor(n / 2)  // 兜底
-  for (let i = 0; i < n; i++) {
-    const h = estHeightOf(items[i])
-    if (acc + h >= viewportCenter) { centerIdx = i; break }
-    acc += h
-    centerIdx = i
+  const oldHeight = el?.scrollHeight ?? 0
+  const oldTop = el?.scrollTop ?? 0
+  visibleCount.value = Math.min(renderItems.value.length, visibleCount.value + PAGE_SIZE)
+  // 等 Vue 把新条目渲染进 DOM（nextTick 后布局已更新）
+  await nextTick()
+  if (el) {
+    const newHeight = el.scrollHeight
+    // 补偿：把新增高度加到 scrollTop，视觉位置不变
+    el.scrollTop = oldTop + (newHeight - oldHeight)
   }
-  const start = Math.max(0, centerIdx - WINDOW_HALF)
-  const end = Math.min(n, centerIdx + WINDOW_HALF)
-  // 首次或条目很少时全量渲染
-  if (n <= WINDOW_HALF * 2) {
-    winStart.value = 0
-    winEnd.value = n
-  } else {
-    // 贴底时（流式/新消息/打开历史）强制窗口滑到末尾，确保最新条目可见
-    if (stickToBottom) {
-      winStart.value = Math.max(0, n - WINDOW_HALF * 2)
-      winEnd.value = n
-    } else {
-      winStart.value = start
-      winEnd.value = end
-    }
-  }
+  loadingMore.value = false
 }
-/** 即时强制贴底：不等动画，直接 scrollTop = scrollHeight，并设 sticky。
- *  窗口化下 scrollHeight 不稳定（spacer 估算），smooth 动画会漂移，必须即时。 */
+
+/** 即时强制贴底：scrollTop = scrollHeight + 设 sticky。
+ *  无 spacer → scrollHeight 真实，赋值即精准到底。 */
 function forceScrollBottom() {
   if (!scrollBody.value) return
   scrollBody.value.scrollTop = scrollBody.value.scrollHeight
   stickToBottom = true
-  // 直接设 scrollTop 不触发 scroll 事件，手动更新窗口覆盖末尾新条目
-  updateWindow()
 }
 async function scrollToBottom() {
   await nextTick()
   forceScrollBottom()
 }
 // 流式时调用：仅当用户当前贴底（stickToBottom）才自动滚动，
-// 用户向上看历史时不打断。比 column-reverse 时代的无脑 scrollToBottom 更友好。
+// 用户向上看历史时不打断。
 function maybeStickBottom() {
-  if (!stickToBottom) return
-  if (!scrollBody.value) return
+  if (!stickToBottom || !scrollBody.value) return
   scrollBody.value.scrollTop = scrollBody.value.scrollHeight
 }
 
-// 双向浮动按钮 + 窗口更新（column 布局，scrollTop≥0 标准语义）。
+// 双向浮动按钮（column 布局，scrollTop≥0 标准语义）。
 //   scrollTop = 0            → 视觉顶部（最旧消息）
 //   scrollTop = scrollHeight → 视觉底部（最新消息）
 //   贴底（nearBottom）时记录 stickToBottom，流式 auto-scroll 只在贴底时生效。
-// 按钮箭头跟随用户视觉滚动方向（直觉），点击则回到相反端。
 const showBackBtn = ref(false)
 const arrowDown = ref(true)
+const loadingMore = ref(false)
 let lastScrollTop = 0
-// 方向累积量防抖：窗口化下 spacer 高度由估算值撑起，滚动时 spacer 切换会让
-// scrollHeight 抖动几像素 → 触发反方向 scroll 事件 → 箭头来回闪。
-// 引入累积阈值：单次抖动 < THRESHOLD 不翻转箭头，累积同方向超过才翻转。
+// 方向累积防抖：滚动惯性末尾的微小余震不翻转箭头（保留前版手感）
 let scrollDirAccum = 0
 const SCROLL_DIR_THRESHOLD = 12
-// updateWindow 节流到 rAF：scroll 事件可能一帧内多次触发，窗口重算沉重
-// （累加全部估算高度），合并到同一帧执行避免 layout 抖动连锁。
-let winUpdateScheduled = false
-function scheduleWindowUpdate() {
-  if (winUpdateScheduled) return
-  winUpdateScheduled = true
-  requestAnimationFrame(() => {
-    winUpdateScheduled = false
-    updateWindow()
-  })
-}
+// 到顶分页阈值：scrollTop 小于此值触发 loadMoreAbove
+const TOP_LOAD_THRESHOLD = 80
 function onScroll() {
   const el = scrollBody.value
   if (!el) return
@@ -1454,11 +1354,11 @@ function onScroll() {
   const delta = top - lastScrollTop
   lastScrollTop = top
   stickToBottom = nearBottom
-  // 窗口更新节流到 rAF，避免 spacer 切换引发同步 layout 抖动
-  scheduleWindowUpdate()
+  // 向上滚到顶 → 分页加载更早的历史（无缝衔接，保留视觉位置）
+  if (top <= TOP_LOAD_THRESHOLD && delta <= 0) loadMoreAbove()
   if (max <= 0 || nearBottom) { showBackBtn.value = false; scrollDirAccum = 0; return }
   if (nearTop && delta <= 0) { showBackBtn.value = false; scrollDirAccum = 0; return }
-  // 累积同方向位移，超阈值才翻转箭头（spacer 抖动通常 <12px，被吞掉）
+  // 累积同方向位移，超阈值才翻转箭头
   scrollDirAccum += delta
   if (Math.abs(scrollDirAccum) >= SCROLL_DIR_THRESHOLD) {
     arrowDown.value = scrollDirAccum > 0
@@ -1470,11 +1370,11 @@ function onBackBtnClick() {
   if (!scrollBody.value) return
   // 点击行为 = 箭头方向：向下箭头→滚向最新(底部)；向上箭头→滚向最旧(顶部)
   if (arrowDown.value) {
-    // 回到底部用即时赋值：窗口化下 scrollHeight 会随 spacer 估算变化，
-    // smooth 动画目标随之漂移会停在"差一点"的位置；即时赋值 + sticky 保贴底。
     forceScrollBottom()
   } else {
-    scrollBody.value.scrollTo({ top: 0, behavior: 'smooth' })
+    // 回顶部：先把全部历史加载出来再 smooth，否则未加载的中间段会让动画跳空
+    visibleCount.value = renderItems.value.length
+    nextTick(() => scrollBody.value?.scrollTo({ top: 0, behavior: 'smooth' }))
   }
 }
 function onInputKeydown(e: KeyboardEvent) {
@@ -1539,8 +1439,6 @@ function onInputKeydown(e: KeyboardEvent) {
           <p class="empty-hint-slash">输入 <code>/</code> 查看快捷命令</p>
         </div>
 
-        <!-- 上方占位：撑起 winStart 之前所有条目的估算高度，保证滚动条正确 -->
-        <div v-if="aboveHeight > 0" class="win-spacer" :style="{ height: aboveHeight + 'px' }"></div>
         <template v-for="item in visibleItems" :key="item.id">
           <!-- 用户消息：靠右，头像在气泡右边 -->
           <div v-if="item.kind === 'user'" class="msg msg-user" :data-id="item.id">
@@ -1602,8 +1500,6 @@ function onInputKeydown(e: KeyboardEvent) {
             </div>
           </div>
         </template>
-        <!-- 下方占位：撑起 winEnd 之后所有条目的估算高度 -->
-        <div v-if="belowHeight > 0" class="win-spacer" :style="{ height: belowHeight + 'px' }"></div>
       </div>
 
       <!-- 双向浮动按钮：放在 panel-body 外，用 absolute 定位，不受列表布局影响 -->
@@ -1993,18 +1889,15 @@ function onInputKeydown(e: KeyboardEvent) {
 .model-chip:hover:not(:disabled) .model-chip-name { color: var(--accent); }
 
 /* 消息流：正常 column 布局（scrollTop≥0 标准语义），gap 16px 呼吸感，padding 16px。
-   窗口化：上下用 spacer div 撑高，中间只渲染可视区条目。
-   .opening 打开瞬间只隐藏消息条目（opacity:0），保留 loading 占位可见。
+   底部锚定 + 向上分页：只渲染末尾 visibleCount 条，到顶分页加载更早历史。
+   .opening 打开瞬间隐藏消息条目（opacity:0），保留 loading 占位可见。
    不能给 .panel-body 设 opacity:0（父级 opacity 子元素无法覆盖，会把 loading 一起藏掉）。 */
 .panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
-.panel-body.opening .msg,
-.panel-body.opening .win-spacer { opacity: 0; transition: opacity 0.2s ease; }
+.panel-body.opening .msg { opacity: 0; transition: opacity 0.2s ease; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: var(--text-6); border-radius: 3px; transition: background 0.15s; }
 .panel-body::-webkit-scrollbar-thumb:hover { background: var(--text-5); }
 .panel-body::-webkit-scrollbar-track { background: transparent; }
-/* 窗口化占位条：撑起非渲染区域的高度，flex-shrink:0 保证不被压缩 */
-.win-spacer { flex-shrink: 0; width: 100%; }
 /* 历史加载占位 */
 .history-loading { margin: auto; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: var(--text-5); font-size: 12px; }
 .history-loading .spin { animation: spin 0.9s linear infinite; }
