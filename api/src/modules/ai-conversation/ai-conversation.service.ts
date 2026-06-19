@@ -77,6 +77,8 @@ export class AiConversationService {
       item.lastCompletionTokens = dto.lastCompletionTokens ?? item.lastCompletionTokens ?? 0;
       item.rounds = dto.rounds ?? item.rounds ?? 0;
       // 压缩字段
+      // 先记旧值用于判断是否发生新压缩（赋值后就无法再比较了）
+      const oldCompactionSummary = item.compactionSummary;
       if (dto.compactionSummary !== undefined) {
         item.compactionSummary = dto.compactionSummary ?? null;
       }
@@ -86,10 +88,10 @@ export class AiConversationService {
       if (dto.compactionTokens !== undefined) {
         item.compactionTokens = dto.compactionTokens ?? 0;
       }
-      // 压缩时间：只要这次带了 compactionSummary 且与库里不同，认为发生了一次新压缩
+      // 压缩时间：只要这次带了 compactionSummary 且与旧值不同，认为发生了一次新压缩
       if (
         dto.compactionSummary !== undefined &&
-        dto.compactionSummary !== item.compactionSummary
+        dto.compactionSummary !== oldCompactionSummary
       ) {
         item.compactedAt = new Date();
       }

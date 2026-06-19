@@ -108,17 +108,6 @@ export class UserService {
   }
 
   /**
-   * 根据用户名查找用户（含角色）
-   */
-  async findByUsername(username: string): Promise<UserEntity | null> {
-    return this.userRepo
-      .createQueryBuilder('u')
-      .leftJoinAndSelect('u.roles', 'r')
-      .where('u.username = :username', { username })
-      .getOne();
-  }
-
-  /**
    * 根据邮箱查找用户
    */
   async findByEmail(email: string): Promise<UserEntity | null> {
@@ -363,11 +352,8 @@ export class UserService {
    * 用户端注册：
    * 1. 检查用户名是否已存在
    * 2. 检查邀请码是否有效
-   * 3. 使用邀请码（事务）
-   * 4. 创建用户（密码哈希）
-   * 5. 分配默认角色（user）
-   * 6. 签发 Token
-   * 7. 更新最后登录时间
+   * 3. 事务内：消费邀请码（条件更新防超发）+ 创建用户（密码哈希）+ 分配默认角色
+   * 4. 事务外：签发 Token（外部 HTTP，避免事务期间占用 DB 连接）
    */
   async register(
     dto: RegisterDto,
@@ -393,101 +379,117 @@ export class UserService {
 
     const codeEntity = verifyResult.code!;
 
-    // 3. 使用注册（事务）
-    return this.dataSource.transaction(async (manager) => {
-      // 查询默认角色（user）
-      const userRole = await manager.findOne(RoleEntity, {
-        where: { name: 'user' },
-      });
-      if (!userRole) {
-        throw new NotFoundException('默认角色 user 不存在');
-      }
-
-      // 创建用户
-      const user = manager.create(UserEntity, {
-        username: dto.username,
-        nickname: dto.nickname,
-        password: await bcrypt.hash(dto.password, 10),
-        email: dto.email || null,
-        avatar: dto.avatar || null,
-        status: USER_STATUS.ACTIVE,
-        registerIp: clientIp,
-        registerSource: dto.registerSource || 'web',
-        registerCodeId: codeEntity.id,
-        lastLoginAt: new Date(),
-      });
-      user.roles = [userRole];
-
-      await manager.save(user);
-
-      // 使用邀请码（通过直接调用 CodeService 的 useCode 方法）
-      // 注意：useCode 内部已经有事务管理，但在当前事务中调用可能有问题
-      // 让我们先插入使用记录，然后手动更新 usedCount
-      await manager.insert(CodeUsageLogEntity, {
-        codeId: codeEntity.id,
-        userId: user.id,
-        usedAt: new Date(),
-        clientIp,
-        metadata: { action: 'register' },
-        createdAt: new Date(),
-      });
-
-      // 更新 usedCount
-      await manager.increment(
-        CodeEntity,
-        { id: codeEntity.id },
-        'usedCount',
-        1,
-      );
-
-      // 检查是否用完，更新状态
-      if (
-        codeEntity.maxUses > 0 &&
-        codeEntity.usedCount + 1 >= codeEntity.maxUses
-      ) {
-        await manager.update(CodeEntity, codeEntity.id, {
-          status: 'used',
-          usedAt: new Date(),
+    // 3. 事务内：消费邀请码 + 创建用户（只做 DB 操作，不含外部调用）
+    const { userId, nickname } = await this.dataSource.transaction(
+      async (manager) => {
+        // 查询默认角色（user）
+        const userRole = await manager.findOne(RoleEntity, {
+          where: { name: 'user' },
         });
-      } else {
-        await manager.update(CodeEntity, codeEntity.id, {
-          usedAt: new Date(),
+        if (!userRole) {
+          throw new NotFoundException('默认角色 user 不存在');
+        }
+
+        // 邀请码并发安全消费：条件更新，usedCount 未达上限才能 +1。
+        // affectedRows=0 表示已被并发抢光，回滚事务。
+        const consumeResult = await manager
+          .createQueryBuilder()
+          .update(CodeEntity)
+          .set({
+            usedCount: () => 'usedCount + 1',
+            usedAt: new Date(),
+            status: () =>
+              codeEntity.maxUses > 0 &&
+              codeEntity.usedCount + 1 >= codeEntity.maxUses
+                ? "'used'"
+                : 'status',
+          })
+          .where('id = :id', { id: codeEntity.id })
+          // maxUses=0 表示不限次；否则 usedCount 必须 < maxUses
+          .andWhere(
+            codeEntity.maxUses > 0
+              ? 'usedCount < :maxUses'
+              : '1 = 1',
+            { maxUses: codeEntity.maxUses },
+          )
+          .execute();
+
+        if (consumeResult.affected === 0) {
+          throw new BadRequestException('邀请码已被使用完毕');
+        }
+
+        // 创建用户
+        const user = manager.create(UserEntity, {
+          username: dto.username,
+          nickname: dto.nickname,
+          password: await bcrypt.hash(dto.password, 10),
+          email: dto.email || null,
+          avatar: dto.avatar || null,
+          status: USER_STATUS.ACTIVE,
+          registerIp: clientIp,
+          registerSource: dto.registerSource || 'web',
+          registerCodeId: codeEntity.id,
+          lastLoginAt: new Date(),
         });
-      }
+        user.roles = [userRole];
 
-      // 6. 签发 Token
-      const deviceId = crypto
-        .createHash('sha256')
-        .update(`${clientFingerprint}-${clientIp}`)
-        .digest('hex');
+        await manager.save(user);
 
-      const roles = user.roles.map((r) => r.name);
-      const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
-      const refreshTtl = this.configService.get<number>(
-        'REFRESH_TOKEN_TTL',
-        604800,
-      );
+        // 记录邀请码使用日志
+        await manager.insert(CodeUsageLogEntity, {
+          codeId: codeEntity.id,
+          userId: user.id,
+          usedAt: new Date(),
+          clientIp,
+          metadata: { action: 'register' },
+          createdAt: new Date(),
+        });
 
-      const tokenData = await this.authService.issueToken(
-        user.id,
+        return { userId: user.id, nickname: user.nickname };
+      },
+    );
+
+    // 4. 事务外签发 Token（外部 HTTP 调用，不占用 DB 连接）
+    const deviceId = crypto
+      .createHash('sha256')
+      .update(`${clientFingerprint}-${clientIp}`)
+      .digest('hex');
+
+    const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
+    const refreshTtl = this.configService.get<number>(
+      'REFRESH_TOKEN_TTL',
+      604800,
+    );
+
+    // issueToken 失败时用户已落库（事务已提交），不能让用户以为注册失败。
+    // 捕获后返回明确提示：账号已创建，需重新登录获取 Token。
+    let tokenData;
+    try {
+      tokenData = await this.authService.issueToken(
+        userId,
         deviceId,
-        { roles, nickname: user.nickname },
+        { roles: ['user'], nickname },
         undefined,
         accessTtl,
         refreshTtl,
       );
-
-      this.logger.log(
-        `用户 ${user.username} 注册成功，角色: [${roles.join(', ')}]`,
+    } catch (e) {
+      this.logger.error(
+        `用户 ${dto.username}(#${userId}) 注册成功但签发 Token 失败: ${e instanceof Error ? e.message : e}`,
       );
+      throw new BadRequestException(
+        '注册成功，但登录凭证签发失败，请使用刚注册的账号登录',
+      );
+    }
 
-      return {
-        accessToken: tokenData.accessToken,
-        refreshToken: tokenData.refreshToken,
-        expiresIn: tokenData.expiresIn,
-        deviceId,
-      };
-    });
+    this.logger.log(`用户 ${dto.username} 注册成功`);
+
+    return {
+      accessToken: tokenData.accessToken,
+      refreshToken: tokenData.refreshToken,
+      expiresIn: tokenData.expiresIn,
+      deviceId,
+    };
   }
 
   /**

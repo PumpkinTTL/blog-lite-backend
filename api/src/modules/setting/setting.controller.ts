@@ -7,7 +7,9 @@ import {
   Body,
   Param,
   ParseIntPipe,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { SettingService } from './setting.service';
 import {
   CreateSettingDto,
@@ -15,6 +17,15 @@ import {
   BatchUpdateSettingDto,
 } from './setting.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
+
+/** 从 req.user 提取操作者信息（审计用） */
+function getOperator(req: Request) {
+  const user = (req as any)?.user;
+  return {
+    id: user?.sub ? Number(user.sub) : undefined,
+    name: user?.nickname,
+  };
+}
 
 @Controller('setting')
 @Roles('admin')
@@ -37,8 +48,13 @@ export class SettingController {
   async batchUpdateByGroup(
     @Param('group') group: string,
     @Body() dto: BatchUpdateSettingDto,
+    @Req() req: Request,
   ) {
-    const data = await this.service.batchUpdateByGroup(group, dto.items);
+    const data = await this.service.batchUpdateByGroup(
+      group,
+      dto.items,
+      getOperator(req),
+    );
     return { success: true, data, message: '更新成功' };
   }
 
@@ -49,14 +65,14 @@ export class SettingController {
   }
 
   @Post()
-  async create(@Body() dto: CreateSettingDto) {
-    const data = await this.service.create(dto);
+  async create(@Body() dto: CreateSettingDto, @Req() req: Request) {
+    const data = await this.service.create(dto, getOperator(req));
     return { success: true, data, message: '创建成功' };
   }
 
   @Put('batch')
-  async batchUpdate(@Body() dto: BatchUpdateSettingDto) {
-    const data = await this.service.batchUpdate(dto.items);
+  async batchUpdate(@Body() dto: BatchUpdateSettingDto, @Req() req: Request) {
+    const data = await this.service.batchUpdate(dto.items, getOperator(req));
     return { success: true, data, message: '更新成功' };
   }
 
@@ -64,14 +80,15 @@ export class SettingController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateSettingDto,
+    @Req() req: Request,
   ) {
-    const data = await this.service.updateById(id, dto);
+    const data = await this.service.updateById(id, dto, getOperator(req));
     return { success: true, data, message: '更新成功' };
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    await this.service.remove(id);
+  async remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    await this.service.remove(id, getOperator(req));
     return { success: true, message: '删除成功' };
   }
 }

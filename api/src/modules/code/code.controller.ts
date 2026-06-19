@@ -96,7 +96,8 @@ export class CodeController {
    */
   @Post()
   async create(@Body() dto: CreateCodeDto, @Req() req: Request) {
-    const creatorId = (req as any).user?.id;
+    // AuthGuard 挂的 request.user 来自 JWT payload，用户标识是 sub（不是 id）
+    const creatorId = Number((req as any).user?.sub);
     const data = await this.codeService.createCode(dto, creatorId);
     return { success: true, data, message: '创建成功' };
   }
@@ -106,7 +107,7 @@ export class CodeController {
    */
   @Post('batch')
   async batchCreate(@Body() dto: BatchCreateCodeDto, @Req() req: Request) {
-    const creatorId = (req as any).user?.id;
+    const creatorId = Number((req as any).user?.sub);
     const data = await this.codeService.batchCreate(dto, creatorId);
     return { success: true, data, message: '批量生成成功' };
   }

@@ -6,6 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import type { Readable } from 'stream';
 import { AiService } from './ai.service';
 import { AiGenerateDto, AiChatDto } from './ai.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -19,6 +20,17 @@ import type { AiToolCall, AiChatMessage } from './ai.dto';
 @Roles('admin')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
+
+  /**
+   * 注册客户端断开监听：前端关页/断网时销毁上游 AI 流，
+   * 避免继续消费网关 SSE 浪费 token + 连接泄漏。
+   * 返回 cleanup 函数（在 finally 里调用，移除监听）。
+   */
+  private trackConnectionClose(res: Response, stream: Readable) {
+    const onClose = () => stream.destroy();
+    res.on('close', onClose);
+    return () => res.off('close', onClose);
+  }
 
   /**
    * 统一生成接口：根据文章标题+正文，生成勾选的内容（副标题/摘要/slug）。
@@ -74,6 +86,8 @@ export class AiController {
         body.model,
         false,
       );
+      // 客户端断开时销毁上游流（避免继续消费网关 SSE 浪费 token）
+      const untrack = this.trackConnectionClose(res, stream);
 
       let full = '';
       let buffer = '';
@@ -126,6 +140,7 @@ export class AiController {
       }
 
       writeEvent('done', { summary: full.trim() });
+      untrack();
     } catch (e) {
       writeEvent('error', {
         message: e instanceof Error ? e.message : '压缩失败',
@@ -172,6 +187,8 @@ export class AiController {
 
       // 拿到 AI 的原始 SSE 流，边读边转发 + 聚合 tool_calls
       const stream = await this.aiService.openStream(agentMessages, dto.model);
+      // 客户端断开时销毁上游流（避免继续消费网关 SSE 浪费 token）
+      const untrack = this.trackConnectionClose(res, stream);
 
       // tool_calls 按 index 聚合分片
       const slots: Record<number, AiToolCall> = {};
@@ -260,6 +277,7 @@ export class AiController {
         finishReason,
         hasToolCalls: toolCalls.length > 0,
       });
+      untrack();
     } catch (e) {
       writeEvent('error', {
         message: e instanceof Error ? e.message : 'AI 调用失败',
