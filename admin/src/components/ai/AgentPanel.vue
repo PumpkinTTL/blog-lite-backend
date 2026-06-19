@@ -868,18 +868,20 @@ async function togglePanel() {
     stickToBottom = true
     lastScrollTop = 0
     scrollDirAccum = 0
-    // 第一帧：v-if 挂载后即刻贴底（无 spacer，scrollHeight 已是真实值）
+    // v-show：面板 DOM 常驻，重开只是显示，不重建消息组件 → 无卡顿。
+    // 重开即贴底（DOM 一直在，scrollHeight 是真实稳定值）。
     forceScrollBottom()
-    // 第二帧：首次异步加载历史 / 二次打开 DOM 重建 / MarkdownRender 异步撑高
-    // 都稳定后再贴底一次，兜底定位。
-    requestAnimationFrame(() => {
-      initOnFirstOpen().finally(() => {
-        nextTick(() => {
-          forceScrollBottom()
-          if (isFirst) scrollBody.value?.classList.remove('opening')
+    // 首次打开才异步加载历史；后续重开 DOM 已在，贴底即可。
+    if (isFirst) {
+      requestAnimationFrame(() => {
+        initOnFirstOpen().finally(() => {
+          nextTick(() => {
+            forceScrollBottom()
+            scrollBody.value?.classList.remove('opening')
+          })
         })
       })
-    })
+    }
   } else {
     lastScrollTop = 0
     scrollDirAccum = 0
@@ -1394,7 +1396,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
   <transition name="panel">
     <div
-      v-if="open"
+      v-show="open"
       class="agent-panel"
       :class="{ dark: isDark, fullscreen: isFullscreen }"
       :style="isFullscreen ? undefined : { left: panelPos.left + 'px', top: panelPos.top + 'px' }"
