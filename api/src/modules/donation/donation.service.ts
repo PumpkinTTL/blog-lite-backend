@@ -90,25 +90,31 @@ export class DonationService {
   /** 统计概览 */
   async getStats() {
     // 3 次查询并行：总数、已确认总额+按方式分组、按加密网络分组
+    // 注意：status 列是 varchar（'confirmed'/'pending'/'refunded'），必须传字符串值。
+    // CASE WHEN 用参数绑定避免 SQL 注入（原代码模板字符串拼接会生成无引号的列名引用）。
     const [totalResult, confirmedMethods, byCrypto] = await Promise.all([
       this.repo
         .createQueryBuilder('e')
         .select('COUNT(*)', 'total')
         .addSelect(
-          `SUM(CASE WHEN e.status = ${DONATION_STATUS.CONFIRMED} THEN 1 ELSE 0 END)`,
+          `SUM(CASE WHEN e.status = :confirmed THEN 1 ELSE 0 END)`,
           'confirmed',
         )
         .addSelect(
-          `SUM(CASE WHEN e.status = ${DONATION_STATUS.PENDING} THEN 1 ELSE 0 END)`,
+          `SUM(CASE WHEN e.status = :pending THEN 1 ELSE 0 END)`,
           'pending',
         )
+        .setParameters({
+          confirmed: DONATION_STATUS.CONFIRMED,
+          pending: DONATION_STATUS.PENDING,
+        })
         .getRawOne(),
       this.repo
         .createQueryBuilder('e')
         .select('e.payMethod', 'payMethod')
         .addSelect('COUNT(*)', 'count')
         .addSelect('COALESCE(SUM(e.amount), 0)', 'totalAmount')
-        .where('e.status = :status', { status: 1 })
+        .where('e.status = :status', { status: DONATION_STATUS.CONFIRMED })
         .groupBy('e.payMethod')
         .getRawMany(),
       this.repo
@@ -118,7 +124,7 @@ export class DonationService {
         .addSelect('COALESCE(SUM(e.amount), 0)', 'totalAmount')
         .where('e.payMethod = :pm AND e.status = :status', {
           pm: 'crypto',
-          status: 1,
+          status: DONATION_STATUS.CONFIRMED,
         })
         .andWhere('e.cryptoNetwork IS NOT NULL')
         .groupBy('e.cryptoNetwork')

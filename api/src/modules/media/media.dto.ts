@@ -7,6 +7,7 @@ import {
   IsInt,
   IsArray,
   IsEnum,
+  Matches,
 } from 'class-validator';
 
 export class CreateMediaDto {
@@ -60,11 +61,12 @@ export class UploadStorageDto {
   @IsOptional()
   ossPlatform?: 'aliyun' | 'tencent' | 'cloudflare' | 'backblaze';
 
-  @IsString()
+  // app/folder 拼进文件路径，必须严格白名单（防路径穿越：禁止 / .. 等）
+  @Matches(/^[a-zA-Z0-9_-]{0,32}$/, { message: 'app 只能含字母数字下划线短横线，最长32' })
   @IsOptional()
   app?: string;
 
-  @IsString()
+  @Matches(/^[a-zA-Z0-9_-]{0,32}$/, { message: 'folder 只能含字母数字下划线短横线，最长32' })
   @IsOptional()
   folder?: string;
 

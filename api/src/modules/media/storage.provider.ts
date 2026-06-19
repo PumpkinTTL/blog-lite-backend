@@ -68,7 +68,7 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve, sep } from 'node:path';
 
 export interface StorageConfig {
   /** 存储平台 */
@@ -210,6 +210,13 @@ export class StorageProvider {
   private async uploadLocal(file: Buffer, key: string): Promise<string> {
     const localDir = this.config.localDir ?? join(process.cwd(), 'uploads');
     const filePath = join(localDir, key);
+    // 路径穿越防护：resolve 规范化后，filePath 必须严格在 localDir 子目录内。
+    // 用 startsWith(localDir + sep) 避免 /app/uploads 被 /app/uploads-evil 前缀绕过。
+    const resolved = resolve(filePath);
+    const safePrefix = resolve(localDir) + sep;
+    if (resolved === resolve(localDir) || !resolved.startsWith(safePrefix)) {
+      throw new Error(`[StorageProvider] 非法路径: ${key}`);
+    }
 
     try {
       await mkdir(dirname(filePath), { recursive: true });
@@ -226,6 +233,11 @@ export class StorageProvider {
   private async deleteLocal(key: string): Promise<void> {
     const localDir = this.config.localDir ?? join(process.cwd(), 'uploads');
     const filePath = join(localDir, key);
+    // 路径穿越防护（同 uploadLocal）：resolve 后必须严格在 localDir 子目录内
+    const safeDir = resolve(localDir) + sep;
+    if (resolve(filePath) === resolve(localDir) || !resolve(filePath).startsWith(safeDir)) {
+      throw new Error(`[StorageProvider] 非法路径: ${key}`);
+    }
 
     try {
       await unlink(filePath);

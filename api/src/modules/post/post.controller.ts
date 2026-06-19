@@ -11,8 +11,8 @@
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { PostService } from './post.service';
 import { PostEntity } from './post.entity';
 import { CreatePostDto, UpdatePostDto, BatchIdsDto } from './post.dto';
@@ -30,6 +30,7 @@ export class PostController {
     @InjectRepository(PostEntity)
     private readonly postRepo: Repository<PostEntity>,
     private readonly interactionService: InteractionService,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   @Public()
@@ -231,11 +232,14 @@ export class PostController {
       id,
       type,
     );
-    // 同步冗余计数（避免每次列表查询都 GROUP BY interactions）
-    const count = await this.interactionService.countOne('post', id, type);
-    await this.postRepo.update(id, {
-      ...(type === 'like' ? { likeCount: count } : {}),
-      ...(type === 'favorite' ? { favoriteCount: count } : {}),
+    // 同步冗余计数：toggle 后重新 count 并更新。
+    // 用事务包裹 count + update，保证两者原子（避免 toggle 成功但 count 更新失败导致计数失真）。
+    await this.dataSource.transaction(async (manager) => {
+      const count = await this.interactionService.countOne('post', id, type);
+      await manager.update(PostEntity, id, {
+        ...(type === 'like' ? { likeCount: count } : {}),
+        ...(type === 'favorite' ? { favoriteCount: count } : {}),
+      });
     });
     return {
       success: true,
