@@ -293,20 +293,36 @@ const scrollBody = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const thinkExpanded = ref<Set<string>>(new Set())
 
-// 向上分页：每次到顶加载多少条
-const PAGE_SIZE = 50
-// 当前已展开渲染的条目数（从末尾向前数）。起步只渲染最后一页。
-const visibleCount = ref(PAGE_SIZE)
-// 可视切片 = renderItems 的末尾 visibleCount 条。
-// 发送/工具/压缩等 push 到 renderItems 时，新条目天然落进切片尾部。
+// === 头部增量加载 + 原生 scroll anchoring（不跳，零 JS 补偿）===
+// renderItems 是完整数据源（正序，末尾=最新）。
+// 渲染范围 [windowStart, 末尾]：向上加载只减小 windowStart（头部加更早历史），尾部不动。
+// 单端变化（只增头不删尾）→ 浏览器原生 scroll anchoring 能稳定锁视口，不跳。
+// 若用户疯狂向上翻，渲染量超 MAX_RENDER 才从尾部裁剪（被裁的在视口下方，不影响视口锚点）。
+//
+// 不跳的关键——不写任何 scrollTop 补偿，靠浏览器原生 CSS scroll anchoring（block 布局下生效）。
+// 之前的 JS 补偿（差值/anchor/ResizeObserver）都会因 markstream 异步高亮失效或与用户滚动对抗（"被拉回来"）。
+// 前提：① panel-body 用 block 布局（flex 破坏 anchoring）② 锚点候选元素无 transform/animation（msg-in 已去掉）。
+const MAX_RENDER = 150 // 渲染上限：超过才裁剪尾部（防 DOM 无限增长卡顿；用户翻 100+ 条才触发，影响小）
+const LOAD_STEP = 30   // 每次到顶加载的条数
+// 渲染起始索引（必须 ref：visibleItems computed 依赖它）。渲染范围 = [windowStart, 末尾]。
+const windowStart = ref(0)
+// 可视切片 = renderItems 从 windowStart 到末尾（若超 MAX_RENDER 则裁尾部）
 const visibleItems = computed(() => {
   const n = renderItems.value.length
   if (n === 0) return []
-  const start = Math.max(0, n - visibleCount.value)
-  return renderItems.value.slice(start)
+  const start = Math.min(windowStart.value, n)
+  let end = n
+  // 渲染量超上限：从尾部裁剪（被裁的在视口下方，不影响 anchoring 锚点）
+  if (n - start > MAX_RENDER) end = start + MAX_RENDER
+  return renderItems.value.slice(start, end)
 })
-// 还有更早的历史未渲染（顶部"加载更多"判断用）
-const hasMoreAbove = computed(() => visibleCount.value < renderItems.value.length)
+// 是否还有更早的历史（顶部能否继续加载）
+const hasMoreAbove = computed(() => windowStart.value > 0)
+// 是否还有更晚的内容（底部被裁剪时才有"下加载"）
+const hasMoreBelow = computed(() => {
+  const n = renderItems.value.length
+  return windowStart.value + MAX_RENDER < n
+})
 // 记录当前是否贴底（流式时只在贴底才 auto-scroll，避免打断用户看历史）
 let stickToBottom = true
 
@@ -889,6 +905,8 @@ function buildContext(): AiArticleContext {
 //    深层对象如 toolCall 不做代理，大幅降低大列表的响应式追踪开销） ===
 function addRenderItem(item: RenderItem): RenderItem {
   const reactiveItem = shallowReactive(item)
+  // 头部增量方案：visibleItems 渲染 [windowStart, 末尾]，新消息 push 到末尾天然进可视切片。
+  // 无需手动跟随 windowStart（尾部不固定，自然包含最新）。
   renderItems.value.push(reactiveItem)
   return reactiveItem
 }
@@ -1229,7 +1247,7 @@ function abortHistory() {
 
 function rebuildRenderFromHistory() {
   renderItems.value = []
-  visibleCount.value = PAGE_SIZE   // 重置可视页：只渲染最后一页，向上滚动时再分页加载
+  windowStart.value = 0   // 重置窗口（循环后贴底定位）
   thinkExpanded.value.clear()
   // 历史重建生成新 id，旧 itemUsage 条目（按旧 id 索引）已成孤儿，清空避免内存累积
   itemUsage.value = {}
@@ -1252,6 +1270,8 @@ function rebuildRenderFromHistory() {
       }
     }
   }
+  // 重建后窗口贴底：起始索引 = 末尾 - 上限（保证最新消息在视口）
+  windowStart.value = Math.max(0, renderItems.value.length - MAX_RENDER)
 }
 
 async function persistConversation(newPostId?: number): Promise<void> {
@@ -1334,40 +1354,56 @@ function toggleThink(id: string) {
   else thinkExpanded.value.add(id)
 }
 
-/** 向上分页加载：到顶时把 visibleCount 向前扩 PAGE_SIZE 条。
- *  关键：保留用户当前视觉位置（无缝衔接）。
- *  做法——加载前记 scrollHeight，DOM 更新后 scrollTop 补上新旧高度差，
- *  用户看到的内容纹丝不动，仿佛上面一直就有这些消息。 */
+/** 向上分页加载：窗口整体上移，头部加更早历史，尾部相应移除（固定窗口，DOM 恒定）。
+ *  不跳的关键——不写任何 scrollTop 补偿，完全靠浏览器原生 CSS scroll anchoring：
+ *  block 布局下，顶部插入新内容时浏览器自动保持视口锚点元素不动（offsetTop 增大→自动调 scrollTop）。
+ *  之前的所有 JS 补偿（差值/anchor/ResizeObserver）都会因为 markstream 异步高亮而失效或与用户滚动对抗（"被拉回来"）。
+ *  前提：① panel-body 是 block（已改）② 锚点候选元素无 transform/animation（msg-in 已处理）。
+ *  浏览器自己做得比任何 JS 计算都准——它是在 layout 阶段调整，paint 前完成，用户无感。 */
 let loadingMorePromise: Promise<void> | null = null
 async function loadMoreAbove() {
-  // 双重防重入：标志位 + promise 引用。快速滚动时 onScroll 会连续触发，
-  // 仅靠 loadingMore 标志位不够（await 间隙多次进入仍可能重复扩容）。
   if (loadingMorePromise) return loadingMorePromise
   if (!hasMoreAbove.value) return
   loadingMorePromise = (async () => {
     loadingMore.value = true
-    const el = scrollBody.value
-    // 读 scrollHeight 前先读一次 scrollTop 避免强制布局抖动（layout thrashing）
-    const oldHeight = el?.scrollHeight ?? 0
-    const oldTop = el?.scrollTop ?? 0
-    visibleCount.value = Math.min(renderItems.value.length, visibleCount.value + PAGE_SIZE)
-    // 等 Vue 把新条目渲染进 DOM（nextTick 后布局已更新）
+    // 窗口上移：起始索引前移，头部加更早历史，尾部相应移除（固定窗口大小）。
+    // 不碰 scrollTop——浏览器原生 scroll anchoring 自动保持视口位置。
+    windowStart.value = Math.max(0, windowStart.value - LOAD_STEP)
     await nextTick()
-    if (el) {
-      const newHeight = el.scrollHeight
-      // 补偿：把新增高度加到 scrollTop，视觉位置不变
-      el.scrollTop = oldTop + (newHeight - oldHeight)
-    }
     loadingMore.value = false
   })()
   try { await loadingMorePromise } finally { loadingMorePromise = null }
 }
+/** 向下分页加载：窗口整体下移（与 loadMoreAbove 对称），同样不碰 scrollTop，靠原生 anchoring。 */
+let loadingBelowPromise: Promise<void> | null = null
+async function loadMoreBelow() {
+  if (loadingBelowPromise) return loadingBelowPromise
+  if (!hasMoreBelow.value) return
+  loadingBelowPromise = (async () => {
+    loadingMore.value = true
+    const n = renderItems.value.length
+    windowStart.value = Math.min(Math.max(0, n - MAX_RENDER), windowStart.value + LOAD_STEP)
+    await nextTick()
+    loadingMore.value = false
+  })()
+  try { await loadingBelowPromise } finally { loadingBelowPromise = null }
+}
 
 /** 即时强制贴底：scrollTop = scrollHeight + 设 sticky。
  *  无 spacer → scrollHeight 真实，赋值即精准到底。 */
+/** 即时强制贴底。固定窗口：贴底前确保窗口覆盖末尾（用户可能正在看历史，窗口上移过）。
+ *  把 windowStart 移到末尾，等 DOM 更新后再贴底，保证最新消息可见。 */
 function forceScrollBottom() {
-  if (!scrollBody.value) return
-  scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+  const el = scrollBody.value
+  if (!el) return
+  const n = renderItems.value.length
+  const newStart = Math.max(0, n - MAX_RENDER)
+  if (newStart !== windowStart.value) {
+    windowStart.value = newStart
+    nextTick(() => { if (scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight })
+  } else {
+    el.scrollTop = el.scrollHeight
+  }
   stickToBottom = true
 }
 async function scrollToBottom() {
@@ -1394,13 +1430,16 @@ let scrollDirAccum = 0
 const SCROLL_DIR_THRESHOLD = 12
 // 到顶分页阈值：scrollTop 小于此值触发 loadMoreAbove
 const TOP_LOAD_THRESHOLD = 80
+const BOTTOM_LOAD_THRESHOLD = 80
 // onScroll 节流：滚动事件高频触发（快速滚动 60+/秒），直接写响应式 ref 会
 // 触发 Vue 调度重渲染。合并到 rAF，一帧最多处理一次；且只在值真正变化时写 ref。
 let scrollRafId = 0
 function onScroll() {
-  // 到顶分页立即处理（不节流，保证滚动到顶响应及时），其余 UI 状态走 rAF。
+  // 到顶/到底分页立即处理（不节流，保证响应及时），其余 UI 状态走 rAF。
   const el = scrollBody.value
-  if (el && el.scrollTop <= TOP_LOAD_THRESHOLD) loadMoreAbove()
+  if (!el) return
+  if (el.scrollTop <= TOP_LOAD_THRESHOLD) loadMoreAbove()
+  else if (el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_LOAD_THRESHOLD) loadMoreBelow()
   if (scrollRafId) return
   scrollRafId = requestAnimationFrame(() => {
     scrollRafId = 0
@@ -1437,7 +1476,9 @@ function onBackBtnClick() {
   if (arrowDown.value) {
     forceScrollBottom()
   } else {
-    scrollBody.value.scrollTop = 0
+    // 到顶：固定窗口下先把窗口移到最旧（windowStart=0），再置 scrollTop=0
+    windowStart.value = 0
+    nextTick(() => { if (scrollBody.value) scrollBody.value.scrollTop = 0 })
   }
 }
 function onInputKeydown(e: KeyboardEvent) {
@@ -1965,7 +2006,7 @@ function onInputKeydown(e: KeyboardEvent) {
    底部锚定 + 向上分页：只渲染末尾 visibleCount 条，到顶分页加载更早历史。
    .opening 打开瞬间隐藏消息条目（opacity:0），保留 loading 占位可见。
    不能给 .panel-body 设 opacity:0（父级 opacity 子元素无法覆盖，会把 loading 一起藏掉）。 */
-.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
+.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: block; background: var(--bg); }
 /* v-memo 包裹层：display:contents 让自身不产生布局盒，.msg 直接成为 panel-body 的 flex 子项，
    间距/gap 行为与无包裹时完全一致。仅用于承载 v-memo 指令（template 上不可用）。 */
 .msg-wrap { display: contents; }
@@ -1975,7 +2016,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .panel-body::-webkit-scrollbar-thumb:hover { background: var(--text-5); }
 .panel-body::-webkit-scrollbar-track { background: transparent; }
 /* 历史加载占位 */
-.history-loading { margin: auto; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: var(--text-5); font-size: 12px; }
+.history-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0; color: var(--text-5); font-size: 12px; min-height: calc(100% - 32px); }
 .history-loading .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 /* 双向浮动按钮：absolute 定位浮在 panel-body 右下角（footer 上方），
@@ -1994,7 +2035,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .back-top-enter-active, .back-top-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .back-top-enter-from, .back-top-leave-to { opacity: 0; transform: translateY(6px); }
 
-.empty-hint { margin: auto; text-align: center; padding: 16px 0; }
+.empty-hint { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 16px 0; min-height: calc(100% - 32px); }
 /* 光晕环：icon 外面一圈柔和的环形渐变，增加仪式感 */
 .empty-glow-ring {
   width: 72px; height: 72px; margin: 0 auto 16px;
@@ -2026,7 +2067,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .empty-hint-slash { font-size: 11px; color: var(--text-5); margin: 0; }
 .empty-hint-slash code { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: var(--surface-3); border: 1px solid var(--border); color: var(--accent); font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
 
-.msg { display: flex; gap: 7px; max-width: 100%; align-items: flex-start; }
+.msg { display: flex; gap: 7px; max-width: 100%; align-items: flex-start; margin-bottom: 16px; }
 /* 用户消息靠右 */
 .msg-user { justify-content: flex-end; }
 /* AI 消息靠左 */
@@ -2379,8 +2420,11 @@ function onInputKeydown(e: KeyboardEvent) {
 
 .panel-enter-active, .panel-leave-active { transition: opacity 0.25s cubic-bezier(0.16,1,0.3,1), transform 0.25s cubic-bezier(0.16,1,0.3,1); }
 .panel-enter-from, .panel-leave-to { opacity: 0; transform: translateY(16px) scale(0.94); }
-.msg { animation: msg-in 0.3s cubic-bezier(0.16,1,0.3,1); }
-@keyframes msg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+/* 不用 msg-in 动画：它带的 transform 会让浏览器原生 scroll anchoring 把 .msg 排除在锚点候选外
+   （CSS 规范：带 transform/animation 的元素不参与 anchoring），导致向上加载历史时视口无法稳定。
+   消息入场用 opacity 过渡即可（无 transform，不干扰 anchoring）。 */
+.msg-new { animation: msg-fade-in 0.25s ease; }
+@keyframes msg-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* /model 模型选择弹窗 */
 .picker-mask { position: absolute; inset: 0; background: var(--shadow-mask); z-index: 10020; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
