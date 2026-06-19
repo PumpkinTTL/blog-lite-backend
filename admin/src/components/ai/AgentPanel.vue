@@ -284,47 +284,26 @@ interface RenderItem {
   toolProgress?: string
 }
 const renderItems = ref<RenderItem[]>([])
-// === 底部锚定 + 向上分页懒加载 ===
-// renderItems 是完整数据源（正序，末尾=最新），始终保留用于落库/压缩/重放。
-// 视图只渲染尾部 N 条（visibleCount 从 PAGE 起步），滚动到顶部时向前再加载 PAGE 条。
-// 新消息始终 push 到末尾 → 底部自然增长，sticky 时贴底，无 spacer、无高度估算、无 ResizeObserver。
-// scrollHeight 恒等于真实 DOM 高度，三个滚动 bug 从根因消失。
+// === 消息渲染策略 ==========================================================
+//
+// 浏览器原生虚拟化：每条 .msg 加 content-visibility:auto + contain-intrinsic-size。
+// 离屏消息浏览器跳过布局/绘制；contain-intrinsic-size 的 auto 关键字会记住元素
+// 首次渲染后的真实高度，离屏时用真实高度占位 → 滚动条稳定不跳。
+//
+// 旧实现是手写窗口裁剪（windowStart + slice），但它"向上加载只扩顶不裁底"，
+// 导致 visibleItems 单调增长（150→180→210…），翻几次就退化为全量渲染，虚拟化失效。
+// 而且 forceScrollBottom 每次都 windowStart=n-MAX_RENDER 突然裁顶，中间位置看消息时
+// 会被跳变。原生 content-visibility 没有这些问题，代码也更简单。
+// ==========================================================================
+
+// 直接渲染全部 renderItems，离屏性能交给 content-visibility。
+// 写作助手是单篇文章对话，消息量级一般几十到两三百，vnode 创建开销可接受；
+// 真正的 DOM 布局/绘制开销由 content-visibility 跳过离屏消息来消除。
+const visibleItems = computed(() => renderItems.value)
+
 const scrollBody = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const thinkExpanded = ref<Set<string>>(new Set())
-
-// === 头部增量加载 + 原生 scroll anchoring（不跳，零 JS 补偿）===
-// renderItems 是完整数据源（正序，末尾=最新）。
-// 渲染范围 [windowStart, 末尾]：向上加载只减小 windowStart（头部加更早历史），尾部不动。
-// 单端变化（只增头不删尾）→ 浏览器原生 scroll anchoring 能稳定锁视口，不跳。
-// 若用户疯狂向上翻，渲染量超 MAX_RENDER 才从尾部裁剪（被裁的在视口下方，不影响视口锚点）。
-//
-// 不跳的关键——不写任何 scrollTop 补偿，靠浏览器原生 CSS scroll anchoring（block 布局下生效）。
-// 之前的 JS 补偿（差值/anchor/ResizeObserver）都会因 markstream 异步高亮失效或与用户滚动对抗（"被拉回来"）。
-// 前提：① panel-body 用 block 布局（flex 破坏 anchoring）② 锚点候选元素无 transform/animation（msg-in 已去掉）。
-const MAX_RENDER = 150 // 渲染上限：超过才裁剪尾部（防 DOM 无限增长卡顿；用户翻 100+ 条才触发，影响小）
-const LOAD_STEP = 30   // 每次到顶加载的条数
-// 渲染起始索引（必须 ref：visibleItems computed 依赖它）。渲染范围 = [windowStart, 末尾]。
-const windowStart = ref(0)
-// 可视切片 = renderItems 从 windowStart 到末尾（若超 MAX_RENDER 则裁尾部）
-const visibleItems = computed(() => {
-  const n = renderItems.value.length
-  if (n === 0) return []
-  const start = Math.min(windowStart.value, n)
-  let end = n
-  // 渲染量超上限：从尾部裁剪（被裁的在视口下方，不影响 anchoring 锚点）
-  if (n - start > MAX_RENDER) end = start + MAX_RENDER
-  return renderItems.value.slice(start, end)
-})
-// 是否还有更早的历史（顶部能否继续加载）
-const hasMoreAbove = computed(() => windowStart.value > 0)
-// 是否还有更晚的内容（底部被裁剪时才有"下加载"）
-const hasMoreBelow = computed(() => {
-  const n = renderItems.value.length
-  return windowStart.value + MAX_RENDER < n
-})
-// 记录当前是否贴底（流式时只在贴底才 auto-scroll，避免打断用户看历史）
-let stickToBottom = true
 
 /**
  * 输入框自适应高度：替代 naive-ui n-input 的 autosize。
@@ -834,6 +813,10 @@ async function executeTool(
 }
 
 // === 拖拽 ===
+// 关键设计：拖拽过程直接操作 DOM style.left/top，绝不更新 panelPos（reactive）。
+// 旧实现每帧 mousemove 都改 panelPos → 触发整组件 re-render（遍历 visibleItems
+// 重建 vdom）→ 消息一多就卡。现在拖拽期间零 Vue render，结束后才把最终位置
+// 同步回 panelPos 供下次起点。
 let dragStart = { x: 0, y: 0, left: 0, top: 0 }
 const PANEL_W = 480
 const PANEL_H = 660
@@ -845,21 +828,38 @@ function ensureDefaultPos() {
   panelPos.left = window.innerWidth - PANEL_W - 24
   panelPos.top = window.innerHeight - PANEL_H - 24
 }
+let dragPanelEl: HTMLElement | null = null
 function onDragMove(e: MouseEvent) {
-  panelPos.left = Math.max(0, Math.min(window.innerWidth - PANEL_W, dragStart.left + e.clientX - dragStart.x))
-  panelPos.top = Math.max(0, Math.min(window.innerHeight - 48, dragStart.top + e.clientY - dragStart.y))
+  if (!dragPanelEl) return
+  const left = Math.max(0, Math.min(window.innerWidth - PANEL_W, dragStart.left + e.clientX - dragStart.x))
+  const top = Math.max(0, Math.min(window.innerHeight - 48, dragStart.top + e.clientY - dragStart.y))
+  // 直接写 DOM，绕过 Vue reactivity：拖拽期间不触发任何 render
+  dragPanelEl.style.left = left + 'px'
+  dragPanelEl.style.top = top + 'px'
 }
 function stopDrag() {
+  // 拖拽结束：把最终位置同步回 panelPos，供下次拖拽起点 & 模板恢复 style 绑定
+  if (dragPanelEl) {
+    const rect = dragPanelEl.getBoundingClientRect()
+    panelPos.left = rect.left
+    panelPos.top = rect.top
+  }
   dragging.value = false
   document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)
 }
 function startDrag(e: MouseEvent) {
+  if (isFullscreen.value) return  // 全屏态禁拖
   ensureDefaultPos()
+  const head = e.currentTarget as HTMLElement
+  dragPanelEl = head.closest('.agent-panel') as HTMLElement
+  if (!dragPanelEl) return
+  // 从 DOM 读实际位置作为起点（与 panelPos 可能短暂不一致时也稳妥）
+  const rect = dragPanelEl.getBoundingClientRect()
+  dragStart = { x: e.clientX, y: e.clientY, left: rect.left, top: rect.top }
   dragging.value = true
   document.body.style.userSelect = 'none'
-  dragStart = { x: e.clientX, y: e.clientY, left: panelPos.left, top: panelPos.top }
   document.addEventListener('mousemove', onDragMove)
   document.addEventListener('mouseup', stopDrag)
   e.preventDefault()
@@ -905,8 +905,6 @@ function buildContext(): AiArticleContext {
 //    深层对象如 toolCall 不做代理，大幅降低大列表的响应式追踪开销） ===
 function addRenderItem(item: RenderItem): RenderItem {
   const reactiveItem = shallowReactive(item)
-  // 头部增量方案：visibleItems 渲染 [windowStart, 末尾]，新消息 push 到末尾天然进可视切片。
-  // 无需手动跟随 windowStart（尾部不固定，自然包含最新）。
   renderItems.value.push(reactiveItem)
   return reactiveItem
 }
@@ -1247,9 +1245,7 @@ function abortHistory() {
 
 function rebuildRenderFromHistory() {
   renderItems.value = []
-  windowStart.value = 0   // 重置窗口（循环后贴底定位）
   thinkExpanded.value.clear()
-  // 历史重建生成新 id，旧 itemUsage 条目（按旧 id 索引）已成孤儿，清空避免内存累积
   itemUsage.value = {}
   const toolResults = new Map<string, string>()
   for (const m of messages.value) {
@@ -1270,8 +1266,6 @@ function rebuildRenderFromHistory() {
       }
     }
   }
-  // 重建后窗口贴底：起始索引 = 末尾 - 上限（保证最新消息在视口）
-  windowStart.value = Math.max(0, renderItems.value.length - MAX_RENDER)
 }
 
 async function persistConversation(newPostId?: number): Promise<void> {
@@ -1338,6 +1332,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)
   document.removeEventListener('click', closeDropdowns)
+  // 清理流式滚动 rAF，避免卸载后回调写已销毁的 DOM
+  if (stickRafId) { cancelAnimationFrame(stickRafId); stickRafId = 0 }
+  if (scrollRafId) { cancelAnimationFrame(scrollRafId); scrollRafId = 0 }
   // 取消正在进行的 history 请求，避免卸载后回调写已销毁的响应式状态
   abortHistory()
   // 离开页面/卸载前把当前对话落库，避免未点"保存文章"就关闭导致丢失
@@ -1345,66 +1342,31 @@ onBeforeUnmount(() => {
 })
 function closeDropdowns() { slashMenuOpen.value = false }
 
-// === 滚动管理（无 spacer 版）===
-// 无 spacer → scrollHeight 恒等于真实 DOM 高度，scrollTop 语义稳定。
-// 仅需：贴底判断、向上到顶分页加载、双向浮动按钮。
+// === 滚动管理 ===
+// content-visibility:auto 负责离屏性能；这里只管：贴底判断、双向浮动按钮。
 
 function toggleThink(id: string) {
   if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)
   else thinkExpanded.value.add(id)
 }
 
-/** 向上分页加载：窗口整体上移，头部加更早历史，尾部相应移除（固定窗口，DOM 恒定）。
- *  不跳的关键——不写任何 scrollTop 补偿，完全靠浏览器原生 CSS scroll anchoring：
- *  block 布局下，顶部插入新内容时浏览器自动保持视口锚点元素不动（offsetTop 增大→自动调 scrollTop）。
- *  之前的所有 JS 补偿（差值/anchor/ResizeObserver）都会因为 markstream 异步高亮而失效或与用户滚动对抗（"被拉回来"）。
- *  前提：① panel-body 是 block（已改）② 锚点候选元素无 transform/animation（msg-in 已处理）。
- *  浏览器自己做得比任何 JS 计算都准——它是在 layout 阶段调整，paint 前完成，用户无感。 */
-let loadingMorePromise: Promise<void> | null = null
-async function loadMoreAbove() {
-  if (loadingMorePromise) return loadingMorePromise
-  if (!hasMoreAbove.value) return
-  loadingMorePromise = (async () => {
-    loadingMore.value = true
-    // 窗口上移：起始索引前移，头部加更早历史，尾部相应移除（固定窗口大小）。
-    // 不碰 scrollTop——浏览器原生 scroll anchoring 自动保持视口位置。
-    windowStart.value = Math.max(0, windowStart.value - LOAD_STEP)
-    await nextTick()
-    loadingMore.value = false
-  })()
-  try { await loadingMorePromise } finally { loadingMorePromise = null }
-}
-/** 向下分页加载：窗口整体下移（与 loadMoreAbove 对称），同样不碰 scrollTop，靠原生 anchoring。 */
-let loadingBelowPromise: Promise<void> | null = null
-async function loadMoreBelow() {
-  if (loadingBelowPromise) return loadingBelowPromise
-  if (!hasMoreBelow.value) return
-  loadingBelowPromise = (async () => {
-    loadingMore.value = true
-    const n = renderItems.value.length
-    windowStart.value = Math.min(Math.max(0, n - MAX_RENDER), windowStart.value + LOAD_STEP)
-    await nextTick()
-    loadingMore.value = false
-  })()
-  try { await loadingBelowPromise } finally { loadingBelowPromise = null }
-}
+// ==========================================================================
+// 稳定滚动：不在用户滚动过程中改动历史 DOM，只维护贴底状态。
+// ==========================================================================
 
-/** 即时强制贴底：scrollTop = scrollHeight + 设 sticky。
- *  无 spacer → scrollHeight 真实，赋值即精准到底。 */
-/** 即时强制贴底。固定窗口：贴底前确保窗口覆盖末尾（用户可能正在看历史，窗口上移过）。
- *  把 windowStart 移到末尾，等 DOM 更新后再贴底，保证最新消息可见。 */
+// 记录当前是否贴底（流式时只在贴底才 auto-scroll，避免打断用户看历史）
+let stickToBottom = true
+
+/** 即时强制贴底。content-visibility 下离屏占位高度是估算值，视口到底后浏览器
+ *  才渲染底部消息，真实高度可能更大导致 scrollHeight 增长，补一帧再设一次确保贴底。 */
 function forceScrollBottom() {
   const el = scrollBody.value
   if (!el) return
-  const n = renderItems.value.length
-  const newStart = Math.max(0, n - MAX_RENDER)
-  if (newStart !== windowStart.value) {
-    windowStart.value = newStart
-    nextTick(() => { if (scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight })
-  } else {
-    el.scrollTop = el.scrollHeight
-  }
+  el.scrollTop = el.scrollHeight
   stickToBottom = true
+  requestAnimationFrame(() => {
+    if (scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+  })
 }
 async function scrollToBottom() {
   await nextTick()
@@ -1412,34 +1374,31 @@ async function scrollToBottom() {
 }
 // 流式时调用：仅当用户当前贴底（stickToBottom）才自动滚动，
 // 用户向上看历史时不打断。
+let stickRafId = 0
 function maybeStickBottom() {
   if (!stickToBottom || !scrollBody.value) return
-  scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+  // 流式 token 高频到达，rAF 合并到一帧一次，避免每 token 都触发回流
+  if (stickRafId) return
+  stickRafId = requestAnimationFrame(() => {
+    stickRafId = 0
+    if (stickToBottom && scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+  })
 }
 
-// 双向浮动按钮（column 布局，scrollTop≥0 标准语义）。
-//   scrollTop = 0            → 视觉顶部（最旧消息）
-//   scrollTop = scrollHeight → 视觉底部（最新消息）
-//   贴底（nearBottom）时记录 stickToBottom，流式 auto-scroll 只在贴底时生效。
+// 双向浮动按钮
 const showBackBtn = ref(false)
 const arrowDown = ref(true)
-const loadingMore = ref(false)
 let lastScrollTop = 0
-// 方向累积防抖：滚动惯性末尾的微小余震不翻转箭头（保留前版手感）
 let scrollDirAccum = 0
 const SCROLL_DIR_THRESHOLD = 12
-// 到顶分页阈值：scrollTop 小于此值触发 loadMoreAbove
-const TOP_LOAD_THRESHOLD = 80
-const BOTTOM_LOAD_THRESHOLD = 80
-// onScroll 节流：滚动事件高频触发（快速滚动 60+/秒），直接写响应式 ref 会
-// 触发 Vue 调度重渲染。合并到 rAF，一帧最多处理一次；且只在值真正变化时写 ref。
+
 let scrollRafId = 0
 function onScroll() {
-  // 到顶/到底分页立即处理（不节流，保证响应及时），其余 UI 状态走 rAF。
   const el = scrollBody.value
   if (!el) return
-  if (el.scrollTop <= TOP_LOAD_THRESHOLD) loadMoreAbove()
-  else if (el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_LOAD_THRESHOLD) loadMoreBelow()
+  const max = el.scrollHeight - el.clientHeight
+  // 同步更新贴底状态，避免用户刚向上滚、rAF 尚未执行时，流式输出仍把视图拉回底部
+  stickToBottom = max <= 0 || el.scrollTop >= max - 60
   if (scrollRafId) return
   scrollRafId = requestAnimationFrame(() => {
     scrollRafId = 0
@@ -1451,16 +1410,14 @@ function updateScrollUi() {
   if (!el) return
   const top = el.scrollTop
   const max = el.scrollHeight - el.clientHeight
-  const nearBottom = max <= 0 || top >= max - 60     // 靠近最新（底部）
-  const nearTop = top <= 60                          // 靠近最旧（顶部）
+  const nearBottom = max <= 0 || top >= max - 60
+  const nearTop = top <= 60
   const delta = top - lastScrollTop
   lastScrollTop = top
   stickToBottom = nearBottom
-  // 按钮可见性 & 方向：只在值变化时写 ref，避免无谓重渲染
   const shouldShow = max > 0 && !nearBottom && !(nearTop && delta <= 0)
   if (shouldShow !== showBackBtn.value) showBackBtn.value = shouldShow
   if (!shouldShow) { scrollDirAccum = 0; return }
-  // 累积同方向位移，超阈值才翻转箭头
   scrollDirAccum += delta
   if (Math.abs(scrollDirAccum) >= SCROLL_DIR_THRESHOLD) {
     const newDir = scrollDirAccum > 0
@@ -1470,15 +1427,10 @@ function updateScrollUi() {
 }
 function onBackBtnClick() {
   if (!scrollBody.value) return
-  // 点击行为 = 箭头方向：向下箭头→滚向最新(底部)；向上箭头→滚向最旧(顶部)
-  // 全部即时跳转（无 smooth 动画）：动画期间 scrollHeight 变化会让目标漂移，
-  // 且 smooth 到顶要先展开全部历史会卡。即时跳转最稳。
   if (arrowDown.value) {
     forceScrollBottom()
   } else {
-    // 到顶：固定窗口下先把窗口移到最旧（windowStart=0），再置 scrollTop=0
-    windowStart.value = 0
-    nextTick(() => { if (scrollBody.value) scrollBody.value.scrollTop = 0 })
+    scrollBody.value.scrollTop = 0
   }
 }
 function onInputKeydown(e: KeyboardEvent) {
@@ -1501,7 +1453,7 @@ function onInputKeydown(e: KeyboardEvent) {
       v-show="open"
       class="agent-panel"
       :class="{ dark: isDark, fullscreen: isFullscreen }"
-      :style="isFullscreen ? undefined : { left: panelPos.left + 'px', top: panelPos.top + 'px' }"
+      :style="isFullscreen || dragging ? undefined : { left: panelPos.left + 'px', top: panelPos.top + 'px' }"
     >
       <!-- 头部 -->
       <div class="panel-head" @mousedown="startDrag">
@@ -1524,7 +1476,7 @@ function onInputKeydown(e: KeyboardEvent) {
         </div>
       </div>
 
-      <!-- 消息流（窗口化：上下 spacer 撑高，中间只渲染 visibleItems 切片） -->
+      <!-- 消息流：全量渲染 renderItems，离屏消息由 content-visibility:auto 跳过布局/绘制 -->
       <div ref="scrollBody" class="panel-body" @scroll="onScroll">
         <!-- 历史加载中 -->
         <div v-if="historyLoading" class="history-loading">
@@ -1543,27 +1495,24 @@ function onInputKeydown(e: KeyboardEvent) {
           <p class="empty-hint-slash">输入 <code>/</code> 查看快捷命令</p>
         </div>
 
-        <!-- v-memo 隔离：仅当消息项的可见字段变化时才 patch 该项。
-             历史消息这些值不变 → 滚动/其他响应式变化时 Vue 完全跳过该项 diff。
-             这是大列表（多个对话记录）不掉帧的核心优化。
-             包裹 div 用 display:contents 不产生布局盒，.msg 仍是 panel-body 的直接 flex 子项，间距不变。
-             （v-memo 不能放 <template v-for> 上，Vue 3.5.34 + rolldown 编译器有 bug，故用包裹 div 绕过） -->
-        <div
-          v-for="item in visibleItems"
-          :key="item.id"
-          v-memo="[item.text, item.replyText, item.thinkText, item.streaming, item.toolStatus, item.toolResult, item.toolProgress, thinkExpanded.has(item.id), itemUsage[item.id], isDark]"
-          class="msg-wrap"
-        >
-          <!-- 用户消息：靠右，头像在气泡右边 -->
-          <div v-if="item.kind === 'user'" class="msg msg-user" :data-id="item.id">
+        <!-- .msg 是 panel-body 直接子元素，浏览器 overflow-anchor 可正确锚定 -->
+        <template v-for="item in visibleItems" :key="item.id">
+          <!-- 用户消息 -->
+          <div v-if="item.kind === 'user'"
+            v-memo="[item.text, itemUsage[item.id], isDark]"
+            class="msg msg-user" :data-id="item.id"
+          >
             <div class="bubble-wrap">
               <div class="bubble bubble-user">{{ item.text }}</div>
             </div>
             <div class="avatar avatar-user">{{ userInitial }}</div>
           </div>
 
-          <!-- AI 消息：靠左，头像在气泡左边 -->
-          <div v-else-if="item.kind === 'assistant'" class="msg msg-ai" :data-id="item.id">
+          <!-- AI 消息 -->
+          <div v-else-if="item.kind === 'assistant'"
+            v-memo="[item.replyText, item.thinkText, item.streaming, thinkExpanded.has(item.id), itemUsage[item.id], isDark]"
+            class="msg msg-ai" :data-id="item.id"
+          >
             <div class="avatar avatar-ai" :class="{ thinking: item.streaming }">
               <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
             </div>
@@ -1581,22 +1530,19 @@ function onInputKeydown(e: KeyboardEvent) {
                     <div class="think-body">{{ item.thinkText }}</div>
                   </div>
                 </div>
-                <!-- 正式回复：markstream-vue 流式 Markdown 渲染（shiki 代码高亮 + 明暗主题跟随） -->
+                <!-- 正式回复 -->
                 <div v-if="item.replyText" class="ai-reply" :class="{ dark: isDark }">
                   <MarkdownRender
                     :content="item.replyText"
                     :final="!item.streaming"
                     :fade="false"
-                    code-renderer="shiki"
-                    :code-block-theme="isDark ? 'github-dark' : 'github-light'"
                   />
                   <span v-if="item.streaming" class="cursor">▋</span>
                 </div>
-                <!-- 加载动画：claude code 风像素流——方块大小固定，横向位置/亮度不规则变化，像数据流在流动 -->
                 <div v-else-if="item.streaming && !item.thinkText" class="pixel-loader">
                   <i></i><i></i><i></i><i></i><i></i><i></i>
                 </div>
-                <!-- 单轮 token（消息下方小字） -->
+                <!-- 单轮 token -->
                 <div v-if="itemUsage[item.id] && !item.streaming" class="item-usage">
                   ↑{{ itemUsage[item.id].promptTokens }} · ↓{{ itemUsage[item.id].completionTokens }}
                 </div>
@@ -1604,8 +1550,11 @@ function onInputKeydown(e: KeyboardEvent) {
             </div>
           </div>
 
-          <!-- 工具调用：带头像，与 AI 文本气泡结构一致（avatar + content） -->
-          <div v-else class="msg msg-tool" :data-id="item.id">
+          <!-- 工具调用 -->
+          <div v-else
+            v-memo="[item.toolStatus, item.toolResult, item.toolProgress, isDark]"
+            class="msg msg-tool" :data-id="item.id"
+          >
             <div class="avatar avatar-ai avatar-tool">
               <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
             </div>
@@ -1613,7 +1562,7 @@ function onInputKeydown(e: KeyboardEvent) {
               <ToolCallCard :call="item.toolCall!" :status="item.toolStatus || 'pending'" :result="item.toolResult" :progress="item.toolProgress" />
             </div>
           </div>
-        </div>
+        </template>
       </div>
 
       <!-- 双向浮动按钮：放在 panel-body 外，用 absolute 定位，不受列表布局影响 -->
@@ -2002,14 +1951,9 @@ function onInputKeydown(e: KeyboardEvent) {
 .model-chip-name { color: var(--text-2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .model-chip:hover:not(:disabled) .model-chip-name { color: var(--accent); }
 
-/* 消息流：正常 column 布局（scrollTop≥0 标准语义），gap 16px 呼吸感，padding 16px。
-   底部锚定 + 向上分页：只渲染末尾 visibleCount 条，到顶分页加载更早历史。
-   .opening 打开瞬间隐藏消息条目（opacity:0），保留 loading 占位可见。
-   不能给 .panel-body 设 opacity:0（父级 opacity 子元素无法覆盖，会把 loading 一起藏掉）。 */
+/* 消息流：全量 DOM 常驻，离屏消息由 .msg 上的 content-visibility:auto 跳过布局/绘制。
+   滚动过程中不做窗口裁剪/懒加载插入，避免 scrollHeight 突变导致抖动。 */
 .panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: block; background: var(--bg); }
-/* v-memo 包裹层：display:contents 让自身不产生布局盒，.msg 直接成为 panel-body 的 flex 子项，
-   间距/gap 行为与无包裹时完全一致。仅用于承载 v-memo 指令（template 上不可用）。 */
-.msg-wrap { display: contents; }
 .panel-body.opening .msg { opacity: 0; transition: opacity 0.2s ease; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: var(--text-6); border-radius: 3px; transition: background 0.15s; }
@@ -2067,7 +2011,16 @@ function onInputKeydown(e: KeyboardEvent) {
 .empty-hint-slash { font-size: 11px; color: var(--text-5); margin: 0; }
 .empty-hint-slash code { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: var(--surface-3); border: 1px solid var(--border); color: var(--accent); font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
 
-.msg { display: flex; gap: 7px; max-width: 100%; align-items: flex-start; margin-bottom: 16px; }
+/* content-visibility: auto = 浏览器原生虚拟化：离屏消息跳过布局/绘制，
+   消息多时只渲染视口内+附近的 DOM，滚动/拖拽都不卡。
+   contain-intrinsic-size 的 auto 关键字会记住元素首次渲染后的真实高度，
+   离屏时用真实高度占位 → 滚动条稳定不跳，不会有"滚到空白"的闪烁。
+   160px 是 AI 消息平均高度的合理估算，首次渲染前用它撑位，渲染后浏览器自动修正。 */
+.msg {
+  display: flex; gap: 7px; max-width: 100%; align-items: flex-start; margin-bottom: 16px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
+}
 /* 用户消息靠右 */
 .msg-user { justify-content: flex-end; }
 /* AI 消息靠左 */
@@ -2420,9 +2373,9 @@ function onInputKeydown(e: KeyboardEvent) {
 
 .panel-enter-active, .panel-leave-active { transition: opacity 0.25s cubic-bezier(0.16,1,0.3,1), transform 0.25s cubic-bezier(0.16,1,0.3,1); }
 .panel-enter-from, .panel-leave-to { opacity: 0; transform: translateY(16px) scale(0.94); }
-/* 不用 msg-in 动画：它带的 transform 会让浏览器原生 scroll anchoring 把 .msg 排除在锚点候选外
-   （CSS 规范：带 transform/animation 的元素不参与 anchoring），导致向上加载历史时视口无法稳定。
-   消息入场用 opacity 过渡即可（无 transform，不干扰 anchoring）。 */
+/* 消息入场只用 opacity 淡入。不用 transform/slide，因为：
+   1. 我们已在 JS 层用锚点补偿法精确恢复滚动位置，transform 会干扰 getBoundingClientRect 测量
+   2. 纯 opacity 动画无布局副作用，不影响锚点定位精度 */
 .msg-new { animation: msg-fade-in 0.25s ease; }
 @keyframes msg-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
