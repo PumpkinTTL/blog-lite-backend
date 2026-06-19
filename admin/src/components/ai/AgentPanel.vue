@@ -14,8 +14,7 @@ import { getActiveAiProviders } from '../../api/ai-provider'
 import type { AiProvider } from '../../api/ai-provider'
 import { isDark } from '../../theme'
 import ToolCallCard from './ToolCallCard.vue'
-import MarkdownRender from 'markstream-vue'
-import 'markstream-vue/index.css'
+import MarkdownStatic from './MarkdownStatic.vue'
 
 /** 文章 formValue 的最小契约（避免和 PostEditView 强耦合） */
 interface ArticleForm {
@@ -47,7 +46,6 @@ const message = useMessage()
 
 // === 面板状态 ===
 const open = ref(false)
-const dragging = ref(false)
 const panelPos = reactive({ left: 0, top: 0 })
 
 const form = computed<ArticleForm>(() =>
@@ -286,19 +284,11 @@ interface RenderItem {
 const renderItems = ref<RenderItem[]>([])
 // === 消息渲染策略 ==========================================================
 //
-// 浏览器原生虚拟化：每条 .msg 加 content-visibility:auto + contain-intrinsic-size。
-// 离屏消息浏览器跳过布局/绘制；contain-intrinsic-size 的 auto 关键字会记住元素
-// 首次渲染后的真实高度，离屏时用真实高度占位 → 滚动条稳定不跳。
-//
-// 旧实现是手写窗口裁剪（windowStart + slice），但它"向上加载只扩顶不裁底"，
-// 导致 visibleItems 单调增长（150→180→210…），翻几次就退化为全量渲染，虚拟化失效。
-// 而且 forceScrollBottom 每次都 windowStart=n-MAX_RENDER 突然裁顶，中间位置看消息时
-// 会被跳变。原生 content-visibility 没有这些问题，代码也更简单。
+// 全量渲染 + content-visibility:auto：所有消息都在 DOM 里，但离屏消息浏览器
+// 自动跳过布局/绘制。配合 contain-intrinsic-size:auto，浏览器会缓存每条消息
+// 渲染后的真实高度，离屏时用真实高度占位 → 滚动条稳定不抖。
+// 这是处理"消息多导致 paint/layout 卡 + 滚动抖动"的标准 CSS 方案，零 JS 干预。
 // ==========================================================================
-
-// 直接渲染全部 renderItems，离屏性能交给 content-visibility。
-// 写作助手是单篇文章对话，消息量级一般几十到两三百，vnode 创建开销可接受；
-// 真正的 DOM 布局/绘制开销由 content-visibility 跳过离屏消息来消除。
 const visibleItems = computed(() => renderItems.value)
 
 const scrollBody = ref<HTMLElement | null>(null)
@@ -813,10 +803,10 @@ async function executeTool(
 }
 
 // === 拖拽 ===
-// 关键设计：拖拽过程直接操作 DOM style.left/top，绝不更新 panelPos（reactive）。
-// 旧实现每帧 mousemove 都改 panelPos → 触发整组件 re-render（遍历 visibleItems
-// 重建 vdom）→ 消息一多就卡。现在拖拽期间零 Vue render，结束后才把最终位置
-// 同步回 panelPos 供下次起点。
+// 关键设计：mousemove 直接写 DOM 做零延迟视觉反馈，同时用 rAF 合并写回 panelPos
+// （reactive）。style 绑定始终走 panelPos（不在拖拽时切 undefined），避免按下/松开
+// 瞬间 style 绑定切换导致面板闪回旧位置。mousedown 时先把 panelPos 对齐真实 DOM
+// 位置，杜绝 render 写回旧值造成的闪烁。
 let dragStart = { x: 0, y: 0, left: 0, top: 0 }
 const PANEL_W = 480
 const PANEL_H = 660
@@ -829,22 +819,36 @@ function ensureDefaultPos() {
   panelPos.top = window.innerHeight - PANEL_H - 24
 }
 let dragPanelEl: HTMLElement | null = null
+// 拖拽位置同步用的 rAF：mousemove 高频触发，直接写 DOM 做即时视觉反馈，
+// 再用 rAF 合并写回 panelPos（reactive），避免每帧都触发 Vue render。
+let dragPosRaf = 0
+let dragPendingLeft = 0
+let dragPendingTop = 0
+function commitDragPos() {
+  dragPosRaf = 0
+  panelPos.left = dragPendingLeft
+  panelPos.top = dragPendingTop
+}
 function onDragMove(e: MouseEvent) {
   if (!dragPanelEl) return
   const left = Math.max(0, Math.min(window.innerWidth - PANEL_W, dragStart.left + e.clientX - dragStart.x))
   const top = Math.max(0, Math.min(window.innerHeight - 48, dragStart.top + e.clientY - dragStart.y))
-  // 直接写 DOM，绕过 Vue reactivity：拖拽期间不触发任何 render
+  // 直接写 DOM：零延迟视觉反馈，不依赖 Vue 渲染
   dragPanelEl.style.left = left + 'px'
   dragPanelEl.style.top = top + 'px'
+  // rAF 合并写回 panelPos，保持 style 绑定与实际 DOM 一致（拖拽结束/下次 render 不闪）
+  dragPendingLeft = left
+  dragPendingTop = top
+  if (!dragPosRaf) dragPosRaf = requestAnimationFrame(commitDragPos)
 }
 function stopDrag() {
-  // 拖拽结束：把最终位置同步回 panelPos，供下次拖拽起点 & 模板恢复 style 绑定
+  // 拖拽结束：把最终位置同步回 panelPos，供下次拖拽起点
+  if (dragPosRaf) { cancelAnimationFrame(dragPosRaf); dragPosRaf = 0 }
   if (dragPanelEl) {
     const rect = dragPanelEl.getBoundingClientRect()
     panelPos.left = rect.left
     panelPos.top = rect.top
   }
-  dragging.value = false
   document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)
@@ -857,8 +861,10 @@ function startDrag(e: MouseEvent) {
   if (!dragPanelEl) return
   // 从 DOM 读实际位置作为起点（与 panelPos 可能短暂不一致时也稳妥）
   const rect = dragPanelEl.getBoundingClientRect()
+  // 先把 panelPos 对齐到真实位置，避免 mousedown 触发 render 时 style 绑定写回旧值导致闪
+  panelPos.left = rect.left
+  panelPos.top = rect.top
   dragStart = { x: e.clientX, y: e.clientY, left: rect.left, top: rect.top }
-  dragging.value = true
   document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', onDragMove)
   document.addEventListener('mouseup', stopDrag)
@@ -875,8 +881,6 @@ async function togglePanel() {
     stickToBottom = true
     lastScrollTop = 0
     scrollDirAccum = 0
-    // v-show：面板 DOM 常驻，重开只是显示，不重建消息组件 → 无卡顿。
-    // 重开即贴底（DOM 一直在，scrollHeight 是真实稳定值）。
     forceScrollBottom()
     // 首次打开才异步加载历史；后续重开 DOM 已在，贴底即可。
     if (isFirst) {
@@ -1297,7 +1301,9 @@ async function persistConversation(newPostId?: number): Promise<void> {
 
 defineExpose({ persistConversation })
 
-onMounted(() => { document.addEventListener('click', closeDropdowns) })
+onMounted(() => {
+  document.addEventListener('click', closeDropdowns)
+})
 // 历史加载懒到首次打开面板时触发（避免进页面即发请求，且与打开动作合并为一次）。
 // providers 同理懒加载。首次打开标志位保证只执行一次。
 let inited = false
@@ -1335,6 +1341,7 @@ onBeforeUnmount(() => {
   // 清理流式滚动 rAF，避免卸载后回调写已销毁的 DOM
   if (stickRafId) { cancelAnimationFrame(stickRafId); stickRafId = 0 }
   if (scrollRafId) { cancelAnimationFrame(scrollRafId); scrollRafId = 0 }
+  if (dragPosRaf) { cancelAnimationFrame(dragPosRaf); dragPosRaf = 0 }
   // 取消正在进行的 history 请求，避免卸载后回调写已销毁的响应式状态
   abortHistory()
   // 离开页面/卸载前把当前对话落库，避免未点"保存文章"就关闭导致丢失
@@ -1343,22 +1350,19 @@ onBeforeUnmount(() => {
 function closeDropdowns() { slashMenuOpen.value = false }
 
 // === 滚动管理 ===
-// content-visibility:auto 负责离屏性能；这里只管：贴底判断、双向浮动按钮。
+// content-visibility:auto + contain-intrinsic-size:auto 负责离屏渲染与高度占位
+// （浏览器原生缓存真实高度，离屏时自动占位，无需 JS 补偿）。这里只管：
+// 贴底判断、双向浮动按钮。
 
 function toggleThink(id: string) {
   if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)
   else thinkExpanded.value.add(id)
 }
 
-// ==========================================================================
-// 稳定滚动：不在用户滚动过程中改动历史 DOM，只维护贴底状态。
-// ==========================================================================
-
 // 记录当前是否贴底（流式时只在贴底才 auto-scroll，避免打断用户看历史）
 let stickToBottom = true
 
-/** 即时强制贴底。content-visibility 下离屏占位高度是估算值，视口到底后浏览器
- *  才渲染底部消息，真实高度可能更大导致 scrollHeight 增长，补一帧再设一次确保贴底。 */
+/** 即时强制贴底。补一帧再设一次，应对内容高度异步增长（流式回复展开）。 */
 function forceScrollBottom() {
   const el = scrollBody.value
   if (!el) return
@@ -1373,11 +1377,10 @@ async function scrollToBottom() {
   forceScrollBottom()
 }
 // 流式时调用：仅当用户当前贴底（stickToBottom）才自动滚动，
-// 用户向上看历史时不打断。
+// 用户向上看历史时不打断。rAF 合并到一帧一次，避免每 token 都触发回流。
 let stickRafId = 0
 function maybeStickBottom() {
   if (!stickToBottom || !scrollBody.value) return
-  // 流式 token 高频到达，rAF 合并到一帧一次，避免每 token 都触发回流
   if (stickRafId) return
   stickRafId = requestAnimationFrame(() => {
     stickRafId = 0
@@ -1433,6 +1436,7 @@ function onBackBtnClick() {
     scrollBody.value.scrollTop = 0
   }
 }
+
 function onInputKeydown(e: KeyboardEvent) {
   // 斜杠菜单打开时优先处理（方向键/回车/Tab/Esc），拦截默认 Enter 发送
   if (onSlashMenuKeydown(e)) return
@@ -1453,7 +1457,7 @@ function onInputKeydown(e: KeyboardEvent) {
       v-show="open"
       class="agent-panel"
       :class="{ dark: isDark, fullscreen: isFullscreen }"
-      :style="isFullscreen || dragging ? undefined : { left: panelPos.left + 'px', top: panelPos.top + 'px' }"
+      :style="isFullscreen ? undefined : { left: panelPos.left + 'px', top: panelPos.top + 'px' }"
     >
       <!-- 头部 -->
       <div class="panel-head" @mousedown="startDrag">
@@ -1495,7 +1499,10 @@ function onInputKeydown(e: KeyboardEvent) {
           <p class="empty-hint-slash">输入 <code>/</code> 查看快捷命令</p>
         </div>
 
-        <!-- .msg 是 panel-body 直接子元素，浏览器 overflow-anchor 可正确锚定 -->
+        <!-- .msg 是 panel-body 直接子元素，浏览器 overflow-anchor 可正确锚定。
+             content-visibility:auto 让离屏消息跳过布局/绘制；
+             contain-intrinsic-size:auto 让浏览器缓存渲染后的真实高度做占位，根治抖动。 -->
+        <div class="msg-list">
         <template v-for="item in visibleItems" :key="item.id">
           <!-- 用户消息 -->
           <div v-if="item.kind === 'user'"
@@ -1530,13 +1537,9 @@ function onInputKeydown(e: KeyboardEvent) {
                     <div class="think-body">{{ item.thinkText }}</div>
                   </div>
                 </div>
-                <!-- 正式回复 -->
+                <!-- 正式回复：MarkdownStatic 纯同步渲染，渲染完静止，滚动不抖 -->
                 <div v-if="item.replyText" class="ai-reply" :class="{ dark: isDark }">
-                  <MarkdownRender
-                    :content="item.replyText"
-                    :final="!item.streaming"
-                    :fade="false"
-                  />
+                  <MarkdownStatic :content="item.replyText" />
                   <span v-if="item.streaming" class="cursor">▋</span>
                 </div>
                 <div v-else-if="item.streaming && !item.thinkText" class="pixel-loader">
@@ -1563,6 +1566,7 @@ function onInputKeydown(e: KeyboardEvent) {
             </div>
           </div>
         </template>
+        </div>
       </div>
 
       <!-- 双向浮动按钮：放在 panel-body 外，用 absolute 定位，不受列表布局影响 -->
@@ -1951,9 +1955,9 @@ function onInputKeydown(e: KeyboardEvent) {
 .model-chip-name { color: var(--text-2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .model-chip:hover:not(:disabled) .model-chip-name { color: var(--accent); }
 
-/* 消息流：全量 DOM 常驻，离屏消息由 .msg 上的 content-visibility:auto 跳过布局/绘制。
-   滚动过程中不做窗口裁剪/懒加载插入，避免 scrollHeight 突变导致抖动。 */
-.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: block; background: var(--bg); }
+/* 消息流：全量 DOM 常驻。消息节点全部常驻，浏览器原生 overflow-anchor
+   锚定滚动位置，滚动时不会因高度突变而闪。 */
+.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overflow-anchor: auto; padding: 16px; display: block; background: var(--bg); }
 .panel-body.opening .msg { opacity: 0; transition: opacity 0.2s ease; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: var(--text-6); border-radius: 3px; transition: background 0.15s; }
@@ -2011,15 +2015,17 @@ function onInputKeydown(e: KeyboardEvent) {
 .empty-hint-slash { font-size: 11px; color: var(--text-5); margin: 0; }
 .empty-hint-slash code { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: var(--surface-3); border: 1px solid var(--border); color: var(--accent); font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
 
-/* content-visibility: auto = 浏览器原生虚拟化：离屏消息跳过布局/绘制，
-   消息多时只渲染视口内+附近的 DOM，滚动/拖拽都不卡。
-   contain-intrinsic-size 的 auto 关键字会记住元素首次渲染后的真实高度，
-   离屏时用真实高度占位 → 滚动条稳定不跳，不会有"滚到空白"的闪烁。
-   160px 是 AI 消息平均高度的合理估算，首次渲染前用它撑位，渲染后浏览器自动修正。 */
+/* 消息渲染：全量 DOM 常驻，不使用 content-visibility。
+   原因：MarkdownRender（markstream-vue）是异步渲染（代码块高亮/表格/KaTeX
+   异步加载后才定型），消息高度会变化。content-visibility:auto 会在离屏消息
+   进入视口时才真正渲染它，此时高度从 200px 占位突变为真实高度 → 滚动时跳动闪屏。
+   contain-intrinsic-size:auto 只在"完全稳定的渲染后"缓存高度，异步内容永远
+   到不了稳定态，缓存一直是旧的，必然抖。
+   消息量级一两百条，全量渲染开销可接受，浏览器原生 overflow-anchor 在所有节点
+   常驻时能正确锚定滚动位置，这才是"简单不闪"的正解。 */
+.msg-list { display: block; overflow-anchor: auto; }
 .msg {
   display: flex; gap: 7px; max-width: 100%; align-items: flex-start; margin-bottom: 16px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 160px;
 }
 /* 用户消息靠右 */
 .msg-user { justify-content: flex-end; }
@@ -2043,34 +2049,31 @@ function onInputKeydown(e: KeyboardEvent) {
 .avatar-user { background: var(--text-2); font-size: 12px; font-weight: 600; }
 
 .bubble { padding: 9px 13px; border-radius: 12px; font-size: 13px; line-height: 1.6; word-break: break-word; }
-/* AI 回复区：markstream-vue 裸渲染，只设宽度，不设 padding/字号，让组件自带 CSS 接管 */
-/* AI 回复区：自由宽度，收缩到内容大小，max-width 限制上限不超容器。
+/* AI 回复区：MarkdownStatic 渲染的纯 HTML，无包装层（ms-content/ms-markdown 已不存在）。
+   自由宽度，收缩到内容大小，max-width 限制上限不超容器。
    短文本就是窄气泡，代码块/表格才撑宽。
    透明背景：AI 回复不要气泡背景，和 panel-body 融为一体。
-   overflow-x:auto 让宽表格/代码块横向滚动而非挤掉布局。
-   !important 强制覆盖 markstream-vue 自带的任何暖色背景。 */
-.ai-reply { width: fit-content; max-width: 100%; min-width: 0; color: var(--text); background: transparent !important; overflow-x: auto; }
-.ai-reply :deep(*) { background-color: transparent !important; }
-/* 代码块保留中性灰底（覆盖全局透明），其他元素一律透明 */
+   overflow-x:auto 让宽表格/代码块横向滚动而非挤掉布局。 */
+.ai-reply { width: fit-content; max-width: 100%; min-width: 0; color: var(--text); background: transparent; overflow-x: auto; }
+/* 代码块保留中性灰底，引用块/表头/隔行表格用对应底色 */
 .ai-reply :deep(pre),
-.ai-reply :deep(pre code) { background: var(--surface-3) !important; }
-.ai-reply :deep(blockquote) { background: var(--surface-2) !important; }
-.ai-reply :deep(th) { background: var(--surface-3) !important; }
-.ai-reply :deep(tr:nth-child(even) td) { background: var(--surface-2) !important; }
+.ai-reply :deep(pre code) { background: var(--surface-3); }
+.ai-reply :deep(blockquote) { background: var(--surface-2); }
+.ai-reply :deep(th) { background: var(--surface-3); }
+.ai-reply :deep(tr:nth-child(even) td) { background: var(--surface-2); }
 /* user 气泡走纯文本，保留 pre-wrap 换行 */
 .bubble-user { background: var(--surface-4); color: var(--text); border-top-right-radius: 4px; white-space: pre-wrap; }
 
 /* ===== AI 回复 Markdown 排版（对标 ChatGPT/Claude 聊天界面）=====
-   用 :deep() 覆盖 markstream-vue 自带的偏文档站样式，收紧到聊天尺度。
+   MarkdownStatic 输出的是裸 HTML，:deep() 直接选元素（无 ms-* 包装层）。
    所有颜色走 CSS 变量，深色模式自动跟随。 */
-.ai-reply :deep(.ms-content),
-.ai-reply :deep(.ms-markdown) {
+.ai-reply :deep(.md-static) {
   font-size: 14px; line-height: 1.7; color: var(--text);
   word-wrap: break-word; overflow-wrap: break-word;
 }
 /* 首尾元素不留多余间距 */
-.ai-reply :deep(.ms-markdown > :first-child) { margin-top: 0; }
-.ai-reply :deep(.ms-markdown > :last-child) { margin-bottom: 0; }
+.ai-reply :deep(.md-static > :first-child) { margin-top: 0; }
+.ai-reply :deep(.md-static > :last-child) { margin-bottom: 0; }
 /* 段落：ChatGPT 风的宽松行高 + 适度段间距 */
 .ai-reply :deep(p) { margin: 0 0 12px; }
 .ai-reply :deep(p:last-child) { margin-bottom: 0; }
@@ -2089,10 +2092,10 @@ function onInputKeydown(e: KeyboardEvent) {
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   font-size: 0.88em;
 }
-/* 代码块：覆盖 markstream 的花哨样式，改成克制的灰底块 */
+/* 代码块：克制的灰底块，MarkdownStatic 输出标准 <pre><code> */
 .ai-reply :deep(pre) {
   margin: 12px 0; padding: 14px 16px;
-  background: var(--surface-3) !important;
+  background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow-x: auto;
@@ -2101,7 +2104,7 @@ function onInputKeydown(e: KeyboardEvent) {
 .ai-reply :deep(pre code) {
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   font-size: 13px; line-height: 1.6;
-  background: transparent !important;
+  background: transparent;
   padding: 0;
 }
 /* 引用块：中性灰底（不再用暖橙 accent-bg，避免背景偏红），左侧细边框区分 */
