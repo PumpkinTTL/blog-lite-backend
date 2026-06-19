@@ -12,6 +12,12 @@ const router = createRouter({
       meta: { title: '登录后台', requiresAuth: false },
     },
     {
+      path: '/scroll-test',
+      name: 'scroll-test',
+      component: () => import('../views/ScrollTestView.vue'),
+      meta: { title: '滚动测试', requiresAuth: false },
+    },
+    {
       path: '/',
       component: AdminLayout,
       redirect: '/dashboard',
