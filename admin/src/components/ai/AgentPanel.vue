@@ -886,10 +886,10 @@ async function togglePanel() {
   if (open.value) {
     ensureDefaultPos()
     await nextTick()
-    // 首次打开有历史要异步加载，用 opening（opacity:0）消除渲染跳动；
-    // 再次打开历史已在内存，无需 opening（直接显示）。
     const isFirst = !inited
     if (isFirst) scrollBody.value?.classList.add('opening')
+    // 打开默认贴底：保证 ResizeObserver 补滚生效，定位到最新消息
+    stickToBottom = true
     updateWindow()
     requestAnimationFrame(() => {
       initOnFirstOpen().finally(() => {
@@ -1327,8 +1327,14 @@ function ensureResizeObserver() {
           changed = true
         }
       })
-      // 高度变化时（markdown 渲染完撑高）重算窗口，保证 spacer 同步
-      if (changed) updateWindow()
+      // 高度变化时（markdown 渲染完撑高）重算窗口，保证 spacer 同步。
+      // 贴底状态下真实高度撑大后 scrollHeight 变化，补滚一次到底（修复打开未定位最底）。
+      if (changed) {
+        updateWindow()
+        if (stickToBottom && scrollBody.value) {
+          scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+        }
+      }
     })
   })
 }
@@ -1953,9 +1959,11 @@ function onInputKeydown(e: KeyboardEvent) {
 
 /* 消息流：正常 column 布局（scrollTop≥0 标准语义），gap 16px 呼吸感，padding 16px。
    窗口化：上下用 spacer div 撑高，中间只渲染可视区条目。
-   .opening 打开瞬间 opacity:0，历史渲染完滚到底后再淡入，消除 column 下打开跳动。 */
-.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; background: var(--bg); transition: opacity 0.2s ease; }
-.panel-body.opening { opacity: 0; }
+   .opening 打开瞬间只隐藏消息条目（opacity:0），保留 loading 占位可见。
+   不能给 .panel-body 设 opacity:0（父级 opacity 子元素无法覆盖，会把 loading 一起藏掉）。 */
+.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
+.panel-body.opening .msg,
+.panel-body.opening .win-spacer { opacity: 0; transition: opacity 0.2s ease; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: var(--text-6); border-radius: 3px; transition: background 0.15s; }
 .panel-body::-webkit-scrollbar-thumb:hover { background: var(--text-5); }
