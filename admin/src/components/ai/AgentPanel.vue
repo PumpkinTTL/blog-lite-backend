@@ -6,7 +6,6 @@ import {
   BulbOutline, ChevronDownOutline,
   SparklesOutline, ContractOutline, ExpandOutline, HappyOutline, ColorPaletteOutline, CubeOutline,
   StopOutline, ArrowUpSharp, ArrowUpOutline, ArrowDownOutline, SyncOutline,
-  LayersOutline, DocumentTextOutline,
 } from '@vicons/ionicons5'
 import { streamChat, streamCompact, streamWebSearch } from '../../api/ai'
 import type { AiChatMessage, AiToolCall, AiArticleContext, AiUsage } from '../../api/ai'
@@ -127,7 +126,7 @@ function formatTokens(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K'
   return String(n)
 }
-/** ISO 时间 → 相对时间（如「3分钟前」），失败回落为日期 */
+/** ISO 时间 → 相对时间（如「3分钟前」），超过 7 天回落为日期 */
 function formatCompactTime(iso: string | null): string {
   if (!iso) return ''
   const t = new Date(iso).getTime()
@@ -136,17 +135,10 @@ function formatCompactTime(iso: string | null): string {
   if (diff < 60_000) return '刚刚'
   if (diff < 3600_000) return Math.floor(diff / 60_000) + '分钟前'
   if (diff < 86_400_000) return Math.floor(diff / 3600_000) + '小时前'
-  return Math.floor(diff / 86_400_000) + '天前'
-}
-
-function selectProvider(id: number) {
-  selectedProviderId.value = id
-  selectedModel.value = providers.value.find(p => p.id === id)?.models?.[0]?.modelId ?? null
-  persistSelection()
-}
-function selectModel(modelId: string) {
-  selectedModel.value = modelId
-  persistSelection()
+  if (diff < 7 * 86_400_000) return Math.floor(diff / 86_400_000) + '天前'
+  // 超过 7 天：相对时间已不直观，回落为具体日期
+  const d = new Date(t)
+  return `${d.getMonth() + 1}月${d.getDate()}日`
 }
 
 /** 模型选择弹窗里选一个模型（自动切到它所属的 provider） */
@@ -177,7 +169,6 @@ async function loadProviders() {
         selectedModel.value = list[0].models?.[0]?.modelId ?? null
       }
     }
-    console.log('[AgentPanel] 加载供应商:', list.length, '个')
   } catch (e: any) {
     console.warn('[AgentPanel] 加载供应商失败:', e.message)
   }
@@ -993,6 +984,12 @@ async function handleCompact() {
     compacting.value = false
     await nextTick()
     inputRef.value?.focus?.()
+    // 压缩期间切了文章（pendingReload），结束后补触发重载
+    if (pendingReload) {
+      pendingReload = false
+      historyLoaded.value = false
+      loadHistory()
+    }
   }
 }
 
@@ -1144,6 +1141,12 @@ async function handleSend() {
     await nextTick()
     inputRef.value?.focus?.()
     void persistConversation()
+    // 发送期间切了文章（pendingReload），结束后补触发重载
+    if (pendingReload) {
+      pendingReload = false
+      historyLoaded.value = false
+      loadHistory()
+    }
   }
   void userItem
 }
@@ -1160,8 +1163,14 @@ function applyQuickCmd(cmd: QuickCmd) {
 // === 历史持久化 ===
 const historyLoaded = ref(false)
 const historyLoading = ref(false)
+// 历史加载竞态控制：每次 loadHistory 递增 generation，响应回来后校验是否仍是最新。
+// 双保险：AbortController 主动取消上一个 in-flight 请求；generation 防止
+// 已发出的请求（来不及取消）把旧数据覆盖到新文章上。
+let historyGen = 0
+let historyAbort: AbortController | null = null
 async function loadHistory() {
   if (!props.postId) {
+    abortHistory()
     messages.value = []
     renderItems.value = []
     thinkExpanded.value.clear()
@@ -1169,9 +1178,16 @@ async function loadHistory() {
     historyLoaded.value = true
     return
   }
+  // 取消上一个 in-flight 请求，本次 generation +1
+  abortHistory()
+  const myGen = ++historyGen
+  const myAbort = new AbortController()
+  historyAbort = myAbort
   historyLoading.value = true
   try {
-    const res = await getConversationByPostId(props.postId)
+    const res = await getConversationByPostId(props.postId, myAbort.signal)
+    // 竞态守卫：若期间又触发了新的 loadHistory（切了文章），丢弃本次结果
+    if (myGen !== historyGen) return
     const data = res.data
     if (data && Array.isArray(data.messages) && data.messages.length > 0) {
       messages.value = data.messages as AiChatMessage[]
@@ -1192,20 +1208,30 @@ async function loadHistory() {
       compactionTokens.value = Number(data.compactionTokens ?? 0) || 0
       compactionReleasedAt.value = data.compactedAt ?? null
     }
-  } catch { /* 静默 */ }
-  finally {
-    historyLoaded.value = true
-    historyLoading.value = false
-    // 面板未打开时 scrollBody 为 null（column-reverse 下打开即 scrollTop=0 在底部，无需滚动）。
-    // 仅在面板恰好已打开、新加载了历史时滚一下。
-    if (open.value) await scrollToBottom()
+  } catch {
+    // 主动取消（切文章）抛 AbortError，静默；其余错误也静默保持原行为
+  } finally {
+    // 仅当本次仍是最新 generation 时才更新 loading 标志，避免旧请求的 finally
+    // 把新请求的 loading 提前置回 false
+    if (myGen === historyGen) {
+      historyLoaded.value = true
+      historyLoading.value = false
+      // 仅在面板已打开时贴底
+      if (open.value) await scrollToBottom()
+    }
   }
+}
+/** 取消正在进行的 history 请求（切文章 / 卸载时调用） */
+function abortHistory() {
+  if (historyAbort) { historyAbort.abort(); historyAbort = null }
 }
 
 function rebuildRenderFromHistory() {
   renderItems.value = []
   visibleCount.value = PAGE_SIZE   // 重置可视页：只渲染最后一页，向上滚动时再分页加载
   thinkExpanded.value.clear()
+  // 历史重建生成新 id，旧 itemUsage 条目（按旧 id 索引）已成孤儿，清空避免内存累积
+  itemUsage.value = {}
   const toolResults = new Map<string, string>()
   for (const m of messages.value) {
     if (m.role === 'tool' && m.tool_call_id) toolResults.set(m.tool_call_id, m.content)
@@ -1271,15 +1297,28 @@ async function initOnFirstOpen() {
     historyLoaded.value = true
   }
 }
+// 发送/压缩期间切文章的待重载标志，发送结束后兜底重载
+let pendingReload = false
 watch(() => props.postId, () => {
   // postId 变化（切换文章）时重新加载历史；首次打开已由 initOnFirstOpen 处理。
-  if (inited) { historyLoaded.value = false; loadHistory() }
+  if (!inited) return
+  // 发送/压缩进行中时切文章：streamChat 回调仍在写 messages/renderItems，
+  // 此时 loadHistory 会清空并重建，导致流式输出和新历史互相污染。
+  // 标记待重载，等发送结束后由 handleSend finally 触发重载。
+  if (sending.value || compacting.value) {
+    pendingReload = true
+    return
+  }
+  historyLoaded.value = false
+  loadHistory()
 })
 onBeforeUnmount(() => {
   document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', stopDrag)
   document.removeEventListener('click', closeDropdowns)
+  // 取消正在进行的 history 请求，避免卸载后回调写已销毁的响应式状态
+  abortHistory()
   // 离开页面/卸载前把当前对话落库，避免未点"保存文章"就关闭导致丢失
   void persistConversation()
 })

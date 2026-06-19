@@ -42,8 +42,8 @@ export function getAiConversations(params?: { id?: number; postId?: number; page
 }
 
 /** 按文章 ID 读取完整对话（AgentPanel 加载 / 详情查看用，messages 已 parse） */
-export function getConversationByPostId(postId: number) {
-  return request.get(`/ai-conversations/post/${postId}`)
+export function getConversationByPostId(postId: number, signal?: AbortSignal) {
+  return request.get(`/ai-conversations/post/${postId}`, { signal })
 }
 
 /** 按主键读取单条对话（详情查看用，messages 已 parse） */

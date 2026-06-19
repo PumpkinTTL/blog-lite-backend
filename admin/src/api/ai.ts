@@ -90,55 +90,47 @@ export async function streamCompact(
   let summary = ''
   let usage: AiUsage | null = null
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
-    for (const line of lines) {
-      const s = line.trim()
-      if (!s.startsWith('data:')) continue
-      const payload = s.slice(5).trim()
-      if (!payload) continue
-      try {
-        const evt = JSON.parse(payload)
-        if (evt.type === 'thinking' && typeof evt.data?.text === 'string') {
-          onThinking?.(evt.data.text)
-        } else if (evt.type === 'token' && typeof evt.data?.text === 'string') {
-          summary += evt.data.text
-          onToken(evt.data.text)
-        } else if (evt.type === 'usage' && evt.data?.totalTokens != null) {
-          usage = {
-            promptTokens: evt.data.promptTokens ?? 0,
-            completionTokens: evt.data.completionTokens ?? 0,
-            totalTokens: evt.data.totalTokens ?? 0,
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        const s = line.trim()
+        if (!s.startsWith('data:')) continue
+        const payload = s.slice(5).trim()
+        if (!payload) continue
+        try {
+          const evt = JSON.parse(payload)
+          if (evt.type === 'thinking' && typeof evt.data?.text === 'string') {
+            onThinking?.(evt.data.text)
+          } else if (evt.type === 'token' && typeof evt.data?.text === 'string') {
+            summary += evt.data.text
+            onToken(evt.data.text)
+          } else if (evt.type === 'usage' && evt.data?.totalTokens != null) {
+            usage = {
+              promptTokens: evt.data.promptTokens ?? 0,
+              completionTokens: evt.data.completionTokens ?? 0,
+              totalTokens: evt.data.totalTokens ?? 0,
+            }
+          } else if (evt.type === 'done' && typeof evt.data?.summary === 'string') {
+            // 网关结束时的完整摘要，作为权威值（覆盖本地拼接，避免丢末尾）
+            summary = evt.data.summary
+          } else if (evt.type === 'error') {
+            throw new Error(evt.data?.message || '压缩服务错误')
           }
-        } else if (evt.type === 'done' && typeof evt.data?.summary === 'string') {
-          // 网关结束时的完整摘要，作为权威值（覆盖本地拼接，避免丢末尾）
-          summary = evt.data.summary
-        } else if (evt.type === 'error') {
-          throw new Error(evt.data?.message || '压缩服务错误')
+        } catch (e) {
+          if (e instanceof Error && e.message && !e.message.includes('JSON')) throw e
         }
-      } catch (e) {
-        if (e instanceof Error && e.message && !e.message.includes('JSON')) throw e
       }
     }
+  } finally {
+    reader.cancel().catch(() => {})
   }
 
   return { summary, usage }
-}
-
-/**
- * @deprecated 已被 streamCompact 取代（流式版）。保留仅为兼容。
- * 压缩对话历史：把多轮历史交给后端 AI 总结成摘要。
- */
-export function compactHistory(data: { messages: AiChatMessage[]; model?: string }) {
-  return request.post<AiApiResponse<AiCompactResult>, AiApiResponse<AiCompactResult>>(
-    '/ai/compact',
-    data,
-    { timeout: 180000 },
-  )
 }
 
 /* ============ 联网搜索（SSE 流式进度） ============ */
@@ -206,32 +198,36 @@ export async function streamWebSearch(
   let buffer = ''
   let result: WebSearchResult = { query, answer: null, results: [], responseTime: 0 }
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
-    for (const line of lines) {
-      const s = line.trim()
-      if (!s.startsWith('data:')) continue
-      const payload = s.slice(5).trim()
-      if (!payload) continue
-      try {
-        const evt = JSON.parse(payload)
-        if (evt.type === 'progress' && evt.data?.message) {
-          onProgress?.(evt.data as WebSearchProgress)
-        } else if (evt.type === 'done') {
-          // 网关结束时的完整结果，作为权威值
-          result = evt.data as WebSearchResult
-        } else if (evt.type === 'error') {
-          throw new Error(evt.data?.message || '搜索服务错误')
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        const s = line.trim()
+        if (!s.startsWith('data:')) continue
+        const payload = s.slice(5).trim()
+        if (!payload) continue
+        try {
+          const evt = JSON.parse(payload)
+          if (evt.type === 'progress' && evt.data?.message) {
+            onProgress?.(evt.data as WebSearchProgress)
+          } else if (evt.type === 'done') {
+            // 网关结束时的完整结果，作为权威值
+            result = evt.data as WebSearchResult
+          } else if (evt.type === 'error') {
+            throw new Error(evt.data?.message || '搜索服务错误')
+          }
+        } catch (e) {
+          // error 类型已抛出；JSON 解析失败则跳过
+          if (e instanceof Error && e.message && !e.message.includes('JSON')) throw e
         }
-      } catch (e) {
-        // error 类型已抛出；JSON 解析失败则跳过
-        if (e instanceof Error && e.message && !e.message.includes('JSON')) throw e
       }
     }
+  } finally {
+    reader.cancel().catch(() => {})
   }
 
   return result
@@ -326,44 +322,49 @@ export async function streamChat(
   let finishReason = 'stop'
   let usage: AiUsage | null = null
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
-    for (const line of lines) {
-      const s = line.trim()
-      if (!s.startsWith('data:')) continue
-      const payload = s.slice(5).trim()
-      if (!payload) continue
-      try {
-        const evt = JSON.parse(payload)
-        if (evt.type === 'thinking' && typeof evt.data?.text === 'string') {
-          onThinking?.(evt.data.text)
-        } else if (evt.type === 'token' && typeof evt.data?.text === 'string') {
-          content += evt.data.text
-          onToken(evt.data.text)
-        } else if (evt.type === 'tool_calls' && Array.isArray(evt.data?.calls)) {
-          toolCalls.push(...evt.data.calls)
-          onToolCalls(evt.data.calls)
-        } else if (evt.type === 'usage' && evt.data?.totalTokens != null) {
-          usage = {
-            promptTokens: evt.data.promptTokens ?? 0,
-            completionTokens: evt.data.completionTokens ?? 0,
-            totalTokens: evt.data.totalTokens ?? 0,
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        const s = line.trim()
+        if (!s.startsWith('data:')) continue
+        const payload = s.slice(5).trim()
+        if (!payload) continue
+        try {
+          const evt = JSON.parse(payload)
+          if (evt.type === 'thinking' && typeof evt.data?.text === 'string') {
+            onThinking?.(evt.data.text)
+          } else if (evt.type === 'token' && typeof evt.data?.text === 'string') {
+            content += evt.data.text
+            onToken(evt.data.text)
+          } else if (evt.type === 'tool_calls' && Array.isArray(evt.data?.calls)) {
+            toolCalls.push(...evt.data.calls)
+            onToolCalls(evt.data.calls)
+          } else if (evt.type === 'usage' && evt.data?.totalTokens != null) {
+            usage = {
+              promptTokens: evt.data.promptTokens ?? 0,
+              completionTokens: evt.data.completionTokens ?? 0,
+              totalTokens: evt.data.totalTokens ?? 0,
+            }
+            onUsage?.(usage)
+          } else if (evt.type === 'done') {
+            finishReason = evt.data?.finishReason ?? 'stop'
+          } else if (evt.type === 'error') {
+            throw new Error(evt.data?.message || 'AI 服务错误')
           }
-          onUsage?.(usage)
-        } else if (evt.type === 'done') {
-          finishReason = evt.data?.finishReason ?? 'stop'
-        } else if (evt.type === 'error') {
-          throw new Error(evt.data?.message || 'AI 服务错误')
+        } catch (e) {
+          // error 类型已抛出；JSON 解析失败则跳过
+          if (e instanceof Error && e.message && !e.message.includes('JSON')) throw e
         }
-      } catch (e) {
-        // error 类型已抛出；JSON 解析失败则跳过
-        if (e instanceof Error && e.message && !e.message.includes('JSON')) throw e
       }
     }
+  } finally {
+    // 异常/中止/正常结束都要释放 reader，避免底层流连接泄漏
+    reader.cancel().catch(() => {})
   }
 
   return { content, toolCalls, finishReason, usage }
