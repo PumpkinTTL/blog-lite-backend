@@ -20,6 +20,11 @@ watch(
   (s) => { if (s !== 'running') expanded.value = false },
 )
 
+// 是否为"实时流式完成"：挂载时已是 success 视为历史回放，不播揭示动画。
+// 只有 running→success 的实时转换才播逐条出现动画（首次见证）。
+// 历史/滚动重现的已完成卡片直接全量展示，避免 setInterval 重跑导致卡顿。
+const isLiveReveal = ref(props.status === 'running')
+
 // 工具名中文映射
 const NAME_LABEL: Record<string, string> = {
   get_article: '读取文章',
@@ -104,7 +109,10 @@ function domainOf(url: string): string {
   }
 }
 
-// watch result：success 时解析，启动逐条揭示动画
+// watch result：success 时解析搜索结果。
+// - 实时流式完成（isLiveReveal）：启动逐条揭示动画，模拟"结果一条条出现"。
+// - 历史回放/滚动重现（挂载即 success）：直接全量展示，不启动 setInterval，
+//   避免每张卡片挂载都重跑定时器导致快速滚动卡顿。
 watch(
   () => [props.result, props.status] as const,
   ([result, status]) => {
@@ -122,7 +130,12 @@ watch(
         responseTime: parsed.responseTime ?? 0,
         total: all.length,
       }
-      // 逐条揭示：每 150ms push 一条，模拟"搜索结果一条条出现"
+      // 历史回放：直接全量，不播动画
+      if (!isLiveReveal.value) {
+        revealedResults.value = all
+        return
+      }
+      // 实时完成：逐条揭示动画（仅本次实时转换触发一次）
       revealedResults.value = []
       clearRevealTimer()
       let idx = 0

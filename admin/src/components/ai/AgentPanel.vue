@@ -1298,21 +1298,29 @@ function toggleThink(id: string) {
  *  关键：保留用户当前视觉位置（无缝衔接）。
  *  做法——加载前记 scrollHeight，DOM 更新后 scrollTop 补上新旧高度差，
  *  用户看到的内容纹丝不动，仿佛上面一直就有这些消息。 */
+let loadingMorePromise: Promise<void> | null = null
 async function loadMoreAbove() {
-  if (!hasMoreAbove.value || loadingMore.value) return
-  loadingMore.value = true
-  const el = scrollBody.value
-  const oldHeight = el?.scrollHeight ?? 0
-  const oldTop = el?.scrollTop ?? 0
-  visibleCount.value = Math.min(renderItems.value.length, visibleCount.value + PAGE_SIZE)
-  // 等 Vue 把新条目渲染进 DOM（nextTick 后布局已更新）
-  await nextTick()
-  if (el) {
-    const newHeight = el.scrollHeight
-    // 补偿：把新增高度加到 scrollTop，视觉位置不变
-    el.scrollTop = oldTop + (newHeight - oldHeight)
-  }
-  loadingMore.value = false
+  // 双重防重入：标志位 + promise 引用。快速滚动时 onScroll 会连续触发，
+  // 仅靠 loadingMore 标志位不够（await 间隙多次进入仍可能重复扩容）。
+  if (loadingMorePromise) return loadingMorePromise
+  if (!hasMoreAbove.value) return
+  loadingMorePromise = (async () => {
+    loadingMore.value = true
+    const el = scrollBody.value
+    // 读 scrollHeight 前先读一次 scrollTop 避免强制布局抖动（layout thrashing）
+    const oldHeight = el?.scrollHeight ?? 0
+    const oldTop = el?.scrollTop ?? 0
+    visibleCount.value = Math.min(renderItems.value.length, visibleCount.value + PAGE_SIZE)
+    // 等 Vue 把新条目渲染进 DOM（nextTick 后布局已更新）
+    await nextTick()
+    if (el) {
+      const newHeight = el.scrollHeight
+      // 补偿：把新增高度加到 scrollTop，视觉位置不变
+      el.scrollTop = oldTop + (newHeight - oldHeight)
+    }
+    loadingMore.value = false
+  })()
+  try { await loadingMorePromise } finally { loadingMorePromise = null }
 }
 
 /** 即时强制贴底：scrollTop = scrollHeight + 设 sticky。
@@ -1346,7 +1354,20 @@ let scrollDirAccum = 0
 const SCROLL_DIR_THRESHOLD = 12
 // 到顶分页阈值：scrollTop 小于此值触发 loadMoreAbove
 const TOP_LOAD_THRESHOLD = 80
+// onScroll 节流：滚动事件高频触发（快速滚动 60+/秒），直接写响应式 ref 会
+// 触发 Vue 调度重渲染。合并到 rAF，一帧最多处理一次；且只在值真正变化时写 ref。
+let scrollRafId = 0
 function onScroll() {
+  // 到顶分页立即处理（不节流，保证滚动到顶响应及时），其余 UI 状态走 rAF。
+  const el = scrollBody.value
+  if (el && el.scrollTop <= TOP_LOAD_THRESHOLD) loadMoreAbove()
+  if (scrollRafId) return
+  scrollRafId = requestAnimationFrame(() => {
+    scrollRafId = 0
+    updateScrollUi()
+  })
+}
+function updateScrollUi() {
   const el = scrollBody.value
   if (!el) return
   const top = el.scrollTop
@@ -1356,17 +1377,17 @@ function onScroll() {
   const delta = top - lastScrollTop
   lastScrollTop = top
   stickToBottom = nearBottom
-  // 向上滚到顶 → 分页加载更早的历史（无缝衔接，保留视觉位置）
-  if (top <= TOP_LOAD_THRESHOLD && delta <= 0) loadMoreAbove()
-  if (max <= 0 || nearBottom) { showBackBtn.value = false; scrollDirAccum = 0; return }
-  if (nearTop && delta <= 0) { showBackBtn.value = false; scrollDirAccum = 0; return }
+  // 按钮可见性 & 方向：只在值变化时写 ref，避免无谓重渲染
+  const shouldShow = max > 0 && !nearBottom && !(nearTop && delta <= 0)
+  if (shouldShow !== showBackBtn.value) showBackBtn.value = shouldShow
+  if (!shouldShow) { scrollDirAccum = 0; return }
   // 累积同方向位移，超阈值才翻转箭头
   scrollDirAccum += delta
   if (Math.abs(scrollDirAccum) >= SCROLL_DIR_THRESHOLD) {
-    arrowDown.value = scrollDirAccum > 0
+    const newDir = scrollDirAccum > 0
+    if (newDir !== arrowDown.value) arrowDown.value = newDir
     scrollDirAccum = 0
   }
-  showBackBtn.value = true
 }
 function onBackBtnClick() {
   if (!scrollBody.value) return
