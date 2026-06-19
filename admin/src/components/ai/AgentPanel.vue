@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, nextTick, computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { ref, reactive, shallowReactive, nextTick, computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import {
   RemoveOutline,
@@ -885,9 +885,10 @@ function buildContext(): AiArticleContext {
   return { title: f.title, subtitle: f.subtitle, summary: f.summary, slug: f.slug, content: f.content }
 }
 
-// === 响应式渲染项（reactive 确保流式更新生效） ===
+// === 渲染项（shallowReactive：顶层属性响应式以驱动流式更新，
+//    深层对象如 toolCall 不做代理，大幅降低大列表的响应式追踪开销） ===
 function addRenderItem(item: RenderItem): RenderItem {
-  const reactiveItem = reactive(item)
+  const reactiveItem = shallowReactive(item)
   renderItems.value.push(reactiveItem)
   return reactiveItem
 }
@@ -1501,7 +1502,17 @@ function onInputKeydown(e: KeyboardEvent) {
           <p class="empty-hint-slash">输入 <code>/</code> 查看快捷命令</p>
         </div>
 
-        <template v-for="item in visibleItems" :key="item.id">
+        <!-- v-memo 隔离：仅当消息项的可见字段变化时才 patch 该项。
+             历史消息这些值不变 → 滚动/其他响应式变化时 Vue 完全跳过该项 diff。
+             这是大列表（多个对话记录）不掉帧的核心优化。
+             包裹 div 用 display:contents 不产生布局盒，.msg 仍是 panel-body 的直接 flex 子项，间距不变。
+             （v-memo 不能放 <template v-for> 上，Vue 3.5.34 + rolldown 编译器有 bug，故用包裹 div 绕过） -->
+        <div
+          v-for="item in visibleItems"
+          :key="item.id"
+          v-memo="[item.text, item.replyText, item.thinkText, item.streaming, item.toolStatus, item.toolResult, item.toolProgress, thinkExpanded.has(item.id), itemUsage[item.id], isDark]"
+          class="msg-wrap"
+        >
           <!-- 用户消息：靠右，头像在气泡右边 -->
           <div v-if="item.kind === 'user'" class="msg msg-user" :data-id="item.id">
             <div class="bubble-wrap">
@@ -1561,7 +1572,7 @@ function onInputKeydown(e: KeyboardEvent) {
               <ToolCallCard :call="item.toolCall!" :status="item.toolStatus || 'pending'" :result="item.toolResult" :progress="item.toolProgress" />
             </div>
           </div>
-        </template>
+        </div>
       </div>
 
       <!-- 双向浮动按钮：放在 panel-body 外，用 absolute 定位，不受列表布局影响 -->
@@ -1955,6 +1966,9 @@ function onInputKeydown(e: KeyboardEvent) {
    .opening 打开瞬间隐藏消息条目（opacity:0），保留 loading 占位可见。
    不能给 .panel-body 设 opacity:0（父级 opacity 子元素无法覆盖，会把 loading 一起藏掉）。 */
 .panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
+/* v-memo 包裹层：display:contents 让自身不产生布局盒，.msg 直接成为 panel-body 的 flex 子项，
+   间距/gap 行为与无包裹时完全一致。仅用于承载 v-memo 指令（template 上不可用）。 */
+.msg-wrap { display: contents; }
 .panel-body.opening .msg { opacity: 0; transition: opacity 0.2s ease; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: var(--text-6); border-radius: 3px; transition: background 0.15s; }
