@@ -1371,12 +1371,12 @@ function onScroll() {
 function onBackBtnClick() {
   if (!scrollBody.value) return
   // 点击行为 = 箭头方向：向下箭头→滚向最新(底部)；向上箭头→滚向最旧(顶部)
+  // 全部即时跳转（无 smooth 动画）：动画期间 scrollHeight 变化会让目标漂移，
+  // 且 smooth 到顶要先展开全部历史会卡。即时跳转最稳。
   if (arrowDown.value) {
     forceScrollBottom()
   } else {
-    // 回顶部：先把全部历史加载出来再 smooth，否则未加载的中间段会让动画跳空
-    visibleCount.value = renderItems.value.length
-    nextTick(() => scrollBody.value?.scrollTo({ top: 0, behavior: 'smooth' }))
+    scrollBody.value.scrollTop = 0
   }
 }
 function onInputKeydown(e: KeyboardEvent) {
