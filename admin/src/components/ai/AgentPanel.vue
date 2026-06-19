@@ -888,18 +888,28 @@ async function togglePanel() {
     await nextTick()
     const isFirst = !inited
     if (isFirst) scrollBody.value?.classList.add('opening')
-    // 打开默认贴底：保证 ResizeObserver 补滚生效，定位到最新消息
+    // 打开即贴底（最高优先级）：保证后续 ResizeObserver 补滚生效。
+    // 关闭时已重置方向累积量，这里同步清零防首次 scroll 方向误判。
     stickToBottom = true
+    lastScrollTop = 0
+    scrollDirAccum = 0
     updateWindow()
+    // 第一帧推一次：v-if 挂载后立即定位到底
+    forceScrollBottom()
+    // 第二帧再推一次：异步加载历史（首次）或 DOM 重建（二次打开）+
+    // MarkdownRender 异步撑高都稳定后，确保仍贴底。
     requestAnimationFrame(() => {
       initOnFirstOpen().finally(() => {
         nextTick(() => {
-          if (scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight
-          updateWindow()
+          forceScrollBottom()
           if (isFirst) scrollBody.value?.classList.remove('opening')
         })
       })
     })
+  } else {
+    // 关闭时清零方向量，避免下次打开时 scrollTop 从 0 跳到 max 的方向误判
+    lastScrollTop = 0
+    scrollDirAccum = 0
   }
 }
 
@@ -1328,12 +1338,12 @@ function ensureResizeObserver() {
         }
       })
       // 高度变化时（markdown 渲染完撑高）重算窗口，保证 spacer 同步。
-      // 贴底状态下真实高度撑大后 scrollHeight 变化，补滚一次到底（修复打开未定位最底）。
-      if (changed) {
-        updateWindow()
-        if (stickToBottom && scrollBody.value) {
-          scrollBody.value.scrollTop = scrollBody.value.scrollHeight
-        }
+      if (changed) updateWindow()
+      // 贴底补滚【无条件】：二次打开时 itemHeights 已缓存，DOM 高度与缓存相同
+      // → changed=false，但 scrollTop 仍可能停在估算高度对应的位置而非真正底部。
+      // 只要 sticky 就补滚到底，保证打开/渲染稳定后始终贴最新。
+      if (stickToBottom && scrollBody.value) {
+        scrollBody.value.scrollTop = scrollBody.value.scrollHeight
       }
     })
   })
@@ -1389,14 +1399,18 @@ function updateWindow() {
     }
   }
 }
-async function scrollToBottom() {
-  await nextTick()
+/** 即时强制贴底：不等动画，直接 scrollTop = scrollHeight，并设 sticky。
+ *  窗口化下 scrollHeight 不稳定（spacer 估算），smooth 动画会漂移，必须即时。 */
+function forceScrollBottom() {
   if (!scrollBody.value) return
-  // column 布局：滚到底 = scrollTop 最大值
   scrollBody.value.scrollTop = scrollBody.value.scrollHeight
   stickToBottom = true
   // 直接设 scrollTop 不触发 scroll 事件，手动更新窗口覆盖末尾新条目
   updateWindow()
+}
+async function scrollToBottom() {
+  await nextTick()
+  forceScrollBottom()
 }
 // 流式时调用：仅当用户当前贴底（stickToBottom）才自动滚动，
 // 用户向上看历史时不打断。比 column-reverse 时代的无脑 scrollToBottom 更友好。
@@ -1414,30 +1428,51 @@ function maybeStickBottom() {
 const showBackBtn = ref(false)
 const arrowDown = ref(true)
 let lastScrollTop = 0
+// 方向累积量防抖：窗口化下 spacer 高度由估算值撑起，滚动时 spacer 切换会让
+// scrollHeight 抖动几像素 → 触发反方向 scroll 事件 → 箭头来回闪。
+// 引入累积阈值：单次抖动 < THRESHOLD 不翻转箭头，累积同方向超过才翻转。
+let scrollDirAccum = 0
+const SCROLL_DIR_THRESHOLD = 12
+// updateWindow 节流到 rAF：scroll 事件可能一帧内多次触发，窗口重算沉重
+// （累加全部估算高度），合并到同一帧执行避免 layout 抖动连锁。
+let winUpdateScheduled = false
+function scheduleWindowUpdate() {
+  if (winUpdateScheduled) return
+  winUpdateScheduled = true
+  requestAnimationFrame(() => {
+    winUpdateScheduled = false
+    updateWindow()
+  })
+}
 function onScroll() {
   const el = scrollBody.value
   if (!el) return
   const top = el.scrollTop
   const max = el.scrollHeight - el.clientHeight
-  const nearBottom = top >= max - 60     // 靠近最新（底部）
-  const nearTop = top <= 60              // 靠近最旧（顶部）
-  const scrollingDown = top > lastScrollTop  // 视觉向下滚（看更新）
+  const nearBottom = max <= 0 || top >= max - 60     // 靠近最新（底部）
+  const nearTop = top <= 60                          // 靠近最旧（顶部）
+  const delta = top - lastScrollTop
   lastScrollTop = top
   stickToBottom = nearBottom
-  // 更新窗口范围（窗口化核心）
-  updateWindow()
-  if (max <= 0) { showBackBtn.value = false; return }
-  if (nearBottom) { showBackBtn.value = false; return }
-  if (nearTop && !scrollingDown) { showBackBtn.value = false; return }
-  // 视觉向下滚 → 箭头朝下（点击回最新）；向上滚 → 箭头朝上（点击回最旧）
-  arrowDown.value = scrollingDown
+  // 窗口更新节流到 rAF，避免 spacer 切换引发同步 layout 抖动
+  scheduleWindowUpdate()
+  if (max <= 0 || nearBottom) { showBackBtn.value = false; scrollDirAccum = 0; return }
+  if (nearTop && delta <= 0) { showBackBtn.value = false; scrollDirAccum = 0; return }
+  // 累积同方向位移，超阈值才翻转箭头（spacer 抖动通常 <12px，被吞掉）
+  scrollDirAccum += delta
+  if (Math.abs(scrollDirAccum) >= SCROLL_DIR_THRESHOLD) {
+    arrowDown.value = scrollDirAccum > 0
+    scrollDirAccum = 0
+  }
   showBackBtn.value = true
 }
 function onBackBtnClick() {
   if (!scrollBody.value) return
   // 点击行为 = 箭头方向：向下箭头→滚向最新(底部)；向上箭头→滚向最旧(顶部)
   if (arrowDown.value) {
-    scrollBody.value.scrollTo({ top: scrollBody.value.scrollHeight, behavior: 'smooth' })
+    // 回到底部用即时赋值：窗口化下 scrollHeight 会随 spacer 估算变化，
+    // smooth 动画目标随之漂移会停在"差一点"的位置；即时赋值 + sticky 保贴底。
+    forceScrollBottom()
   } else {
     scrollBody.value.scrollTo({ top: 0, behavior: 'smooth' })
   }
