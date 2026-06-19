@@ -273,30 +273,12 @@ export class PostService implements OnModuleInit {
   }
 
   /**
-   * 批量获取多篇文章的可见性（列表使用，避免 N+1）
-   * 返回 Map<postId, { allowedUserIds, allowedRoleIds }>
+   * 批量获取多篇文章的可见性（列表使用，避免 N+1）。
+   * 委托给 EntityVisibilityService 的真批量查询（一次 WHERE IN）。
+   * 返回 Map<postId, { allowedUserIds, allowedRoleIds }>。
    */
   async getVisibilityMap(postIds: number[]) {
-    if (postIds.length === 0) return new Map();
-    // 利用 service 的批量查询能力
-    const result = new Map<
-      number,
-      { allowedUserIds: number[]; allowedRoleIds: number[] }
-    >();
-    // 简单实现：并行查（postIds 通常一页最多 50 个）
-    const items = await Promise.all(
-      postIds.map(
-        async (id) =>
-          [
-            id,
-            await this.visibilityService.getVisibility(POST_ENTITY_TYPE, id),
-          ] as const,
-      ),
-    );
-    for (const [id, vis] of items) {
-      result.set(id, vis);
-    }
-    return result;
+    return this.visibilityService.getVisibilityBatch(POST_ENTITY_TYPE, postIds);
   }
 
   /**
@@ -374,15 +356,27 @@ export class PostService implements OnModuleInit {
   }
 
   async batchUpdateStatus(ids: number[], status: string) {
+    if (ids.length === 0) return;
     const posts = await this.postRepo.findBy({ id: In(ids) });
-    for (const post of posts) {
-      const update: Record<string, unknown> = { status };
-      if (status === POST_STATUS.PUBLISHED && !post.publishedAt) {
-        update.publishedAt = new Date();
-      } else if (status === POST_STATUS.DRAFT) {
-        update.publishedAt = null;
+    if (posts.length === 0) return;
+
+    // 分两类处理，减少 update 次数：
+    // 1. 已有 publishedAt 或非 published 状态：只需更新 status（可批量一条 SQL）
+    // 2. 待发布（published）且尚无 publishedAt：需补 publishedAt
+    if (status === POST_STATUS.PUBLISHED) {
+      // 先批量更新 status，再为无 publishedAt 的补上
+      await this.postRepo.update({ id: In(ids) }, { status });
+      const needPublishDate = posts.filter((p) => !p.publishedAt);
+      if (needPublishDate.length) {
+        await this.postRepo.update(
+          { id: In(needPublishDate.map((p) => p.id)) },
+          { publishedAt: new Date() },
+        );
       }
-      await this.postRepo.update(post.id, update);
+    } else {
+      const update: Record<string, unknown> = { status };
+      if (status === POST_STATUS.DRAFT) update.publishedAt = null;
+      await this.postRepo.update({ id: In(ids) }, update);
     }
   }
 

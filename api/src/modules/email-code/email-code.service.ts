@@ -89,12 +89,13 @@ export class EmailCodeService {
       throw new BadRequestException('验证码已过期，请重新获取');
     }
 
-    record.attempts++;
-
-    if (record.attempts > this.MAX_ATTEMPTS) {
+    // 先判断是否已超尝试上限（自增前判断，避免多给 1 次机会 + 还剩次数显示负数）
+    if (record.attempts >= this.MAX_ATTEMPTS) {
       this.store.delete(email);
       throw new BadRequestException('验证码错误次数过多，请重新获取');
     }
+
+    record.attempts++;
 
     if (record.code !== code) {
       throw new BadRequestException(

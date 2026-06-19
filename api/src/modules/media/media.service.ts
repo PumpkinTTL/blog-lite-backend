@@ -166,12 +166,19 @@ export class MediaService {
 
   async batchRemove(ids: number[]) {
     const mediaList = await this.mediaRepo.find({ where: { id: In(ids) } });
-    for (const media of mediaList) {
-      await this.createStorageProvider(
-        media.storageType,
-        media.ossPlatform,
-      ).delete(media.filename);
-    }
+    // 并行删除存储文件（各文件互不依赖，串行会 N 次网络往返）
+    await Promise.all(
+      mediaList.map((media) =>
+        this.createStorageProvider(
+          media.storageType,
+          media.ossPlatform,
+        )
+          .delete(media.filename)
+          .catch((e) =>
+            this.logger.warn(`删除存储文件失败 ${media.filename}: ${e.message}`),
+          ),
+      ),
+    );
     await this.mediaRepo.delete(ids);
   }
 

@@ -166,15 +166,9 @@ export class AiService {
     return cfg;
   }
 
-  /** 主动清缓存（配置变更后可调用，目前管理页改配置走自动过期即可） */
-  invalidateConfigCache() {
-    this.cachedConfig = null;
-  }
-
   /**
    * 构造压缩用的消息数组（system prompt + 可读化的历史 transcript）。
-   * 抽出来供 summarizeHistory（非流式）和 controller 的流式压缩共用，
-   * 保证两者用同一套 prompt 与 transcript 格式。
+   * 供 controller 的流式压缩（openStream）使用，保证 prompt 与 transcript 格式统一。
    */
   buildCompactMessages(
     history: AiChatMessage[],
@@ -193,21 +187,6 @@ export class AiService {
       { role: 'system', content: CONVERSATION_COMPACT_SYSTEM_PROMPT },
       { role: 'user', content: `请压缩以下对话历史：\n\n${transcript}` },
     ];
-  }
-
-  /**
-   * 压缩对话历史：让 AI 把多轮历史总结成一段摘要。
-   * 前端收到摘要后，用 [system:摘要] 替换掉旧历史，释放上下文 token。
-   *
-   * 入参 history 是扁平的对话记录（user/assistant/tool），会原样喂给 AI。
-   * 返回摘要文本（纯文本，可直接作为 system 消息）。
-   */
-  async summarizeHistory(
-    history: AiChatMessage[],
-    model?: string,
-  ): Promise<string> {
-    const summarizeMessages = this.buildCompactMessages(history);
-    return this.chat(summarizeMessages, model);
   }
 
   /**

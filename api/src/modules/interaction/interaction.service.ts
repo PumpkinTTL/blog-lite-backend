@@ -21,8 +21,6 @@ export class InteractionService {
   constructor(
     @InjectRepository(InteractionEntity)
     private readonly repo: Repository<InteractionEntity>,
-    @InjectRepository(UserEntity)
-    private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(PostEntity)
     private readonly postRepo: Repository<PostEntity>,
   ) {}

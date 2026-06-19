@@ -8,6 +8,7 @@ import { InteractionController } from './interaction.controller';
 
 @Module({
   imports: [
+    // UserEntity 供 queryBuilder.leftJoin(UserEntity) 用（非 repo 注入）
     TypeOrmModule.forFeature([InteractionEntity, UserEntity, PostEntity]),
   ],
   controllers: [InteractionController],

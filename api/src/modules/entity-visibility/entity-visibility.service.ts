@@ -67,6 +67,39 @@ export class EntityVisibilityService {
   }
 
   /**
+   * 批量获取多资源的可见性配置（一次查询，避免 N+1）。
+   * 返回 Map<entityId, { allowedUserIds, allowedRoleIds }>。
+   * 未配置可见性的资源不会出现在 Map 中（调用方按需兜底空数组）。
+   */
+  async getVisibilityBatch(
+    entityType: EntityType,
+    entityIds: number[],
+  ): Promise<
+    Map<number, { allowedUserIds: number[]; allowedRoleIds: number[] }>
+  > {
+    const result = new Map<
+      number,
+      { allowedUserIds: number[]; allowedRoleIds: number[] }
+    >();
+    if (entityIds.length === 0) return result;
+    // 一次查询拉回所有资源的授权行
+    const rows = await this.repo.find({
+      where: { entityType, entityId: In(entityIds) },
+    });
+    // 按 entityId 分组聚合
+    for (const r of rows) {
+      let entry = result.get(r.entityId);
+      if (!entry) {
+        entry = { allowedUserIds: [], allowedRoleIds: [] };
+        result.set(r.entityId, entry);
+      }
+      if (r.subjectType === 'user') entry.allowedUserIds.push(r.subjectId);
+      else if (r.subjectType === 'role') entry.allowedRoleIds.push(r.subjectId);
+    }
+    return result;
+  }
+
+  /**
    * 统计某类资源在可见性表中的记录数（迁移幂等检查用）
    */
   async getVisibilityCount(entityType: EntityType): Promise<number> {

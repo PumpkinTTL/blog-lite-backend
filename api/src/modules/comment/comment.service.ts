@@ -70,24 +70,6 @@ export class CommentService {
     });
   }
 
-  /**
-   * 批量取多个一级评论的回复数（用于列表展示）
-   */
-  async getReplyCounts(parentIds: number[]): Promise<Map<number, number>> {
-    const result = new Map<number, number>();
-    if (parentIds.length === 0) return result;
-    parentIds.forEach((id) => result.set(id, 0));
-    const rows: { parentId: number; cnt: number }[] = await this.repo
-      .createQueryBuilder('c')
-      .select('c.parentId', 'parentId')
-      .addSelect('COUNT(*)', 'cnt')
-      .where('c.parentId IN (:...ids)', { ids: parentIds })
-      .andWhere('c.status = :s', { s: 'approved' })
-      .groupBy('c.parentId')
-      .getRawMany();
-    rows.forEach((r) => result.set(Number(r.parentId), Number(r.cnt)));
-    return result;
-  }
 
   // ===== 创建/编辑/删除 =====
 
