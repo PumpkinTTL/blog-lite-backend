@@ -89,6 +89,10 @@ const columns: DataTableColumns<AuditLog> = [
     render: (row) => fmtVal(row.newValue),
   },
   {
+    title: '备注', key: 'note', width: 220, ellipsis: { tooltip: true },
+    render: (row) => row.note || '-',
+  },
+  {
     title: '操作人', key: 'operatorName', width: 90,
     render: (row) => row.operatorName || '-',
   },
@@ -124,7 +128,7 @@ onMounted(() => { load() })
       </n-button>
     </n-space>
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="900" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1120" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :item-count="total" @update:page="handlePageChange" />
       </div>

@@ -8,6 +8,7 @@ import {
   IsIn,
   ArrayNotEmpty,
   MaxLength,
+  IsDateString,
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -91,6 +92,23 @@ export class UpdateProfileDto {
   @IsOptional()
   @MaxLength(500)
   avatar?: string;
+}
+
+/**
+ * 封禁/解封用户请求体：
+ * - reason: 封禁原因（记录到审计日志，封禁时填写，解封可留空）
+ * - bannedUntil: 封禁截止时间 ISO 字符串。封禁时传：null/不传=永久，有值=临时；
+ *                解封时忽略（后端会强制清空）。
+ */
+export class ToggleStatusDto {
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  reason?: string;
+
+  @IsDateString()
+  @IsOptional()
+  bannedUntil?: string | null;
 }
 
 export class BatchIdsDto {

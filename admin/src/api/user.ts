@@ -43,6 +43,8 @@ export interface User {
   email: string | null
   avatar: string | null
   status: string
+  /** 封禁截止时间（null=未封禁或永久封禁） */
+  bannedUntil: string | null
   roles: Role[]
   membership: UserMembership | null
   createdAt: string
@@ -69,6 +71,11 @@ export function batchDeleteUsers(ids: number[]) {
   return request.delete('/user/batch', { data: { ids } })
 }
 
-export function toggleUserStatus(id: number) {
-  return request.put(`/user/${id}/toggle-status`)
+/**
+ * 封禁/解封用户
+ * @param data.reason 封禁原因（封禁时填写，记录到审计日志）
+ * @param data.bannedUntil 封禁截止时间 ISO 字符串。null/不传=永久封禁
+ */
+export function toggleUserStatus(id: number, data?: { reason?: string; bannedUntil?: string | null }) {
+  return request.put(`/user/${id}/toggle-status`, data || {})
 }

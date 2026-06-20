@@ -60,20 +60,30 @@ export class AuthGuard implements CanActivate {
   /**
    * 查询用户角色，同时返回 roleNames（用于 @Roles 装饰器）和 roleIds（用于可见性校验）。
    * 同时校验用户当前 status：禁用用户即使 Token 未过期也拒绝访问（防止禁用后仍可操作）。
+   * 若为临时封禁且已过期，则惰性自动解封。
    */
   private async getUserRoles(
     userId: number,
   ): Promise<{ roleNames: string[]; roleIds: number[] }> {
     // 先独立查用户 status（不能用 INNER JOIN roles，否则无角色的用户 rows 为空会绕过校验）
     const userRows = await this.dataSource.query(
-      `SELECT status FROM users WHERE id = ?`,
+      `SELECT status, banned_until FROM users WHERE id = ?`,
       [userId],
     );
     if (userRows.length === 0) {
       throw new UnauthorizedException('用户不存在');
     }
     if (userRows[0].status !== 'active') {
-      throw new UnauthorizedException('账号已被禁用');
+      // 临时封禁已过期 → 惰性自动解封（无需 cron）
+      const bannedUntil = userRows[0].banned_until;
+      if (bannedUntil && new Date(bannedUntil) < new Date()) {
+        await this.dataSource.query(
+          `UPDATE users SET status = 'active', banned_until = NULL WHERE id = ?`,
+          [userId],
+        );
+      } else {
+        throw new UnauthorizedException('账号已被禁用');
+      }
     }
     // 再查角色（LEFT JOIN 保证无角色用户也能通过 status 校验）
     const rows = await this.dataSource.query(

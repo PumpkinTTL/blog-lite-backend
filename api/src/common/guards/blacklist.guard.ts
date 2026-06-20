@@ -7,8 +7,9 @@ import {
 import { BlacklistService } from '../../modules/blacklist/blacklist.service';
 
 /**
- * 黑名单 Guard：在 AuthGuard 之后执行（能读到 req.user.sub）
- * 命中 active 且未过期的 IP/用户 → 抛 403 ForbiddenException
+ * 黑名单 Guard：在 AuthGuard 之后执行，只拦截 IP 维度封禁。
+ * 用户维度封禁已迁移到 user.status + banned_until（由 AuthGuard 统一拦截），
+ * 故本 Guard 不再查询用户黑名单。
  * 性能：BlacklistService.isBlocked 带 30s 内存缓存
  */
 @Injectable()
@@ -27,18 +28,6 @@ export class BlacklistGuard implements CanActivate {
       const ipBlocked = await this.blacklistService.isBlocked('ip', ip);
       if (ipBlocked) {
         throw new ForbiddenException('您的访问已被限制');
-      }
-    }
-
-    // 用户维度（已登录才查）
-    const userId = request.user?.sub;
-    if (userId) {
-      const userBlocked = await this.blacklistService.isBlocked(
-        'user',
-        String(userId),
-      );
-      if (userBlocked) {
-        throw new ForbiddenException('您的账号已被限制访问');
       }
     }
 

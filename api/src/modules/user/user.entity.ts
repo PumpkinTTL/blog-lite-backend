@@ -47,6 +47,20 @@ export class UserEntity {
   })
   status: string;
 
+  /**
+   * 封禁截止时间：
+   * - null 且 status=active → 未封禁
+   * - null 且 status=disabled → 永久封禁
+   * - 有值且 status=disabled → 临时封禁，过期后由 AuthGuard 惰性解封
+   */
+  @Column({
+    type: 'datetime',
+    nullable: true,
+    name: 'banned_until',
+    comment: '封禁截止时间（null=未封禁或永久封禁）',
+  })
+  bannedUntil: Date | null;
+
   @Column({
     type: 'int',
     nullable: true,

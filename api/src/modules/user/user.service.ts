@@ -63,7 +63,23 @@ export class UserService {
       .getOne();
 
     if (!user || user.status !== USER_STATUS.ACTIVE) {
-      throw new UnauthorizedException('账号不存在或已禁用');
+      // 临时封禁已过期 → 惰性自动解封（login 不走 AuthGuard，需在此处处理，
+      // 否则临时封禁过期的用户登录会死锁：登录被拒 → 拿不到 token → 无法触发 AuthGuard 解封）
+      if (
+        user &&
+        user.status === USER_STATUS.DISABLED &&
+        user.bannedUntil &&
+        user.bannedUntil < new Date()
+      ) {
+        await this.userRepo.update(user.id, {
+          status: USER_STATUS.ACTIVE,
+          bannedUntil: null,
+        });
+        user.status = USER_STATUS.ACTIVE;
+        user.bannedUntil = null;
+      } else {
+        throw new UnauthorizedException('账号不存在或已禁用');
+      }
     }
 
     const passwordValid = await bcrypt.compare(dto.password, user.password);
@@ -334,17 +350,62 @@ export class UserService {
   }
 
   /**
-   * 切换用户状态（启用/禁用）
+   * 切换用户状态（启用/禁用）。
+   * - 封禁（active→disabled）：设 bannedUntil，调鉴权中心吊销其所有 Token，写审计日志（含封禁原因）。
+   * - 解封（disabled→active）：清空 bannedUntil，写审计日志。
+   * 吊销失败时容错降级（仅 warn），不阻塞封禁——AuthGuard 查 status 已兜底。
    */
-  async toggleStatus(id: number): Promise<UserEntity> {
+  async toggleStatus(
+    id: number,
+    opts?: { reason?: string; bannedUntil?: Date | null },
+    operator?: { id: number; nickname: string },
+  ): Promise<UserEntity> {
     const user = await this.userRepo.findOne({ where: { id } });
     if (!user) {
       throw new NotFoundException('用户不存在');
     }
-    user.status =
-      user.status === USER_STATUS.ACTIVE
-        ? USER_STATUS.DISABLED
-        : USER_STATUS.ACTIVE;
+
+    const oldStatus = user.status;
+    const willDisable = oldStatus === USER_STATUS.ACTIVE;
+    user.status = willDisable ? USER_STATUS.DISABLED : USER_STATUS.ACTIVE;
+
+    if (willDisable) {
+      // 封禁：设封禁截止时间（null=永久）
+      user.bannedUntil = opts?.bannedUntil ?? null;
+    } else {
+      // 解封：清空封禁截止时间
+      user.bannedUntil = null;
+    }
+
+    const targetName = `${user.nickname || user.username}(#${id})`;
+
+    // 封禁时调鉴权中心吊销该用户所有 Token（堵死 refresh 续命）
+    if (willDisable) {
+      await this.authService.revokeUserTokens(id);
+    }
+
+    // 写审计日志（含封禁原因，便于事后追溯）
+    const banDurationText =
+      willDisable && user.bannedUntil
+        ? `，到期 ${new Date(user.bannedUntil).toLocaleString('zh-CN')}`
+        : '';
+    const note = willDisable
+      ? `封禁原因：${opts?.reason || '未填写'}${banDurationText}`
+      : '解除封禁';
+    this.auditLog
+      .log({
+        targetType: 'user',
+        targetId: id,
+        field: 'status',
+        oldValue: oldStatus,
+        newValue: user.status,
+        note,
+        targetName,
+        operatorId: operator?.id,
+        operatorName: operator?.nickname,
+      })
+      .catch((e) => this.logger.warn('审计日志写入失败', e));
+
     return this.userRepo.save(user);
   }
 
@@ -524,10 +585,17 @@ export class UserService {
     refreshToken: string,
     deviceId: string,
   ): Promise<TokenPayload> {
-    const tokenData = await this.authService.refreshToken(
-      refreshToken,
-      deviceId,
-    );
+    let tokenData;
+    try {
+      tokenData = await this.authService.refreshToken(
+        refreshToken,
+        deviceId,
+      );
+    } catch {
+      // 鉴权中心拒绝（refreshToken 已被吊销/过期/不存在）→ 统一转 401，
+      // 让前端走"登录过期"流程，而不是暴露 500
+      throw new UnauthorizedException('登录已过期，请重新登录');
+    }
     return {
       accessToken: tokenData.accessToken,
       refreshToken: tokenData.refreshToken,

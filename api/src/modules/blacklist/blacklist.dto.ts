@@ -8,7 +8,8 @@ import {
   MaxLength,
 } from 'class-validator';
 
-const TYPES = ['ip', 'user'] as const;
+// 用户封禁已迁移到 user.status + banned_until，黑名单表只接受 IP
+const TYPES = ['ip'] as const;
 
 export class CreateBlacklistDto {
   @IsString()

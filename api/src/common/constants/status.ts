@@ -91,9 +91,10 @@ export const RESOURCE_UNLOCK_SOURCE = {
 } as const;
 
 // ── 黑名单类型 ──
+// 注：用户封禁已迁移到 user.status + banned_until，黑名单表仅保留 IP 封禁。
+// 历史的 type=user 记录保留在表中（向后兼容），但不再通过 BlacklistGuard 拦截。
 export const BLACKLIST_TYPE = {
   IP: 'ip', // IP 封禁
-  USER: 'user', // 用户封禁
 } as const;
 
 // ── 黑名单状态 ──

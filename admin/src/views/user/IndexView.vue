@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, h, watch } from 'vue'
-import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch, NAvatar, NUpload } from 'naive-ui'
+import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch, NAvatar, NUpload, NDatePicker, NRadio, NRadioGroup, NText } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { getUsers, createUser, updateUser, deleteUser, batchDeleteUsers, toggleUserStatus } from '../../api/user'
@@ -22,6 +22,40 @@ const pageSize = ref(5)
 const searchStatus = ref<string | null>(null)
 /** 启/禁用中的用户 id（n-switch loading） */
 const togglingId = ref<number | null>(null)
+
+// ===== 封禁弹窗 =====
+/** 封禁弹窗显隐 */
+const banModalShow = ref(false)
+/** 待封禁的用户 */
+const banningUser = ref<User | null>(null)
+/** 封禁原因 */
+const banReason = ref('')
+/** 封禁时长预设：permanent=永久，1d/7d/30d=临时，custom=自定义 */
+const banDuration = ref<'permanent' | '1d' | '7d' | '30d' | 'custom'>('permanent')
+/** 自定义封禁截止时间（时间戳 ms） */
+const banCustomTs = ref<number | null>(null)
+/** 封禁提交中 */
+const banning = ref(false)
+
+const banDurationOptions = [
+  { label: '永久封禁', value: 'permanent' },
+  { label: '1 天', value: '1d' },
+  { label: '7 天', value: '7d' },
+  { label: '30 天', value: '30d' },
+  { label: '自定义', value: 'custom' },
+] as const
+
+/** 根据预设计算封禁截止时间 ISO 字符串（永久返回 null） */
+function computeBannedUntil(): string | null {
+  const now = Date.now()
+  switch (banDuration.value) {
+    case '1d': return new Date(now + 86400000).toISOString()
+    case '7d': return new Date(now + 7 * 86400000).toISOString()
+    case '30d': return new Date(now + 30 * 86400000).toISOString()
+    case 'custom': return banCustomTs.value ? new Date(banCustomTs.value).toISOString() : null
+    default: return null // permanent
+  }
+}
 
 const userStatusOptions = [
   { label: '全部', value: null },
@@ -177,11 +211,45 @@ function handlePageSizeChange(s: number) {
   _handleSearch()
 }
 
-async function handleToggleStatus(row: User) {
+/**
+ * 点击状态 switch：
+ * - 当前 active → 开启封禁弹窗（填原因/选时长）
+ * - 当前 disabled → 直接解封
+ */
+function handleToggleStatus(row: User) {
+  if (togglingId.value !== null) return
+  if (row.status === 'active') {
+    // 封禁：打开弹窗收集原因+时长
+    banningUser.value = row
+    banReason.value = ''
+    banDuration.value = 'permanent'
+    banCustomTs.value = null
+    banModalShow.value = true
+  } else {
+    // 解封：直接调用
+    doToggle(row, undefined)
+  }
+}
+
+/** 确认封禁弹窗 */
+async function confirmBan() {
+  if (!banningUser.value) return
+  if (banDuration.value === 'custom' && !banCustomTs.value) {
+    message.warning('请选择封禁截止时间')
+    return false
+  }
+  const bannedUntil = computeBannedUntil()
+  await doToggle(banningUser.value, { reason: banReason.value || undefined, bannedUntil })
+  banModalShow.value = false
+  banningUser.value = null
+}
+
+/** 实际调用 toggleUserStatus */
+async function doToggle(row: User, data: { reason?: string; bannedUntil?: string | null } | undefined) {
   if (togglingId.value !== null) return
   togglingId.value = row.id
   try {
-    await toggleUserStatus(row.id)
+    await toggleUserStatus(row.id, data)
     message.success(row.status === 'active' ? '已禁用用户' : '已启用用户')
     _handleSearch()
   } catch (e: any) {
@@ -216,6 +284,20 @@ const rules: FormRules = {
 const columns: DataTableColumns<User> = [
   selectionColumn,
   { title: 'ID', key: 'id', width: 70 },
+  {
+    title: '头像',
+    key: 'avatar',
+    width: 64,
+    render: (row) =>
+      h(NAvatar, {
+        size: 38,
+        src: row.avatar || undefined,
+        color: '#2563EB',
+        style: 'font-weight:600;font-size:14px',
+      }, {
+        default: () => row.avatar ? '' : (row.nickname?.charAt(0)?.toUpperCase() || '?'),
+      }),
+  },
   { title: '账号', key: 'username', width: 140 },
   { title: '昵称', key: 'nickname', width: 140 },
   {
@@ -238,13 +320,28 @@ const columns: DataTableColumns<User> = [
   {
     title: '状态',
     key: 'status',
-    width: 100,
-    render: (row) =>
-h(NSwitch, {
-  value: row.status === 'active',
-  loading: togglingId.value === row.id,
-  onUpdateValue: () => handleToggleStatus(row),
-}),
+    width: 150,
+    render: (row) => {
+      const isBanned = row.status === 'disabled'
+      const bannedUntil = row.bannedUntil
+      const isExpired = bannedUntil && new Date(bannedUntil) < new Date()
+      return h(NSpace, { size: 2, vertical: true, wrap: false }, {
+        default: () => [
+          h(NSwitch, {
+            value: row.status === 'active',
+            loading: togglingId.value === row.id,
+            onUpdateValue: () => handleToggleStatus(row),
+          }),
+          isBanned && bannedUntil && !isExpired
+            ? h(NText, { depth: 3, style: 'font-size:11px;white-space:nowrap' },
+                { default: () => `封禁至 ${new Date(bannedUntil).toLocaleDateString('zh-CN')}` })
+            : isBanned && !bannedUntil
+              ? h(NText, { depth: 3, type: 'error', style: 'font-size:11px;white-space:nowrap' },
+                  { default: () => '永久封禁' })
+              : null,
+        ],
+      })
+    },
   },
   { title: '创建时间', key: 'createdAt', width: 170, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') },
   {
@@ -297,7 +394,7 @@ h(NSwitch, {
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1300"
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1400"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
@@ -355,6 +452,50 @@ h(NSwitch, {
           <img :src="img.url" class="r2-thumb" />
         </div>
       </div>
+    </n-modal>
+
+    <!-- 封禁用户弹窗 -->
+    <n-modal
+      v-model:show="banModalShow"
+      preset="dialog"
+      :title="`封禁用户「${banningUser?.nickname || banningUser?.username || ''}」`"
+      :positive-text="banning ? '提交中...' : '确认封禁'"
+      :negative-text="banning ? undefined : '取消'"
+      :loading="banning"
+      @positive-click="confirmBan"
+      style="width:480px"
+    >
+      <n-space vertical :size="16">
+        <div>
+          <div style="margin-bottom:8px;font-weight:500">封禁时长</div>
+          <n-radio-group v-model:value="banDuration">
+            <n-radio
+              v-for="opt in banDurationOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >{{ opt.label }}</n-radio>
+          </n-radio-group>
+          <n-date-picker
+            v-if="banDuration === 'custom'"
+            v-model:value="banCustomTs"
+            type="datetime"
+            placeholder="选择封禁截止时间"
+            :is-date-disabled="(ts: number) => ts < Date.now()"
+            style="margin-top:8px;width:100%"
+          />
+        </div>
+        <div>
+          <div style="margin-bottom:8px;font-weight:500">封禁原因<span style="color:#999;font-weight:normal">（选填，记录到审计日志）</span></div>
+          <n-input
+            v-model:value="banReason"
+            type="textarea"
+            placeholder="如：发布违规内容、恶意刷屏..."
+            :autosize="{ minRows: 2, maxRows: 4 }"
+            maxlength="255"
+            show-count
+          />
+        </div>
+      </n-space>
     </n-modal>
   </div>
 </template>

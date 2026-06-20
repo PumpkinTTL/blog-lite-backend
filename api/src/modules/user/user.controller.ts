@@ -22,6 +22,7 @@ import {
   SendResetCodeDto,
   ResetPasswordByCodeDto,
   BatchIdsDto,
+  ToggleStatusDto,
 } from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
@@ -213,13 +214,22 @@ export class UserController {
   @Put(':id/toggle-status')
   async toggleStatus(
     @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ToggleStatusDto,
     @Req() req: Request,
   ) {
     const currentUserId = parseInt((req as any).user?.sub, 10);
     if (currentUserId === id) {
       return { success: false, message: '不能禁用自己' };
     }
-    const data = await this.userService.toggleStatus(id);
+    const op = (req as any).user;
+    const data = await this.userService.toggleStatus(
+      id,
+      {
+        reason: dto?.reason,
+        bannedUntil: dto?.bannedUntil ? new Date(dto.bannedUntil) : null,
+      },
+      op ? { id: Number(op.sub), nickname: op.nickname || op.sub } : undefined,
+    );
     return {
       success: true,
       data,
