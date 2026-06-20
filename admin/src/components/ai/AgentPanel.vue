@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, shallowReactive, nextTick, computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useMessage } from 'naive-ui'
+import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import {
   RemoveOutline,
   BulbOutline, ChevronDownOutline,
@@ -284,14 +286,28 @@ interface RenderItem {
 const renderItems = ref<RenderItem[]>([])
 // === 消息渲染策略 ==========================================================
 //
-// 全量渲染 + content-visibility:auto：所有消息都在 DOM 里，但离屏消息浏览器
-// 自动跳过布局/绘制。配合 contain-intrinsic-size:auto，浏览器会缓存每条消息
-// 渲染后的真实高度，离屏时用真实高度占位 → 滚动条稳定不抖。
-// 这是处理"消息多导致 paint/layout 卡 + 滚动抖动"的标准 CSS 方案，零 JS 干预。
+// 使用 vue-virtual-scroller 的 DynamicScroller：库内部处理动态高度测量
+// （ResizeObserver）、窗口裁剪、节点复用。scrollHeight 由库维护估算+真实高度，
+// DOM 永远只有视口附近几十条，但滚动条表现成全部消息的长度。
+//
+// 不抖的保证：markdown-it 同步渲染，高度渲染即定；DynamicScroller 在 buffer
+// 区提前测量，视口内的条目高度早已稳定。
 // ==========================================================================
-const visibleItems = computed(() => renderItems.value)
+// scrollBody 现在绑 DynamicScroller 组件实例（非 DOM 元素），统一用 scrollEl()
+// 取其内部滚动 DOM（$el）。
+const scrollBody = ref<any>(null)
+// 取 DS 内部滚动容器 DOM：用于 scrollTop/scrollHeight/classList 等元素操作。
+function scrollEl(): HTMLElement | null {
+  const s = scrollBody.value
+  if (!s) return null
+  return (s as any).$el ?? s
+}
+// DynamicScroller 配置：min-item-size 取真实最小高度估值（用户单行气泡~40px），
+// buffer/prerender 给足，让视口外足够多条目提前测量好高度。
+const DS_MIN_ITEM_SIZE = 40
+const DS_BUFFER = 400
+const DS_PRERENDER = 20
 
-const scrollBody = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const thinkExpanded = ref<Set<string>>(new Set())
 
@@ -876,7 +892,7 @@ async function togglePanel() {
     ensureDefaultPos()
     await nextTick()
     const isFirst = !inited
-    if (isFirst) scrollBody.value?.classList.add('opening')
+    if (isFirst) scrollEl()?.classList.add('opening')
     // 打开即贴底，方向量清零防首次 scroll 误判
     stickToBottom = true
     lastScrollTop = 0
@@ -888,7 +904,7 @@ async function togglePanel() {
         initOnFirstOpen().finally(() => {
           nextTick(() => {
             forceScrollBottom()
-            scrollBody.value?.classList.remove('opening')
+            scrollEl()?.classList.remove('opening')
           })
         })
       })
@@ -1350,9 +1366,7 @@ onBeforeUnmount(() => {
 function closeDropdowns() { slashMenuOpen.value = false }
 
 // === 滚动管理 ===
-// content-visibility:auto + contain-intrinsic-size:auto 负责离屏渲染与高度占位
-// （浏览器原生缓存真实高度，离屏时自动占位，无需 JS 补偿）。这里只管：
-// 贴底判断、双向浮动按钮。
+// DynamicScroller 负责窗口化与高度测量。这里只管：贴底判断、双向浮动按钮。
 
 function toggleThink(id: string) {
   if (thinkExpanded.value.has(id)) thinkExpanded.value.delete(id)
@@ -1362,14 +1376,20 @@ function toggleThink(id: string) {
 // 记录当前是否贴底（流式时只在贴底才 auto-scroll，避免打断用户看历史）
 let stickToBottom = true
 
-/** 即时强制贴底。补一帧再设一次，应对内容高度异步增长（流式回复展开）。 */
+/** 即时强制贴底。DynamicScroller 内部高度测量是异步的（ResizeObserver），
+ *  直接 el.scrollTop = el.scrollHeight 会读到旧高度 = 滚不到真正底部。
+ *  改用 DS 官方 scrollToBottom()：内部 rAF 递归重试直到所有 item 测量收敛，
+ *  且多滚 5000px 兜底。再补一帧手动设 scrollTop 双保险。 */
 function forceScrollBottom() {
-  const el = scrollBody.value
-  if (!el) return
-  el.scrollTop = el.scrollHeight
   stickToBottom = true
+  const scroller = scrollBody.value
+  if (scroller && typeof scroller.scrollToBottom === 'function') {
+    scroller.scrollToBottom()
+  }
+  // 双保险：即便 DS 方法内部已处理，再手动补设一次（取 $el 真实滚动 DOM）
   requestAnimationFrame(() => {
-    if (scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+    const el = scrollEl()
+    if (el) el.scrollTop = el.scrollHeight
   })
 }
 async function scrollToBottom() {
@@ -1377,14 +1397,25 @@ async function scrollToBottom() {
   forceScrollBottom()
 }
 // 流式时调用：仅当用户当前贴底（stickToBottom）才自动滚动，
-// 用户向上看历史时不打断。rAF 合并到一帧一次，避免每 token 都触发回流。
+// 用户向上看历史时不打断。
+// 关键：流式 token 更新触发 DOM 变化 → DS ResizeObserver 异步测高，
+// 同步设 scrollTop 会读到旧 scrollHeight。所以这里用 rAF 延后到下一帧，
+// 且连续追加多个 token 时合并到一次（stickRafId 去重）。
 let stickRafId = 0
 function maybeStickBottom() {
-  if (!stickToBottom || !scrollBody.value) return
+  if (!stickToBottom) return
   if (stickRafId) return
   stickRafId = requestAnimationFrame(() => {
     stickRafId = 0
-    if (stickToBottom && scrollBody.value) scrollBody.value.scrollTop = scrollBody.value.scrollHeight
+    if (!stickToBottom) return
+    // 优先用 DS 官方 scrollToBottom（内部重试到高度收敛）
+    const scroller = scrollBody.value
+    if (scroller && typeof scroller.scrollToBottom === 'function') {
+      scroller.scrollToBottom()
+    } else {
+      const el = scrollEl()
+      if (el) el.scrollTop = el.scrollHeight
+    }
   })
 }
 
@@ -1397,7 +1428,7 @@ const SCROLL_DIR_THRESHOLD = 12
 
 let scrollRafId = 0
 function onScroll() {
-  const el = scrollBody.value
+  const el = scrollEl()
   if (!el) return
   const max = el.scrollHeight - el.clientHeight
   // 同步更新贴底状态，避免用户刚向上滚、rAF 尚未执行时，流式输出仍把视图拉回底部
@@ -1409,7 +1440,7 @@ function onScroll() {
   })
 }
 function updateScrollUi() {
-  const el = scrollBody.value
+  const el = scrollEl()
   if (!el) return
   const top = el.scrollTop
   const max = el.scrollHeight - el.clientHeight
@@ -1429,11 +1460,12 @@ function updateScrollUi() {
   }
 }
 function onBackBtnClick() {
-  if (!scrollBody.value) return
+  const el = scrollEl()
+  if (!el) return
   if (arrowDown.value) {
     forceScrollBottom()
   } else {
-    scrollBody.value.scrollTop = 0
+    el.scrollTop = 0
   }
 }
 
@@ -1480,9 +1512,11 @@ function onInputKeydown(e: KeyboardEvent) {
         </div>
       </div>
 
-      <!-- 消息流：全量渲染 renderItems，离屏消息由 content-visibility:auto 跳过布局/绘制 -->
-      <div ref="scrollBody" class="panel-body" @scroll="onScroll">
-        <!-- 历史加载中 -->
+      <!-- 消息流：DynamicScroller 动态高度虚拟化。库内部处理高度测量、窗口裁剪、
+           节点复用。DOM 永远只有视口附近几十条，但滚动条表现成全部消息长度。
+           markdown-it 同步渲染让高度渲染即定，buffer 区提前测量 → 滚动不抖。 -->
+      <div class="panel-body-scroll">
+        <!-- 历史加载中 / 空状态：作为覆盖层，与消息列表互斥 -->
         <div v-if="historyLoading" class="history-loading">
           <i class="ico spin" :style="{ fontSize: 18 + 'px' }"><SyncOutline /></i>
           <span>加载历史对话…</span>
@@ -1499,74 +1533,81 @@ function onInputKeydown(e: KeyboardEvent) {
           <p class="empty-hint-slash">输入 <code>/</code> 查看快捷命令</p>
         </div>
 
-        <!-- .msg 是 panel-body 直接子元素，浏览器 overflow-anchor 可正确锚定。
-             content-visibility:auto 让离屏消息跳过布局/绘制；
-             contain-intrinsic-size:auto 让浏览器缓存渲染后的真实高度做占位，根治抖动。 -->
-        <div class="msg-list">
-        <template v-for="item in visibleItems" :key="item.id">
-          <!-- 用户消息 -->
-          <div v-if="item.kind === 'user'"
-            v-memo="[item.text, itemUsage[item.id], isDark]"
-            class="msg msg-user" :data-id="item.id"
-          >
-            <div class="bubble-wrap">
-              <div class="bubble bubble-user">{{ item.text }}</div>
-            </div>
-            <div class="avatar avatar-user">{{ userInitial }}</div>
-          </div>
+        <!-- DynamicScroller：滚动容器。ref/scroll 绑在它上，scrollEl() 取 $el。 -->
+        <DynamicScroller
+          v-else
+          ref="scrollBody"
+          :items="renderItems"
+          :min-item-size="DS_MIN_ITEM_SIZE"
+          :buffer="DS_BUFFER"
+          :prerender="DS_PRERENDER"
+          key-field="id"
+          class="panel-body"
+          @scroll.native="onScroll"
+        >
+          <template v-slot="{ item, index, active }">
+            <DynamicScrollerItem :item="item" :active="active" :data-index="index" :data-id="item.id">
+              <!-- 用户消息 -->
+              <div v-if="item.kind === 'user'"
+                class="msg msg-user" :data-id="item.id"
+              >
+                <div class="bubble-wrap">
+                  <div class="bubble bubble-user">{{ item.text }}</div>
+                </div>
+                <div class="avatar avatar-user">{{ userInitial }}</div>
+              </div>
 
-          <!-- AI 消息 -->
-          <div v-else-if="item.kind === 'assistant'"
-            v-memo="[item.replyText, item.thinkText, item.streaming, thinkExpanded.has(item.id), itemUsage[item.id], isDark]"
-            class="msg msg-ai" :data-id="item.id"
-          >
-            <div class="avatar avatar-ai" :class="{ thinking: item.streaming }">
-              <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
-            </div>
-            <div class="bubble-wrap ai-bubble-wrap">
-              <div class="ai-content">
-                <!-- 思考折叠块 -->
-                <div v-if="item.thinkText" class="think-block" :class="{ expanded: thinkExpanded.has(item.id) || item.streaming }">
-                  <div class="think-head" @click="!item.streaming && toggleThink(item.id)">
-                    <i class="ico think-icon" :style="{ fontSize: 12 + 'px' }"><BulbOutline /></i>
-                    <span class="think-label">思考过程</span>
-                    <i v-if="!item.streaming" class="ico think-chevron" :class="{ rotated: thinkExpanded.has(item.id) }" :style="{ fontSize: 11 + 'px' }"><ChevronDownOutline /></i>
-                    <span v-if="item.streaming" class="think-streaming">思考中</span>
+              <!-- AI 消息 -->
+              <div v-else-if="item.kind === 'assistant'"
+                class="msg msg-ai" :data-id="item.id"
+              >
+                <div class="avatar avatar-ai" :class="{ thinking: item.streaming }">
+                  <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
+                </div>
+                <div class="bubble-wrap ai-bubble-wrap">
+                  <div class="ai-content">
+                    <!-- 思考折叠块 -->
+                    <div v-if="item.thinkText" class="think-block" :class="{ expanded: thinkExpanded.has(item.id) || item.streaming }">
+                      <div class="think-head" @click="!item.streaming && toggleThink(item.id)">
+                        <i class="ico think-icon" :style="{ fontSize: 12 + 'px' }"><BulbOutline /></i>
+                        <span class="think-label">思考过程</span>
+                        <i v-if="!item.streaming" class="ico think-chevron" :class="{ rotated: thinkExpanded.has(item.id) }" :style="{ fontSize: 11 + 'px' }"><ChevronDownOutline /></i>
+                        <span v-if="item.streaming" class="think-streaming">思考中</span>
+                      </div>
+                      <div class="think-collapse">
+                        <div class="think-body">{{ item.thinkText }}</div>
+                      </div>
+                    </div>
+                    <!-- 正式回复：MarkdownStatic 纯同步渲染，渲染完静止，滚动不抖 -->
+                    <div v-if="item.replyText" class="ai-reply" :class="{ dark: isDark }">
+                      <MarkdownStatic :content="item.replyText" />
+                      <span v-if="item.streaming" class="cursor">▋</span>
+                    </div>
+                    <div v-else-if="item.streaming && !item.thinkText" class="pixel-loader">
+                      <i></i><i></i><i></i><i></i><i></i><i></i>
+                    </div>
+                    <!-- 单轮 token -->
+                    <div v-if="itemUsage[item.id] && !item.streaming" class="item-usage">
+                      ↑{{ itemUsage[item.id].promptTokens }} · ↓{{ itemUsage[item.id].completionTokens }}
+                    </div>
                   </div>
-                  <div class="think-collapse">
-                    <div class="think-body">{{ item.thinkText }}</div>
-                  </div>
-                </div>
-                <!-- 正式回复：MarkdownStatic 纯同步渲染，渲染完静止，滚动不抖 -->
-                <div v-if="item.replyText" class="ai-reply" :class="{ dark: isDark }">
-                  <MarkdownStatic :content="item.replyText" />
-                  <span v-if="item.streaming" class="cursor">▋</span>
-                </div>
-                <div v-else-if="item.streaming && !item.thinkText" class="pixel-loader">
-                  <i></i><i></i><i></i><i></i><i></i><i></i>
-                </div>
-                <!-- 单轮 token -->
-                <div v-if="itemUsage[item.id] && !item.streaming" class="item-usage">
-                  ↑{{ itemUsage[item.id].promptTokens }} · ↓{{ itemUsage[item.id].completionTokens }}
                 </div>
               </div>
-            </div>
-          </div>
 
-          <!-- 工具调用 -->
-          <div v-else
-            v-memo="[item.toolStatus, item.toolResult, item.toolProgress, isDark]"
-            class="msg msg-tool" :data-id="item.id"
-          >
-            <div class="avatar avatar-ai avatar-tool">
-              <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
-            </div>
-            <div class="tool-card-wrap">
-              <ToolCallCard :call="item.toolCall!" :status="item.toolStatus || 'pending'" :result="item.toolResult" :progress="item.toolProgress" />
-            </div>
-          </div>
-        </template>
-        </div>
+              <!-- 工具调用 -->
+              <div v-else
+                class="msg msg-tool" :data-id="item.id"
+              >
+                <div class="avatar avatar-ai avatar-tool">
+                  <i class="ico" :style="{ fontSize: 13 + 'px' }"><SparklesOutline /></i>
+                </div>
+                <div class="tool-card-wrap">
+                  <ToolCallCard :call="item.toolCall!" :status="item.toolStatus || 'pending'" :result="item.toolResult" :progress="item.toolProgress" />
+                </div>
+              </div>
+            </DynamicScrollerItem>
+          </template>
+        </DynamicScroller>
       </div>
 
       <!-- 双向浮动按钮：放在 panel-body 外，用 absolute 定位，不受列表布局影响 -->
@@ -1955,9 +1996,12 @@ function onInputKeydown(e: KeyboardEvent) {
 .model-chip-name { color: var(--text-2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .model-chip:hover:not(:disabled) .model-chip-name { color: var(--accent); }
 
-/* 消息流：全量 DOM 常驻。消息节点全部常驻，浏览器原生 overflow-anchor
-   锚定滚动位置，滚动时不会因高度突变而闪。 */
-.panel-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overflow-anchor: auto; padding: 16px; display: block; background: var(--bg); }
+/* 消息流容器：外层 .panel-body-scroll 占满 flex 空间；
+   DynamicScroller（根元素带 .panel-body + DS 自带 .vue-recycle-scroller）
+   作为实际滚动元素——DS 自带 overflow-y:auto（见 vue-virtual-scroller.css），
+   这里不重复加，只保留 padding/背景/滚动条样式。 */
+.panel-body-scroll { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.panel-body { flex: 1; min-height: 0; overflow-anchor: auto; padding: 16px; background: var(--bg); }
 .panel-body.opening .msg { opacity: 0; transition: opacity 0.2s ease; }
 .panel-body::-webkit-scrollbar { width: 6px; }
 .panel-body::-webkit-scrollbar-thumb { background: var(--text-6); border-radius: 3px; transition: background 0.15s; }
@@ -2015,17 +2059,13 @@ function onInputKeydown(e: KeyboardEvent) {
 .empty-hint-slash { font-size: 11px; color: var(--text-5); margin: 0; }
 .empty-hint-slash code { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: var(--surface-3); border: 1px solid var(--border); color: var(--accent); font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
 
-/* 消息渲染：全量 DOM 常驻，不使用 content-visibility。
-   原因：MarkdownRender（markstream-vue）是异步渲染（代码块高亮/表格/KaTeX
-   异步加载后才定型），消息高度会变化。content-visibility:auto 会在离屏消息
-   进入视口时才真正渲染它，此时高度从 200px 占位突变为真实高度 → 滚动时跳动闪屏。
-   contain-intrinsic-size:auto 只在"完全稳定的渲染后"缓存高度，异步内容永远
-   到不了稳定态，缓存一直是旧的，必然抖。
-   消息量级一两百条，全量渲染开销可接受，浏览器原生 overflow-anchor 在所有节点
-   常驻时能正确锚定滚动位置，这才是"简单不闪"的正解。 */
-.msg-list { display: block; overflow-anchor: auto; }
+/* 消息渲染：DynamicScroller 做窗口虚拟化（高度测量/裁剪/复用全由库内部处理）。
+   每条消息由 DynamicScrollerItem 包裹，库内部用绝对定位摆放（top = 之前条目
+   测量高度之和）。关键：项间距必须用 padding-bottom 而非 margin-bottom——
+   因为 DS 测的是 offsetHeight（含 padding，不含 margin），间距进到测量值里，
+   下一条的 top 才会正确跳过这段间距。用 margin 会丢失间距导致条目叠在一起。 */
 .msg {
-  display: flex; gap: 7px; max-width: 100%; align-items: flex-start; margin-bottom: 16px;
+  display: flex; gap: 7px; max-width: 100%; align-items: flex-start; padding-bottom: 16px;
 }
 /* 用户消息靠右 */
 .msg-user { justify-content: flex-end; }
