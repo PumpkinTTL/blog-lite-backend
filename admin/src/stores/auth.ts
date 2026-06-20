@@ -1,8 +1,6 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
-
-const AUTH_CENTER_URL = 'https://auth.bitle.cc.cd'
+import { logoutApi } from '../api/user'
 
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const refreshToken = ref(localStorage.getItem('refreshToken') || '')
@@ -35,11 +33,9 @@ export function useAuth() {
 
   async function logout() {
     try {
-      if (refreshToken.value && deviceId.value) {
-        await axios.post(`${AUTH_CENTER_URL}/auth/revoke`, {
-          refreshToken: refreshToken.value,
-          deviceId: deviceId.value,
-        })
+      // 调后端登出，由后端调鉴权中心吊销 refreshToken（避免前端跨域直连鉴权中心）
+      if (refreshToken.value) {
+        await logoutApi(refreshToken.value)
       }
     } catch {
       // 即使吊销失败也要清本地

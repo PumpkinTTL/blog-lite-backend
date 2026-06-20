@@ -30,6 +30,14 @@ export function refreshTokenApi(refreshToken: string, deviceId: string): Promise
   return request.post('/user/refresh', { refreshToken, deviceId })
 }
 
+/**
+ * 登出：调后端 /user/logout（后端负责调鉴权中心吊销 refreshToken）。
+ * 不直接调鉴权中心，避免跨域且不暴露鉴权中心地址给前端。
+ */
+export function logoutApi(refreshToken: string): Promise<ApiResponse<null>> {
+  return request.post('/user/logout', { refreshToken })
+}
+
 export interface UserMembership {
   level: PlanLevel
   expiresAt: string | null // null = 终身

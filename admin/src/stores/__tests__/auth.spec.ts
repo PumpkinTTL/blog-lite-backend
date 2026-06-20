@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // 使用 vi.hoisted 创建可在 mock 工厂和测试体中共享的变量
 const mockRouterPush = vi.hoisted(() => vi.fn())
-const mockAxiosPost = vi.hoisted(() => vi.fn())
+const mockLogoutApi = vi.hoisted(() => vi.fn())
 
 // jsdom 环境下 localStorage 在模块加载时不可用，手动 mock
 vi.hoisted(() => {
@@ -23,10 +23,9 @@ vi.mock('vue-router', () => ({
   })),
 }))
 
-vi.mock('axios', () => ({
-  default: {
-    post: mockAxiosPost,
-  },
+// mock logoutApi（不再直连鉴权中心，走后端 /user/logout）
+vi.mock('../../api/user', () => ({
+  logoutApi: mockLogoutApi,
 }))
 
 import { useAuth } from '../auth'
@@ -82,14 +81,12 @@ describe('useAuth', () => {
   it('logout 在有 token 时应调用吊销接口、清除 token 并跳转到 /login', async () => {
     const auth = useAuth()
     auth.setTokens('access', 'refresh-token', 'device-id')
-    mockAxiosPost.mockResolvedValue({ data: {} })
+    mockLogoutApi.mockResolvedValue({ data: {} })
 
     await auth.logout()
 
-    expect(mockAxiosPost).toHaveBeenCalledWith(
-      'https://auth.bitle.cc.cd/auth/revoke',
-      { refreshToken: 'refresh-token', deviceId: 'device-id' },
-    )
+    // 调用后端 logoutApi（传 refreshToken），由后端负责吊销鉴权中心 token
+    expect(mockLogoutApi).toHaveBeenCalledWith('refresh-token')
     expect(localStorage.getItem('accessToken')).toBeNull()
     expect(localStorage.getItem('refreshToken')).toBeNull()
     expect(localStorage.getItem('deviceId')).toBeNull()
@@ -103,7 +100,7 @@ describe('useAuth', () => {
 
     await auth.logout()
 
-    expect(mockAxiosPost).not.toHaveBeenCalled()
+    expect(mockLogoutApi).not.toHaveBeenCalled()
     expect(localStorage.getItem('accessToken')).toBeNull()
     expect(auth.accessToken.value).toBe('')
     expect(mockRouterPush).toHaveBeenCalledWith('/login')
@@ -112,11 +109,11 @@ describe('useAuth', () => {
   it('logout 在吊销失败时仍应清除 token 并跳转', async () => {
     const auth = useAuth()
     auth.setTokens('access', 'refresh-token', 'device-id')
-    mockAxiosPost.mockRejectedValue(new Error('Network Error'))
+    mockLogoutApi.mockRejectedValue(new Error('Network Error'))
 
     await auth.logout()
 
-    expect(mockAxiosPost).toHaveBeenCalled()
+    expect(mockLogoutApi).toHaveBeenCalled()
     expect(localStorage.getItem('accessToken')).toBeNull()
     expect(mockRouterPush).toHaveBeenCalledWith('/login')
   })
