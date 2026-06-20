@@ -4,10 +4,12 @@ import { useMessage, type FormInst, type FormRules } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { isDark } from '../theme'
 import { loginApi } from '../api/user'
+import { useAuth } from '../stores/auth'
 import FpJS from '@fingerprintjs/fingerprintjs'
 
 const message = useMessage()
 const router = useRouter()
+const { setTokens, fetchUserInfo } = useAuth()
 const formRef = ref<FormInst | null>(null)
 const loading = ref(false)
 const visitorId = ref('')
@@ -50,12 +52,11 @@ async function handleLogin() {
 
     if (res.success && res.data) {
       const { accessToken, refreshToken, deviceId } = res.data
-      // 勾选「记住登录状态」→ localStorage（跨浏览器重启持久化）
-      // 未勾选 → sessionStorage（关闭浏览器即失效）
-      const storage = formValue.value.remember ? localStorage : sessionStorage
-      storage.setItem('accessToken', accessToken)
-      storage.setItem('refreshToken', refreshToken)
-      storage.setItem('deviceId', deviceId)
+      // 通过 store 统一写入入口：同步更新 store ref + 按策略写入对应 storage。
+      // 这样登录后无需刷新，store 内的 token 已就绪，logout 等依赖 store 的逻辑可立即生效。
+      setTokens(accessToken, refreshToken, deviceId, formValue.value.remember)
+      // 拉取用户信息填充顶栏头像/昵称（失败不阻断，UI 兜底 'Admin'）
+      await fetchUserInfo(formValue.value.remember)
       message.success('登录成功')
       router.push('/dashboard')
     } else {

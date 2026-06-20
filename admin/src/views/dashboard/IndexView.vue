@@ -14,10 +14,12 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { getDashboardStats } from '../../api/dashboard'
 import type { DashboardStats } from '../../api/dashboard'
 import { isDark } from '../../theme'
+import { useAuth } from '../../stores/auth'
 
 echarts.use([LineChart, PieChart, BarChart, GridComponent, TooltipComponent, LegendComponent, GraphicComponent, CanvasRenderer])
 
 const router = useRouter()
+const { displayName } = useAuth()
 const message = useMessage()
 const loading = ref(true)
 const stats = ref<DashboardStats>({
@@ -27,15 +29,7 @@ const stats = ref<DashboardStats>({
   donationTrend: [], topPosts: [], recentUsers: [], postStatusDist: [], interactionTrend: [],
 })
 
-const donation = computed(() => {
-  const list = stats.value.donationTotalAmount || []
-  return list.find((d: any) => d.currency === 'CNY') || list[0] || null
-})
-const username = computed(() => {
-  const raw = localStorage.getItem('userInfo') || sessionStorage.getItem('userInfo')
-  if (!raw) return 'Admin'
-  try { const u = JSON.parse(raw); return u.username || u.name || u.nickname || 'Admin' } catch { return 'Admin' }
-})
+const username = computed(() => displayName.value)
 
 let tcInst: echarts.ECharts | null = null, pcInst: echarts.ECharts | null = null, dcInst: echarts.ECharts | null = null
 const tcEl = ref<HTMLElement | null>(null), pcEl = ref<HTMLElement | null>(null), dcEl = ref<HTMLElement | null>(null)

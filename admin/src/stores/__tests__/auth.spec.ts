@@ -3,18 +3,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // 使用 vi.hoisted 创建可在 mock 工厂和测试体中共享的变量
 const mockRouterPush = vi.hoisted(() => vi.fn())
 const mockLogoutApi = vi.hoisted(() => vi.fn())
+const mockGetProfileApi = vi.hoisted(() => vi.fn())
 
-// jsdom 环境下 localStorage 在模块加载时不可用，手动 mock
+// jsdom 环境下 localStorage/sessionStorage 在模块加载时可能不可用，手动 mock
 vi.hoisted(() => {
-  const store: Record<string, string> = {}
-  globalThis.localStorage = {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => { store[key] = value },
-    removeItem: (key: string) => { delete store[key] },
-    clear: () => { Object.keys(store).forEach((k) => delete store[k]) },
-    key: (i: number) => Object.keys(store)[i] ?? null,
-    get length() { return Object.keys(store).length },
-  } as Storage
+  const makeStorage = () => {
+    const store: Record<string, string> = {}
+    return {
+      getItem: (key: string) => store[key] ?? null,
+      setItem: (key: string, value: string) => { store[key] = value },
+      removeItem: (key: string) => { delete store[key] },
+      clear: () => { Object.keys(store).forEach((k) => delete store[k]) },
+      key: (i: number) => Object.keys(store)[i] ?? null,
+      get length() { return Object.keys(store).length },
+    } as Storage
+  }
+  globalThis.localStorage = makeStorage()
+  globalThis.sessionStorage = makeStorage()
 })
 
 vi.mock('vue-router', () => ({
@@ -23,9 +28,10 @@ vi.mock('vue-router', () => ({
   })),
 }))
 
-// mock logoutApi（不再直连鉴权中心，走后端 /user/logout）
+// mock logoutApi + getProfileApi（不再直连鉴权中心，走后端 /user/*）
 vi.mock('../../api/user', () => ({
   logoutApi: mockLogoutApi,
+  getProfileApi: mockGetProfileApi,
 }))
 
 import { useAuth } from '../auth'
@@ -116,5 +122,56 @@ describe('useAuth', () => {
     expect(mockLogoutApi).toHaveBeenCalled()
     expect(localStorage.getItem('accessToken')).toBeNull()
     expect(mockRouterPush).toHaveBeenCalledWith('/login')
+  })
+
+  it('fetchUserInfo 拉取成功后应持久化用户信息', async () => {
+    const auth = useAuth()
+    mockGetProfileApi.mockResolvedValue({
+      success: true,
+      data: {
+        id: 1,
+        username: 'admin',
+        nickname: '管理员',
+        avatar: 'https://example.com/a.png',
+        email: 'a@b.com',
+        roles: [{ name: 'admin' }],
+      },
+      message: 'ok',
+    })
+
+    await auth.fetchUserInfo(true)
+
+    expect(mockGetProfileApi).toHaveBeenCalled()
+    expect(auth.userInfo.value).not.toBeNull()
+    expect(auth.userInfo.value?.nickname).toBe('管理员')
+    expect(auth.userInfo.value?.avatar).toBe('https://example.com/a.png')
+    expect(auth.userInfo.value?.roles).toEqual(['admin'])
+    // 持久化到 localStorage（remember=true）
+    expect(localStorage.getItem('userInfo')).toContain('管理员')
+  })
+
+  it('fetchUserInfo 拉取失败时不抛错，userInfo 仍为 null', async () => {
+    const auth = useAuth()
+    mockGetProfileApi.mockRejectedValue(new Error('Network Error'))
+
+    await expect(auth.fetchUserInfo(true)).resolves.toBeUndefined()
+    expect(auth.userInfo.value).toBeNull()
+  })
+
+  it('displayName 优先昵称，无昵称兜底用户名，再兜底 Admin', async () => {
+    const auth = useAuth()
+
+    // 无 userInfo → Admin
+    expect(auth.displayName.value).toBe('Admin')
+
+    // 有昵称 → 昵称
+    auth.setTokens('a', 'b', 'c')
+    // 直接通过 tokenState 写入 userInfo
+    const { persistUserInfo } = await import('../tokenState')
+    persistUserInfo(
+      { id: 1, username: 'admin', nickname: '管理员', avatar: null, email: null, roles: [] },
+      true,
+    )
+    expect(auth.displayName.value).toBe('管理员')
   })
 })

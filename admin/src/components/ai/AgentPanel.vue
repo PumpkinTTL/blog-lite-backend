@@ -15,6 +15,7 @@ import { getConversationByPostId, saveConversation } from '../../api/ai-conversa
 import { getActiveAiProviders } from '../../api/ai-provider'
 import type { AiProvider } from '../../api/ai-provider'
 import { isDark } from '../../theme'
+import { userInfo } from '../../stores/tokenState'
 import ToolCallCard from './ToolCallCard.vue'
 import MarkdownStatic from './MarkdownStatic.vue'
 
@@ -176,15 +177,9 @@ async function loadProviders() {
 
 // 当前登录用户名首字（用户头像）
 const userInitial = computed(() => {
-  const raw = localStorage.getItem('userInfo') || sessionStorage.getItem('userInfo')
-  if (raw) {
-    try {
-      const info = JSON.parse(raw)
-      const name = info.username || info.name || info.nickname
-      if (name) return name.charAt(0).toUpperCase()
-    } catch { /* ignore */ }
-  }
-  return 'U'
+  const info = userInfo.value
+  const name = info?.nickname || info?.username
+  return name ? name.charAt(0).toUpperCase() : 'U'
 })
 
 // === Token 统计 ===

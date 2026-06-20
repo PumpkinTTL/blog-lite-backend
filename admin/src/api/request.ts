@@ -1,4 +1,7 @@
 import axios from 'axios'
+// 关键：续期/登出兜底时通过 tokenState 同步 store ref，
+// 否则 refresh 轮换 refreshToken 后 store 里仍是旧值，登出会吊销失败。
+import { persistTokens, clearTokens } from '../stores/tokenState'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
@@ -6,29 +9,10 @@ const request = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// === Token 存储抽象：localStorage 优先，sessionStorage 兜底 ===
-// 这样登录时的 remember 复选框只需决定写入哪个 storage，
-// 读取/清理逻辑无需关心具体来源
+// === Token 读取：localStorage 优先，sessionStorage 兜底 ===
+// 与 tokenState 的读取策略保持一致
 function getToken(key: string): string | null {
   return localStorage.getItem(key) || sessionStorage.getItem(key)
-}
-
-function clearTokens() {
-  ;[localStorage, sessionStorage].forEach((s) => {
-    s.removeItem('accessToken')
-    s.removeItem('refreshToken')
-    s.removeItem('deviceId')
-  })
-}
-
-// 续期成功后，写入与原 token 相同的 storage（保持会话策略一致）
-function saveTokens(access: string, refresh: string, device: string) {
-  // 判断当前 token 来自哪个 storage
-  const inLocal = !!localStorage.getItem('accessToken')
-  const target = inLocal ? localStorage : sessionStorage
-  target.setItem('accessToken', access)
-  target.setItem('refreshToken', refresh)
-  target.setItem('deviceId', device)
 }
 
 // 请求拦截器 - 自动带 token
@@ -119,7 +103,9 @@ request.interceptors.response.use(
         })
         const data = res.data?.data
         if (data?.accessToken) {
-          saveTokens(data.accessToken, data.refreshToken, data.deviceId || deviceId)
+          // 续期成功：通过 tokenState 同步刷新 store ref + storage
+          // （refresh 会轮换 refreshToken，必须同步，否则登出吊销的是旧 token）
+          persistTokens(data.accessToken, data.refreshToken, data.deviceId || deviceId)
           isRefreshing = false
           onRefreshed(data.accessToken)
           // 重试原始请求

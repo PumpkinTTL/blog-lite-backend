@@ -31,6 +31,14 @@ export function refreshTokenApi(refreshToken: string, deviceId: string): Promise
 }
 
 /**
+ * 获取当前登录用户的个人资料（含头像、昵称、角色）。
+ * 登录成功后调用一次，用于填充顶栏头像/昵称，替代硬编码 'Admin'。
+ */
+export function getProfileApi(): Promise<ApiResponse<User>> {
+  return request.get('/user/profile')
+}
+
+/**
  * 登出：调后端 /user/logout（后端负责调鉴权中心吊销 refreshToken）。
  * 不直接调鉴权中心，避免跨域且不暴露鉴权中心地址给前端。
  */

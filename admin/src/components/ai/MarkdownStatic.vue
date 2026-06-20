@@ -42,7 +42,7 @@ const md = new MarkdownIt({
     if (language) {
       try {
         return '<pre><code class="hljs language-' + language + '">'
-          + hljs.highlight(str, { language, ignoreIllegal: true }).value
+          + hljs.highlight(str, { language, ignoreIllegals: true }).value
           + '</code></pre>'
       } catch { /* fallthrough */ }
     }

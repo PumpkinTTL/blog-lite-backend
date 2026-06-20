@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { h, ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NAvatar, NDropdown, NIcon, NBreadcrumb, NBreadcrumbItem } from 'naive-ui'
+import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NAvatar, NDropdown, NIcon, NBreadcrumb, NBreadcrumbItem, NSpin, useMessage } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
 import {
   HomeOutline,
@@ -35,9 +35,11 @@ import { isDark } from '../theme'
 
 const router = useRouter()
 const route = useRoute()
-const { logout } = useAuth()
+const message = useMessage()
+const { logout, displayName, displayAvatar } = useAuth()
 
 const collapsed = ref(false)
+const logoutLoading = ref(false)
 
 function renderIcon(icon: Component) {
   return () => h(NIcon, null, { default: () => h(icon) })
@@ -85,15 +87,34 @@ function handleMenuSelect(key: string) {
   router.push(key)
 }
 
-const userDropdownOptions = [
+const userDropdownOptions = computed<MenuOption[]>(() => [
   { label: '个人信息', key: 'profile', icon: renderIcon(PersonOutline) },
   { type: 'divider', key: 'd1' },
-  { label: '退出登录', key: 'logout', icon: renderIcon(LogOutOutline) },
-]
+  {
+    label: logoutLoading.value ? '退出中…' : '退出登录',
+    key: 'logout',
+    icon: renderIcon(LogOutOutline),
+    disabled: logoutLoading.value,
+  },
+])
 
-function handleUserAction(key: string) {
+async function handleUserAction(key: string) {
+  if (key === 'profile') {
+    message.info('个人信息页开发中')
+    return
+  }
   if (key === 'logout') {
-    logout()
+    // 已在登出中（async 未完成时 dropdown 可能被再次触发），直接忽略
+    if (logoutLoading.value) return
+    logoutLoading.value = true
+    try {
+      await logout()
+      message.success('已退出登录')
+    } catch {
+      message.error('退出失败，请重试')
+    } finally {
+      logoutLoading.value = false
+    }
   }
 }
 
@@ -136,6 +157,16 @@ function toggleDark() {
 
 <template>
   <n-layout has-sider class="admin-layout">
+    <!-- 登出全屏遮罩：dropdown 的 disabled 反馈太弱，用遮罩给出明确「正在登出」反馈 -->
+    <teleport to="body">
+      <transition name="fade">
+        <div v-if="logoutLoading" class="logout-overlay">
+          <n-spin size="large" />
+          <span class="logout-overlay-text">正在退出登录…</span>
+        </div>
+      </transition>
+    </teleport>
+
     <!-- 侧边栏 -->
     <n-layout-sider
       bordered
@@ -189,11 +220,11 @@ function toggleDark() {
           </n-button>
 
           <n-dropdown :options="userDropdownOptions" @select="handleUserAction" placement="bottom-end">
-            <div class="user-block">
-              <n-avatar :size="30" round class="user-avatar">
-                <n-icon size="16"><PersonOutline /></n-icon>
+            <div class="user-block" :class="{ 'is-loading': logoutLoading }">
+              <n-avatar :size="30" round :src="displayAvatar || undefined" class="user-avatar">
+                <n-icon v-if="!displayAvatar" size="16"><PersonOutline /></n-icon>
               </n-avatar>
-              <span class="user-name">Admin</span>
+              <span class="user-name">{{ displayName }}</span>
             </div>
           </n-dropdown>
         </div>
@@ -314,6 +345,12 @@ function toggleDark() {
   font-weight: 500;
 }
 
+/* 登出时头像区轻微置灰，配合全屏遮罩 */
+.user-block.is-loading {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
 .admin-content {
   background: var(--n-body-color);
   flex: 1;
@@ -345,5 +382,38 @@ function toggleDark() {
 .admin-main :deep(.n-layout-scroll-container) {
   display: flex;
   flex-direction: column;
+}
+</style>
+
+<!-- 非 scoped：teleport 到 body 的全屏登出遮罩需要全局样式 -->
+<style>
+.logout-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+}
+
+.logout-overlay-text {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
