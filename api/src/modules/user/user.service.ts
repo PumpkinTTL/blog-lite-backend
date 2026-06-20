@@ -572,7 +572,18 @@ export class UserService {
   /**
    * 用户端登出（清理本地 Token，后端暂无操作）
    */
-  async logout(userId: number): Promise<void> {
+  async logout(userId: number, refreshToken?: string): Promise<void> {
+    // 调鉴权中心吊销 refreshToken（删除 Redis 中的会话）
+    if (refreshToken) {
+      try {
+        await this.authService.revokeToken(refreshToken);
+      } catch (e) {
+        // 吊销失败不阻塞登出流程（token 自然过期）
+        this.logger.warn(
+          `用户 ${userId} 登出吊销 Token 失败: ${e instanceof Error ? e.message : e}`,
+        );
+      }
+    }
     // 更新最后登录时间
     await this.userRepo.update(userId, { lastLoginAt: new Date() });
     this.logger.log(`用户 ${userId} 登出`);

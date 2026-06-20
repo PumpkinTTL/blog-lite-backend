@@ -114,6 +114,20 @@ export class AuthService implements OnModuleInit {
   }
 
   /**
+   * 吊销单个 refreshToken（用户登出场景）。
+   * 调用鉴权中心公开接口 POST /auth/revoke（无需鉴权，只需 refreshToken）。
+   * @param refreshToken 要吊销的 refreshToken
+   */
+  async revokeToken(refreshToken: string): Promise<void> {
+    await firstValueFrom(
+      this.httpService.post(`${this.authCenterUrl}/auth/revoke`, {
+        refreshToken,
+      }),
+    );
+    this.logger.log('已吊销 refreshToken（登出）');
+  }
+
+  /**
    * 按 userId 批量吊销该用户在鉴权中心的所有 refreshToken。
    * 调用鉴权中心 POST /auth/revoke-by-user（子端用 clientId/secret 鉴权，非管理员密钥）。
    * 用途：封禁用户时调用，立即吊销其所有会话，防止被封用户无限 refresh。

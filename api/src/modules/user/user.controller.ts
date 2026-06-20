@@ -119,9 +119,9 @@ export class UserController {
   // ===== 用户端登出 =====
 
   @Post('logout')
-  async logout(@Req() req: Request) {
+  async logout(@Req() req: Request, @Body() body: { refreshToken?: string }) {
     const userId = parseInt((req as any).user?.sub, 10);
-    await this.userService.logout(userId);
+    await this.userService.logout(userId, body?.refreshToken);
     return { success: true, message: '登出成功' };
   }
 
