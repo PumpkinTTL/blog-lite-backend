@@ -1101,7 +1101,19 @@ async function handleSend() {
 
       assistantItem.streaming = false
       currentAssistantItem = null
-      thinkExpanded.value.delete(assistantItem.id)
+      // 思考保持展开：不在这里 delete thinkExpanded。
+      // 收起思考会让 think-body 高度突变，即便有 size-dependencies，密集的多步
+      // 循环里 DS 仍可能在重测完成前用旧高度定位后续 item = 留白。
+      // 常驻展开则高度恒定，DS 测量稳定。用户可手动点击 think-head 折叠。
+
+      // 关键修复：移除「无思考无回复、直接调工具」的空 assistant item。
+      // agent 多步循环里，AI 可能某步直接返回 toolCalls（无 content/think），
+      // 此时 assistantItem 只剩 avatar。它在流式期间显示 pixel-loader 被DS测量，
+      // 结束后 loader 消失高度骤降，但 DS 没重测 → 该 item 留白、且把后续工具
+      // item 挤到错误位置。这种空 item 对用户无意义（用户看的是工具调用），直接移除。
+      if (!assistantItem.replyText && !assistantItem.thinkText) {
+        renderItems.value = renderItems.value.filter((r) => r.id !== assistantItem.id)
+      }
 
       const assistantMsg: AiChatMessage = {
         role: 'assistant',
@@ -1546,7 +1558,19 @@ function onInputKeydown(e: KeyboardEvent) {
           @scroll.native="onScroll"
         >
           <template v-slot="{ item, index, active }">
-            <DynamicScrollerItem :item="item" :active="active" :data-index="index" :data-id="item.id">
+            <!-- size-dependencies：列出所有影响 item 渲染高度的响应式字段。
+                 DS 内部 watch 这些值，变化时强制重测并更新 sizes[id]，
+                 确保 item.position（=前序item累积高度）始终准确，杜绝留白。
+                 覆盖：流式文本增长、思考展开/收起、工具状态变化、usage显隐。 -->
+            <DynamicScrollerItem
+              :item="item" :active="active" :data-index="index" :data-id="item.id"
+              :size-dependencies="[
+                item.text, item.replyText, item.thinkText, item.streaming,
+                item.toolStatus, item.toolResult, item.toolProgress,
+                thinkExpanded.has(item.id),
+                !!itemUsage[item.id],
+              ]"
+            >
               <!-- 用户消息 -->
               <div v-if="item.kind === 'user'"
                 class="msg msg-user" :data-id="item.id"
@@ -1574,9 +1598,15 @@ function onInputKeydown(e: KeyboardEvent) {
                         <i v-if="!item.streaming" class="ico think-chevron" :class="{ rotated: thinkExpanded.has(item.id) }" :style="{ fontSize: 11 + 'px' }"><ChevronDownOutline /></i>
                         <span v-if="item.streaming" class="think-streaming">思考中</span>
                       </div>
-                      <div class="think-collapse">
-                        <div class="think-body">{{ item.thinkText }}</div>
-                      </div>
+                      <!-- think-body 用 v-if 挂载/卸载（非 max-height 过渡）：
+                           DynamicScroller 用 ResizeObserver 测高，CSS max-height 过渡会让它
+                           读到中间态高度并缓存 → sizes[id] 陈旧 → 后续 item position 错位 = 留白。
+                           v-if 卸载后高度立即确定，DS 测量准确。仅 opacity 淡入不影响高度。 -->
+                      <transition name="think-fade">
+                        <div v-if="thinkExpanded.has(item.id) || item.streaming" class="think-collapse">
+                          <div class="think-body">{{ item.thinkText }}</div>
+                        </div>
+                      </transition>
                     </div>
                     <!-- 正式回复：MarkdownStatic 纯同步渲染，渲染完静止，滚动不抖 -->
                     <div v-if="item.replyText" class="ai-reply" :class="{ dark: isDark }">
@@ -2246,26 +2276,19 @@ function onInputKeydown(e: KeyboardEvent) {
 @keyframes think-dot { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.2); } }
 /* 思考正文：padding 和 border 也参与过渡，折叠时归零，彻底消除残留高度 */
 .think-body {
-  padding: 0 10px;
-  border-top: 0px solid transparent;
+  padding: 7px 10px 8px;
+  border-top: 1px dashed var(--border);
   font-size: 11.5px; line-height: 1.65; color: var(--text-4);
   white-space: pre-wrap; word-break: break-word;
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  transition: max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.2s ease,
-              padding 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              border-top-width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  /* 无 max-height 过渡：DynamicScroller 用 ResizeObserver 测高，CSS 过渡会让它
+     读到中间态高度并缓存 → sizes[id] 陈旧 → 后续 item 错位留白。
+     think-body 由父级 v-if 挂载/卸载控制，高度立即确定。 */
 }
-.think-block.expanded .think-body {
-  padding: 7px 10px 8px;
-  border-top-width: 1px;
-  border-top-style: dashed;
-  border-top-color: var(--border);
-  max-height: 400px;
-  opacity: 1;
-}
+/* 仅 opacity 淡入：不影响 offsetHeight，DS 测量不受干扰 */
+.think-fade-enter-active { transition: opacity 0.2s ease; }
+.think-fade-enter-from { opacity: 0; }
+.think-fade-leave-active { transition: opacity 0.15s ease; }
+.think-fade-leave-to { opacity: 0; }
 
 /* claude code 风像素流：6 个固定大小方块，各自横向位置 + 亮度不规则跳变。
    不是转圈、不是直线扫描，而是像素在游走、聚散，像数据流在涌动。
