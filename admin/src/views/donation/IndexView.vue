@@ -3,7 +3,7 @@ import { ref, h, onMounted } from 'vue'
 import {
   NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NPagination, NTooltip,
   NModal, NForm, NFormItem, NInputNumber, NSelect, NRadioGroup, NRadioButton,
-  NGrid, NGi, NEmpty, NSpin, NTabs, NTabPane, NDescriptions, NDescriptionsItem,
+  NGrid, NGi, NEmpty, NSpin, NTabs, NTabPane,
   NTimeline, NTimelineItem, NText, useMessage, useDialog,
 } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
@@ -22,6 +22,7 @@ import type { Donation, CreateDonationData, DonationStats, SendThanksResult, Don
 import { getCodes } from '../../api/code'
 import type { Code } from '../../api/code'
 import ThanksSendPanel from './ThanksSendPanel.vue'
+import { isDark } from '../../theme'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -109,7 +110,10 @@ const thanksForm = ref<{
   email: string
   message: string
   sendEmail: boolean
-}>({ tab: 'thanks', codeId: null, email: '', message: '', sendEmail: false })
+  contact: string
+  platformName: string
+  tagline: string
+}>({ tab: 'thanks', codeId: null, email: '', message: '', sendEmail: false, contact: '', platformName: '', tagline: '' })
 const thanksLoading = ref(false)
 /** 最近一次发送结果（成功后展示码+复制） */
 const lastResult = ref<SendThanksResult | null>(null)
@@ -208,6 +212,9 @@ function openThanksModal(row: Donation, isCode = false) {
     email: row.donorEmail || '',
     message: '',
     sendEmail: !!row.donorEmail,
+    contact: '',
+    platformName: '',
+    tagline: '',
   }
   lastResult.value = null
   notifList.value = []
@@ -255,6 +262,9 @@ async function handleSendThanks() {
       codeId: f.tab === 'code' ? f.codeId : null,
       email: f.email.trim() || null,
       message: f.message.trim() || undefined,
+      contact: f.contact.trim() || undefined,
+      platformName: f.platformName.trim() || undefined,
+      tagline: f.tagline.trim() || undefined,
       sendEmail: f.sendEmail,
     })
     lastResult.value = res.data
@@ -662,20 +672,19 @@ onMounted(() => { loadList(); loadStats() })
     </n-modal>
 
     <!-- 发感谢弹窗（三 Tab：纯感谢 / 带激活码 / 记录） -->
-    <n-modal v-model:show="showThanksModal" preset="card" style="width: 580px; max-width: 92vw">
+    <n-modal v-model:show="showThanksModal" preset="card"
+      style="width: 580px; max-width: 92vw"
+      content-style="max-height: 60vh; overflow-y: auto; padding-right: 6px">
       <template #header>
         <span>感谢 · {{ thanksDonation?.donorName || '-' }}</span>
       </template>
 
-      <!-- 捐赠摘要（用 descriptions 组件，对齐美观） -->
-      <n-descriptions v-if="thanksDonation" label-placement="left" :column="2" size="small" bordered style="margin-bottom: 16px">
-        <n-descriptions-item label="金额">
-          <n-text strong style="color: #16A34A">{{ thanksDonation.amount }} {{ thanksDonation.currency }}</n-text>
-        </n-descriptions-item>
-        <n-descriptions-item label="邮箱">
-          {{ thanksDonation.donorEmail || '未留' }}
-        </n-descriptions-item>
-      </n-descriptions>
+      <!-- 捐赠摘要（轻量行内展示，金额 · 邮箱） -->
+      <div v-if="thanksDonation" class="thanks-meta" :class="{ dark: isDark }">
+        <span class="thanks-meta-amount">{{ thanksDonation.amount }} {{ thanksDonation.currency }}</span>
+        <span class="thanks-meta-dot">·</span>
+        <span class="thanks-meta-email">{{ thanksDonation.donorEmail || '未留邮箱' }}</span>
+      </div>
 
       <n-tabs v-model:value="thanksForm.tab" type="line" @update:value="handleTabChange">
         <!-- Tab 1: 纯感谢 -->
@@ -817,5 +826,38 @@ onMounted(() => { loadList(); loadStats() })
 .chip-amount {
   color: #10B981;
   font-weight: 600;
+}
+
+/* 感谢弹窗：轻量头部摘要（金额 · 邮箱） */
+.thanks-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 0 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--n-border-color, rgba(100, 116, 139, 0.15));
+  margin-bottom: 16px;
+}
+.thanks-meta-amount {
+  font-size: 16px;
+  font-weight: 700;
+  color: #16A34A;
+}
+.thanks-meta-dot {
+  color: #CBD5E1;
+}
+.thanks-meta-email {
+  color: #64748B;
+  word-break: break-all;
+}
+/* 深色模式：金额绿点不变，分隔点/邮箱/底边翻转，跟随 isDark ref */
+.thanks-meta.dark {
+  border-bottom-color: rgba(148, 163, 184, 0.18);
+}
+.thanks-meta.dark .thanks-meta-dot {
+  color: #475569;
+}
+.thanks-meta.dark .thanks-meta-email {
+  color: #94A3B8;
 }
 </style>

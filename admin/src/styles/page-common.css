@@ -49,3 +49,40 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* ==============================
+   全局细滚动条（统一观感，覆盖又粗又丑的系统默认样式）
+   - WebKit / Blink（Chrome、Edge、Safari）用 ::-webkit-scrollbar
+   - Firefox 用 scrollbar-width + scrollbar-color
+   - 作用范围：所有可滚动元素，包括 n-modal 内容区、n-tab-pane、面板内部等
+   ============================== */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background 0.15s ease-out;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+  background-clip: content-box;
+}
+
+/* 更窄场景（如表单内容区、内嵌小面板）可继续用 4~6px 局部覆盖，
+   全局基础已是细条，多数地方无需再单独定义 */
