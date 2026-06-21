@@ -52,13 +52,15 @@ import {
 import type { ResourceCategory } from '../../api/resource-category'
 import { getUsers } from '../../api/user'
 import { getRoles } from '../../api/role'
-import { uploadToR2 } from '../../api/r2-storage'
+import { uploadToR2Direct } from '../../api/r2-direct'
 import { getMediaList } from '../../api/media'
 import { useCrudList } from '../../composables/useCrudList'
 import { isDark } from '../../theme'
 
 const formRef = ref<FormInst | null>(null)
 const activeTab = ref('resources')
+/** 保存时上传图片的进度文案（封面/正文），空表示无上传 */
+const uploadStatusText = ref('')
 
 // ==================== 资源分类选项（下拉用） ====================
 const categorySelectOptions = ref<{ label: string; value: number }[]>([])
@@ -370,14 +372,22 @@ async function onEditorDrop(event: DragEvent) {
   }
 }
 
-// ==================== 统一上传（R2 + 分类 folder + 详细 note） ====================
-async function uploadOne(file: File, note: string): Promise<string> {
+// ==================== 统一上传（R2 直传 + 分类 folder + 详细 note） ====================
+async function uploadOne(
+  file: File,
+  note: string,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
   const cat = categorySelectOptions.value.find(
     (c) => c.value === formValue.value.categoryId,
   )
   const folder = cat?.label || 'uncategorized'
-  const res = await uploadToR2(file, { note, app: 'resource', folder })
-  return res.data.url
+  // R2 走前端直传（真实进度 + 无 10s 超时）
+  const { url } = await uploadToR2Direct(file, {
+    note, app: 'resource', folder,
+    onProgress: (p) => onProgress?.(p.percent),
+  })
+  return url
 }
 
 /** 保存时上传封面：若为 base64 则上传，返回真实 URL；否则原样返回 */
@@ -388,7 +398,9 @@ async function uploadCoverIfNeeded(): Promise<string> {
   const note = formValue.value.title
     ? `资源「${formValue.value.title}」(#${editingId.value || '新'})的封面图`
     : '资源封面图'
-  return uploadOne(file, note)
+  return uploadOne(file, note, (percent) => {
+    uploadStatusText.value = `上传封面 (${Math.round(percent)}%)`
+  })
 }
 
 /**
@@ -404,7 +416,9 @@ async function uploadContentImages(content: string): Promise<string> {
     ? `资源「${formValue.value.title}」(#${editingId.value || '新'})正文图片`
     : '资源正文图片'
   let result = content
+  let i = 0
   for (const m of matches) {
+    i++
     const full = m[0]
     const alt = m[1]
     const dataUrlMatch = full.match(/\(data:image\/[^)]+\)/)
@@ -415,7 +429,9 @@ async function uploadContentImages(content: string): Promise<string> {
         dataUrl,
         `resource-content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       )
-      const realUrl = await uploadOne(file, note)
+      const realUrl = await uploadOne(file, note, (percent) => {
+        uploadStatusText.value = `上传正文图 ${i}/${matches.length} (${Math.round(percent)}%)`
+      })
       result = result.replace(full, `![${alt}](${realUrl})`)
     } catch (e: any) {
       message.error(e?.message || '正文图片上传失败')
@@ -442,11 +458,14 @@ async function handleSave() {
   fv.sortOrder = Number(fv.sortOrder) || 0
   fv.priceCents = Math.round((Number(fv.priceYuan) || 0) * 100)
 
-  // 保存时上传：封面 base64 → R2；正文 base64 → R2
+  // 保存时上传：封面 base64 → R2；正文 base64 → R2（前端直传 + 进度）
   try {
+    uploadStatusText.value = '上传封面...'
     fv.cover = await uploadCoverIfNeeded()
     fv.content = await uploadContentImages(fv.content || '')
+    uploadStatusText.value = ''
   } catch (e: any) {
+    uploadStatusText.value = ''
     message.error(e?.message || '图片上传失败')
     return false
   }
@@ -914,7 +933,7 @@ const catColumns: DataTableColumns<ResourceCategory> = [
       v-model:show="showModal"
       preset="dialog"
       :title="editingId ? '编辑资源' : '新建资源'"
-      :positive-text="saving ? '提交中...' : '确认'"
+      :positive-text="saving ? (uploadStatusText || '提交中...') : '确认'"
       :negative-text="saving ? undefined : '取消'"
       :loading="saving"
       :class="'res-modal'"

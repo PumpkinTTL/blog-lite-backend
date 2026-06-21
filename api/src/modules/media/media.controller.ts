@@ -23,6 +23,8 @@ import {
   UpdateMediaDto,
   BatchIdsDto,
   UploadStorageDto,
+  PresignR2Dto,
+  ConfirmR2Dto,
 } from './media.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
@@ -127,6 +129,56 @@ export class MediaController {
       note: dto.note,
       app: dto.app,
       folder: dto.folder,
+    });
+    return { success: true, data, message: '上传成功' };
+  }
+
+  /**
+   * 申请 R2 presigned PUT URL（前端直传模式）
+   *
+   * 前端选好文件后调用：
+   * - 命中秒传 → 返回 { alreadyExists: true, media }
+   * - 未命中   → 返回 { alreadyExists: false, uploadUrl, key, publicUrl }
+   *
+   * 前端拿到 uploadUrl 后用 XHR 直接 PUT 到 R2，绕过后端中转。
+   */
+  @Post('presign')
+  async presign(@Body() dto: PresignR2Dto) {
+    if (dto.size > 10 * 1024 * 1024) {
+      throw new BadRequestException('文件大小超过 10MB 限制');
+    }
+    const data = await this.mediaService.presignR2Upload({
+      filename: dto.filename,
+      contentType: dto.contentType,
+      size: dto.size,
+      hash: dto.hash,
+      app: dto.app,
+      folder: dto.folder,
+      note: dto.note,
+    });
+    return { success: true, data, message: 'ok' };
+  }
+
+  /**
+   * 直传完成后的入库确认
+   *
+   * 前端 PUT 到 R2 成功后回调，后端 HEAD 校验对象存在 + 大小一致后写 media 记录。
+   * 幂等：同 hash 重复 confirm 直接返回已有记录。
+   */
+  @Post('confirm')
+  async confirm(@Body() dto: ConfirmR2Dto, @Req() req: Request) {
+    const payload = req as { user?: { sub?: string } };
+    const uploaderId = parseInt(payload.user?.sub ?? '1', 10);
+    const data = await this.mediaService.confirmR2Upload({
+      key: dto.key,
+      originalName: dto.originalName,
+      mimeType: dto.mimeType,
+      size: dto.size,
+      hash: dto.hash,
+      app: dto.app,
+      folder: dto.folder,
+      note: dto.note,
+      uploaderId,
     });
     return { success: true, data, message: '上传成功' };
   }

@@ -146,6 +146,133 @@ export class MediaService {
     return this.mediaRepo.save(media);
   }
 
+  /**
+   * 签发 R2 presigned PUT URL（前端直传模式）
+   *
+   * 流程：
+   * 1. 前端先算好 sha256 一并传上来 → 这里先查秒传
+   * 2. 命中秒传：直接返回已有记录，不签 URL（前端跳过上传）
+   * 3. 未命中：生成 key，签 5 分钟有效的 PUT URL，返回给前端
+   *
+   * 不入库。入库延后到 confirm()，确保对象真上传成功才写记录。
+   *
+   * @returns
+   *   - 命中秒传：`{ alreadyExists: true, media }`
+   *   - 需要上传：`{ alreadyExists: false, uploadUrl, key, publicUrl }`
+   */
+  async presignR2Upload(params: {
+    filename: string;
+    contentType: string;
+    size: number;
+    hash?: string;
+    app?: string;
+    folder?: string;
+    note?: string;
+  }): Promise<
+    | { alreadyExists: true; media: MediaEntity }
+    | {
+        alreadyExists: false;
+        uploadUrl: string;
+        key: string;
+        publicUrl: string;
+      }
+  > {
+    const { filename, contentType, size, hash, app, folder, note } = params;
+
+    // 1. 秒传检查：前端带 hash 时先查（必须 storageType=oss + ossPlatform=cloudflare）
+    if (hash) {
+      const qb = this.mediaRepo
+        .createQueryBuilder('m')
+        .where('m.hash = :hash', { hash })
+        .andWhere('m.storage_type = :storageType', { storageType: 'oss' })
+        .andWhere('m.oss_platform = :ossPlatform', {
+          ossPlatform: 'cloudflare',
+        });
+      const existing = await qb.getOne();
+      if (existing) {
+        if (note && existing.note !== note) {
+          existing.note = note;
+          return { alreadyExists: true, media: await this.mediaRepo.save(existing) };
+        }
+        return { alreadyExists: true, media: existing };
+      }
+    }
+
+    // 2. 生成 key + 签 URL
+    const originalName = this.decodeFilename(filename);
+    const key = this.generateFilename(originalName, app, folder);
+    const provider = this.createR2Provider();
+    const uploadUrl = await provider.presignPut(key, contentType, size, 300);
+    const publicUrl = provider.getUrl(key);
+
+    return { alreadyExists: false, uploadUrl, key, publicUrl };
+  }
+
+  /**
+   * 直传完成后的入库确认（前端 PUT 成功后调用）
+   *
+   * 1. HEAD 探测 R2 对象是否真实存在 + 校验大小
+   * 2. 幂等：同 key+hash 已有记录则直接返回（防止前端重复 confirm）
+   * 3. 不存在/大小不符 → 抛 400
+   */
+  async confirmR2Upload(params: {
+    key: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    hash: string;
+    app?: string;
+    folder?: string;
+    note?: string;
+    uploaderId: number;
+  }): Promise<MediaEntity> {
+    const {
+      key,
+      originalName,
+      mimeType,
+      size,
+      hash,
+      note,
+      uploaderId,
+    } = params;
+
+    // 幂等：同 hash + cloudflare 已有记录直接返回
+    const existing = await this.mediaRepo.findOne({
+      where: { hash, storageType: 'oss', ossPlatform: 'cloudflare' },
+    });
+    if (existing) return existing;
+
+    // HEAD 探测
+    const provider = this.createR2Provider();
+    const head = await provider.headObject(key);
+    if (!head.exists) {
+      throw new BadRequestException(
+        '文件未上传成功（R2 中找不到该对象），请重试上传',
+      );
+    }
+    // 大小校验：若 HEAD 拿到大小，必须与声明一致（防伪造）
+    if (head.size != null && head.size !== size) {
+      throw new BadRequestException(
+        `文件大小不一致：声明 ${size} 字节，实际 ${head.size} 字节`,
+      );
+    }
+
+    const decodedName = this.decodeFilename(originalName);
+    const media = this.mediaRepo.create({
+      filename: key,
+      originalName: decodedName,
+      mimeType,
+      size,
+      hash,
+      url: provider.getUrl(key),
+      storageType: 'oss',
+      ossPlatform: 'cloudflare',
+      uploaderId,
+      note: note?.trim() || null,
+    });
+    return this.mediaRepo.save(media);
+  }
+
   async remove(id: number) {
     const media = await this.mediaRepo.findOne({ where: { id } });
     if (!media) return;

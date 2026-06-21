@@ -66,7 +66,9 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { join, dirname, resolve, sep } from 'node:path';
 
@@ -143,6 +145,83 @@ export class StorageProvider {
       return this.deleteLocal(key);
     }
     return this.deleteS3(key);
+  }
+
+  /**
+   * 签发 presigned PUT URL（供前端直传 R2 使用）
+   *
+   * 浏览器拿到这个 URL 后，可直接用 XHR PUT 上传文件，绕过后端中转。
+   * R2/S3 兼容协议下，Content-Type/Content-Length 会被纳入签名校验，
+   * 前端 PUT 时必须带上相同的头，否则会 403 SignatureDoesNotMatch。
+   *
+   * @param key         对象键
+   * @param contentType MIME 类型（可选，签入签名）
+   * @param size        文件大小（可选，签入签名，前端 PUT 时必须带 Content-Length）
+   * @param expiresInSec URL 有效期（默认 5 分钟）
+   */
+  async presignPut(
+    key: string,
+    contentType?: string,
+    size?: number,
+    expiresInSec = 300,
+  ): Promise<string> {
+    if (this.config.provider === 'local') {
+      throw new Error('[StorageProvider] presign 仅支持 S3 兼容云存储，不支持本地');
+    }
+    const client = this.getClient();
+
+    // ⚠️ 不签 ContentLength / ContentType 到签名头里。
+    // 原因：presigned URL 一旦把 content-length 签进去，浏览器 PUT 时
+    // Content-Length 必须与签名时严格相等，否则 R2 返回 403
+    // SignatureDoesNotMatch。但浏览器实际发送的 Content-Length 由
+    // 浏览器内部根据请求体决定，难以保证精确匹配（特别是经过任何
+    // transformation 时）。所以 presigned URL 只签 host，让 R2 只校验
+    // 签名本身 + 过期时间。文件大小完整性由 confirm 阶段的 HEAD
+    // + size 比对覆盖（更可靠）。
+    void size; // 显式忽略，保留参数签名以兼容调用方
+    void contentType;
+    const command = new PutObjectCommand({
+      Bucket: this.config.bucket,
+      Key: key,
+      // 故意不传 ContentType / ContentLength
+    });
+
+    // ⚠️ 不要对返回的 URL 做任何字符串修改（包括删除 checksum query 参数）。
+    // 签名是基于完整 query 字符串计算的，任何字符改动都会让签名失效。
+    // checksum 等参数虽不参与 HMAC，但属于 URL 的一部分，必须原样保留。
+    return getSignedUrl(client, command, { expiresIn: expiresInSec });
+  }
+
+  /**
+   * 探测对象是否存在（HEAD）—— 用于 confirm 阶段校验文件真已上传
+   * @returns 存在则返回 { exists: true, size }；不存在返回 { exists: false }
+   */
+  async headObject(
+    key: string,
+  ): Promise<{ exists: boolean; size?: number }> {
+    if (this.config.provider === 'local') {
+      throw new Error('[StorageProvider] headObject 仅支持 S3 兼容云存储');
+    }
+    const client = this.getClient();
+
+    try {
+      const res = await client.send(
+        new HeadObjectCommand({ Bucket: this.config.bucket, Key: key }),
+      );
+      return {
+        exists: true,
+        size: typeof res.ContentLength === 'number' ? res.ContentLength : undefined,
+      };
+    } catch (err) {
+      const code = (err as { name?: string }).name;
+      // 对象不存在
+      if (code === 'NotFound' || code === '404') {
+        return { exists: false };
+      }
+      throw new Error(
+        `[StorageProvider] HEAD 失败: ${key} — ${(err as Error).message}`,
+      );
+    }
   }
 
   /**

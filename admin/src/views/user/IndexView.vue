@@ -8,7 +8,8 @@ import type { User } from '../../api/user'
 import { getRoles } from '../../api/role'
 import type { Role } from '../../api/role'
 import type { PlanLevel } from '../../api/plan'
-import { uploadToR2, getR2MediaList } from '../../api/r2-storage'
+import { getR2MediaList } from '../../api/r2-storage'
+import { uploadToR2Direct } from '../../api/r2-direct'
 import { useCrudList } from '../../composables/useCrudList'
 
 const formRef = ref<FormInst | null>(null)
@@ -88,6 +89,8 @@ const roleOptions = ref<{ label: string; value: number }[]>([])
 
 const avatarUrl = ref<string | null>(null)
 const avatarUploading = ref(false)
+/** 头像上传进度（0-100，-1 表示未知） */
+const avatarProgress = ref(-1)
 const r2PickerShow = ref(false)
 const r2Images = ref<any[]>([])
 const r2Loading = ref(false)
@@ -111,16 +114,24 @@ async function handleAvatarChange(data: { file: any; fileList: any[] }) {
   const rawFile = data.file?.file
   if (!rawFile) return
   avatarUploading.value = true
+  avatarProgress.value = -1
   try {
     const name = formValue.value.nickname || formValue.value.username || '未知'
     const uid = editingId.value ? `#${editingId.value} ` : ''
-    const res: any = await uploadToR2(rawFile, { app: 'vibehub', folder: 'avatar', note: `${uid}${name} 头像` })
-    avatarUrl.value = res.data?.url || res.url || ''
+    // R2 走前端直传（带真实进度），绕过后端中转 + 10s 超时
+    const { url } = await uploadToR2Direct(rawFile, {
+      app: 'vibehub',
+      folder: 'avatar',
+      note: `${uid}${name} 头像`,
+      onProgress: (p) => { avatarProgress.value = p.percent },
+    })
+    avatarUrl.value = url
     message.success('头像上传成功')
   } catch (e: any) {
     message.error(e?.message || '头像上传失败')
   } finally {
     avatarUploading.value = false
+    avatarProgress.value = -1
   }
 }
 
@@ -427,7 +438,9 @@ const columns: DataTableColumns<User> = [
             <n-space>
               <n-button size="small" @click="openR2Picker">从R2选择</n-button>
               <n-upload :show-file-list="false" accept="image/*" :disabled="avatarUploading" :default-upload="false" @change="handleAvatarChange">
-                <n-button size="small" :loading="avatarUploading">本地上传</n-button>
+                <n-button size="small" :loading="avatarUploading">
+                  {{ avatarUploading && avatarProgress >= 0 ? `上传中 ${Math.round(avatarProgress)}%` : '本地上传' }}
+                </n-button>
               </n-upload>
               <n-button v-if="avatarUrl" size="small" tertiary type="error" @click="avatarUrl = null">移除</n-button>
             </n-space>

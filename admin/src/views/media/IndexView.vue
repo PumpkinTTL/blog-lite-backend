@@ -4,7 +4,8 @@ import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NPagination, NUpload,
 import type { DataTableColumns, UploadFileInfo } from 'naive-ui'
 import { CloudUploadOutline, TrashOutline, SearchOutline, RefreshOutline, DocumentOutline, CopyOutline, CheckmarkOutline, CloseOutline, AddOutline } from '@vicons/ionicons5'
 import { getMediaList, uploadMedia, deleteMedia, batchDeleteMedia, updateMedia } from '../../api/media'
-import { uploadToR2, deleteR2Media, batchDeleteR2Media } from '../../api/r2-storage'
+import { deleteR2Media, batchDeleteR2Media } from '../../api/r2-storage'
+import { uploadToR2Direct } from '../../api/r2-direct'
 import type { Media } from '../../api/media'
 
 const message = useMessage()
@@ -19,6 +20,8 @@ const pageSize = ref(10)
 const checkedRowKeys = ref<number[]>([])
 const uploadFileList = ref<UploadFileInfo[]>([])
 const uploading = ref(false)
+/** 上传进度（0-100，-1 未知） */
+const uploadProgress = ref(-1)
 /** 备注保存中的 media id（保存按钮 loading） */
 const savingNoteId = ref<number | null>(null)
 
@@ -160,10 +163,16 @@ function handlePageSizeChange(s: number) {
 async function handleUpload({ file }: { file: UploadFileInfo }) {
   if (!file.file) return
   uploading.value = true
+  uploadProgress.value = -1
   try {
     if (storageChannel.value === 'r2') {
-      await uploadToR2(file.file, { app: 'vibehub', folder: 'media', note: file.file.name })
+      // R2 走前端直传（带真实进度，绕过后端 10s 超时）
+      await uploadToR2Direct(file.file, {
+        app: 'vibehub', folder: 'media', note: file.file.name,
+        onProgress: (p) => { uploadProgress.value = p.percent },
+      })
     } else {
+      // local / OSS 仍走后端中转
       await uploadMedia(file.file, {
         storageType: storageChannel.value === 'oss' ? 'oss' : 'local',
         ossPlatform: storageChannel.value === 'oss' ? uploadOssPlatform.value : null,
@@ -178,6 +187,7 @@ async function handleUpload({ file }: { file: UploadFileInfo }) {
     uploadFileList.value = []
   } finally {
     uploading.value = false
+    uploadProgress.value = -1
   }
 }
 
@@ -415,7 +425,7 @@ onMounted(loadMedia)
       <n-upload v-model:file-list="uploadFileList" :show-file-list="false" :disabled="uploading" :custom-request="({ file }) => handleUpload({ file })">
         <n-button type="primary" :loading="uploading">
           <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
-          上传文件
+          {{ uploading && uploadProgress >= 0 ? `上传中 ${Math.round(uploadProgress)}%` : '上传文件' }}
         </n-button>
       </n-upload>
       <n-button :disabled="checkedRowKeys.length === 0" type="error" @click="handleBatchDelete">

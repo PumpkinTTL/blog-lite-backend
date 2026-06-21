@@ -20,7 +20,7 @@ import { getTags } from '../../api/tag'
 import { getUsers } from '../../api/user'
 import { getRoles } from '../../api/role'
 import { uploadMedia } from '../../api/media'
-import { uploadToR2 } from '../../api/r2-storage'
+import { uploadToR2Direct } from '../../api/r2-direct'
 import { isDark } from '../../theme'
 
 const route = useRoute()
@@ -30,6 +30,8 @@ const message = useMessage()
 const formRef = ref<FormInst | null>(null)
 const editorRef = ref<ExposeParam | null>(null)
 const saving = ref(false)
+/** 保存时的上传状态文案（封面/正文图上传进度），空字符串表示无上传 */
+const uploadStatusText = ref('')
 // 初始 true：编辑模式进入即显示 loading（loadPost 回来前显示加载态，避免白屏）；
 // 新建模式在 onMounted 末尾立即设为 false（isEdit=false 不等 loadPost）。
 const loading = ref(true)
@@ -261,12 +263,23 @@ function fileToBase64(file: File): Promise<string> {
   })
 }
 
-/** 按当前存储方式上传单个文件，返回 URL */
-async function uploadOne(file: File, note: string, app?: string, folder?: string): Promise<string> {
+/** 按当前存储方式上传单个文件，返回 URL。
+ *  R2 通道走前端直传（真实进度 + 无 10s 超时），可透传 onProgress。 */
+async function uploadOne(
+  file: File,
+  note: string,
+  app?: string,
+  folder?: string,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
   if (storageChannel.value === 'r2') {
-    const r = await uploadToR2(file, { note, app, folder })
-    return r.data.url
+    const { url } = await uploadToR2Direct(file, {
+      note, app, folder,
+      onProgress: (p) => onProgress?.(p.percent),
+    })
+    return url
   }
+  // local / OSS 仍走后端中转
   const r = await uploadMedia(file, {
     storageType: storageChannel.value === 'oss' ? 'oss' : 'local',
     ossPlatform: storageChannel.value === 'oss' ? ossPlatform.value : null,
@@ -276,14 +289,14 @@ async function uploadOne(file: File, note: string, app?: string, folder?: string
 }
 
 /** 按当前选择的存储方式上传封面，返回 URL；若已是 URL 直接返回 */
-async function uploadCoverIfNeeded(): Promise<string> {
+async function uploadCoverIfNeeded(onProgress?: (percent: number) => void): Promise<string> {
   const url = formValue.value.coverImage
   if (!url || !url.startsWith('data:')) return url
   const file = base64ToFile(url, `cover-${Date.now()}`)
   const note = formValue.value.title
     ? `文章「${formValue.value.title}」封面`
     : '文章封面'
-  return uploadOne(file, note, 'vibehub', 'cover')
+  return uploadOne(file, note, 'vibehub', 'cover', onProgress)
 }
 
 /**
@@ -301,7 +314,9 @@ async function uploadContentImages(content: string): Promise<string> {
     : '文章正文图片'
 
   let result = content
+  let i = 0
   for (const m of matches) {
+    i++
     const full = m[0]
     const alt = m[1]
     const dataUrlMatch = full.match(/\(data:image\/[^)]+\)/)
@@ -309,7 +324,9 @@ async function uploadContentImages(content: string): Promise<string> {
     const dataUrl = dataUrlMatch[0].slice(1, -1) // 去掉首尾括号
     try {
       const file = base64ToFile(dataUrl, `content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
-      const realUrl = await uploadOne(file, note, 'vibehub', 'article')
+      const realUrl = await uploadOne(file, note, 'vibehub', 'article', (percent) => {
+        uploadStatusText.value = `上传正文图 ${i}/${matches.length} (${Math.round(percent)}%)`
+      })
       result = result.replace(full, `![${alt}](${realUrl})`)
     } catch (e: any) {
       message.error(e?.message || '正文图片上传失败')
@@ -367,12 +384,17 @@ async function handleSave() {
     return
   }
   saving.value = true
+  uploadStatusText.value = ''
   try {
-    // 1. 上传封面
-    const coverImageUrl = await uploadCoverIfNeeded()
+    // 1. 上传封面（透传进度文案）
+    uploadStatusText.value = '上传封面...'
+    const coverImageUrl = await uploadCoverIfNeeded((percent) => {
+      uploadStatusText.value = `上传封面 (${Math.round(percent)}%)`
+    })
     // 2. 扫描并上传正文 base64 图片
     const realContent = await uploadContentImages(formValue.value.content)
 
+    uploadStatusText.value = ''
     const payload = { ...formValue.value, coverImage: coverImageUrl, content: realContent }
 
     if (isEdit.value) {
@@ -396,6 +418,7 @@ async function handleSave() {
     message.error(e.message || '保存失败')
   } finally {
     saving.value = false
+    uploadStatusText.value = ''
   }
 }
 
@@ -435,7 +458,7 @@ onMounted(async () => {
         </n-button>
         <n-button type="primary" :loading="saving" @click="handleSave">
           <template #icon><n-icon><SaveOutline /></n-icon></template>
-          保存
+          {{ saving && uploadStatusText ? uploadStatusText : '保存' }}
         </n-button>
       </n-space>
     </div>
