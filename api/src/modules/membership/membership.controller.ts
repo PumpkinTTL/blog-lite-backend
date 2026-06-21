@@ -137,6 +137,18 @@ export class MembershipController {
       return { success: false, message: '兑换码未关联套餐', data: null };
     }
 
+    // 1.5 归属校验：发码时若锁定了 claimedUserId（系统内用户捐赠），
+    // 兑换者 userId 必须匹配，防止码被他人捡到先用。
+    // 访客捐赠的码不锁（无可靠身份锚点），谁先兑换谁得，过期由人工补发。
+    const claimedUserId = (code.metadata as any)?.claimedUserId;
+    if (claimedUserId && Number(claimedUserId) !== userId) {
+      return {
+        success: false,
+        message: '此激活码已指定给其他用户，无法兑换',
+        data: null,
+      };
+    }
+
     // 2. 校验套餐存在且上架
     const plan = await this.planService.findById(planId);
     if (!plan.isActive) {
@@ -161,10 +173,14 @@ export class MembershipController {
       };
     }
 
-    // 4. 开通会员 —— 时长由套餐 plan.durationDays 决定
+    // 4. 开通会员 —— 时长优先激活码 metadata.days（可覆盖套餐），不传则用套餐默认
+    const codeDays = (code.metadata as any)?.days;
     const membership = await this.memberService.grant({
       userId,
       planId,
+      ...(codeDays !== undefined && codeDays !== null
+        ? { days: Number(codeDays) }
+        : {}),
       source: 'code',
       sourceId: code.id,
       note: `兑换码 ${code.code}`,

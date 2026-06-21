@@ -8,14 +8,16 @@ import {
   Param,
   ParseIntPipe,
   Query,
+  Req,
   Res,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { DonationService } from './donation.service';
 import {
   CreateDonationDto,
   UpdateDonationDto,
   BatchIdsDto,
+  SendThanksDto,
 } from './donation.dto';
 import { DonationStatus } from './donation.entity';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -97,6 +99,57 @@ export class DonationController {
   async toggleVisible(@Param('id', ParseIntPipe) id: number) {
     const data = await this.service.toggleVisible(id);
     return { success: true, data, message: '更新成功' };
+  }
+
+  /**
+   * 发送感谢（统一入口）
+   * - 带 codeId：感谢 + 激活码（关联码、锁归属、移出码池）
+   * - 不带 codeId：纯感谢邮件
+   * 按邮箱自动反查系统用户锁归属；无论成败都写通知记录。
+   */
+  @Post(':id/send-thanks')
+  async sendThanks(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SendThanksDto,
+    @Req() req: Request,
+  ) {
+    const operatorId = (req as any).user?.sub
+      ? Number((req as any).user.sub)
+      : undefined;
+    const result = await this.service.sendThanks(
+      id,
+      {
+        email: dto.email,
+        codeId: dto.codeId,
+        message: dto.message,
+        sendEmail: dto.sendEmail,
+      },
+      operatorId,
+    );
+
+    // 组装提示信息
+    const parts: string[] = [];
+    if (result.code) {
+      parts.push('激活码已发放');
+      parts.push(result.claimedUserId ? `已锁定用户#${result.claimedUserId}` : '访客未锁归属');
+    } else {
+      parts.push('感谢已发送');
+    }
+    if (dto.sendEmail) {
+      parts.push(result.isSent ? '邮件已送达' : '邮件发送失败（已记录，可重发）');
+    } else {
+      parts.push('未发邮件');
+    }
+    return { success: true, data: result, message: parts.join('，') };
+  }
+
+  /**
+   * 查询某笔捐赠的通知历史（发码邮件 + 感谢邮件）
+   */
+  @Get(':id/notifications')
+  async getNotifications(@Param('id', ParseIntPipe) id: number) {
+    const data = await this.service.getNotifications(id);
+    return { success: true, data, message: 'OK' };
   }
 
   @Delete('batch')

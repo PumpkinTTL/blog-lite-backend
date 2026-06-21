@@ -83,7 +83,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     updateApi: updateCode,
     deleteApi: deleteCode,
     deleteContent: (row) => `确定删除激活码「${row.code}」？`,
-    defaultForm: () => ({ type: 'activation', count: 1, maxUses: 1, expiryPreset: '30d' as string, expiresAt: null as number | null, discountType: 'fixed', discountValue: null, discountThreshold: null, planId: null as number | null, resourceId: null as number | null }),
+    defaultForm: () => ({ type: 'activation', count: 1, maxUses: 1, expiryPreset: 'permanent' as string, expiresAt: null as number | null, discountType: 'fixed', discountValue: null, discountThreshold: null, planId: null as number | null, resourceId: null as number | null, membershipDays: null as number | null }),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) {
@@ -98,10 +98,11 @@ function openEdit(row: Code) {
   const d = row.discount
   // percentage 存的是小数，回显转为百分比
   const displayValue = d?.type === 'percentage' && d.value != null ? Math.round(d.value * 100) : d?.value ?? null
-  // 回显关联套餐（仅 membership 类型）
+  // 回显关联套餐 + 自带时长（仅 membership 类型）
   const meta = (row.metadata as any) || {}
   const metaPlanId = (meta.planId as number | undefined) ?? null
   const metaResourceId = (meta.resourceId as number | undefined) ?? null
+  const metaDays = (meta.days as number | undefined) ?? null
   // expiresAt 字符串 → timestamp，NDatePicker 需要 number
   const expiresTs = row.expiresAt ? new Date(row.expiresAt).getTime() : null
   _openEdit(row, (r) => ({
@@ -114,6 +115,7 @@ function openEdit(row: Code) {
     discountThreshold: d?.threshold ?? null,
     planId: r.type === 'membership' ? metaPlanId : null,
     resourceId: r.type === 'resource' ? metaResourceId : null,
+    membershipDays: r.type === 'membership' ? metaDays : null,
   }))
 }
 
@@ -257,10 +259,15 @@ async function handleSave() {
       }
     }
     const maxUses = Number(formValue.value.maxUses) || 1
-    // 构造 metadata：会员码带 planId，资源访问码带 resourceId
+    // 构造 metadata：会员码带 planId + 可选 days（码自带时长，兑换时覆盖套餐默认）
     let metadata: Record<string, unknown> | undefined
     if (formValue.value.type === 'membership' && formValue.value.planId) {
       metadata = { planId: Number(formValue.value.planId) }
+      // membershipDays: null=用套餐默认, 0=终身, >0=指定天数
+      const md = formValue.value.membershipDays
+      if (md !== null && md !== undefined && md !== '') {
+        metadata.days = Number(md)
+      }
     } else if (formValue.value.type === 'resource' && formValue.value.resourceId) {
       metadata = { resourceId: Number(formValue.value.resourceId) }
     }
@@ -400,9 +407,25 @@ const codeColumns: DataTableColumns<Code> = [
     render: (row) => {
       if (row.type === 'membership') {
         const pid = row.metadata?.planId as number | undefined
-        if (!pid) return '-'
-        const p = planMap.value.get(pid)
-        return p ? h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => p.name }) : `套餐#${pid}`
+        const did = row.metadata?.donationId as number | undefined
+        const planTag = pid
+          ? (planMap.value.get(pid)
+            ? h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => planMap.value.get(pid)!.name })
+            : `套餐#${pid}`)
+          : '-'
+        // 捐赠答谢码：额外显示来源 Tag，便于管理员区分
+        if (did) {
+          return h(NSpace, { size: 4, align: 'center', wrap: false }, {
+            default: () => [
+              planTag,
+              h(NTooltip, null, {
+                trigger: () => h(NTag, { size: 'small', type: 'warning', bordered: false }, { default: () => `捐赠#${did}` }),
+                default: () => `该码来自捐赠记录 #${did} 的答谢`,
+              }),
+            ],
+          })
+        }
+        return planTag
       }
       if (row.type === 'resource') {
         const rid = row.metadata?.resourceId as number | undefined
@@ -432,16 +455,24 @@ const codeColumns: DataTableColumns<Code> = [
     },
   },
   {
-    title: '会员时长', key: 'duration', width: 110,
+    title: '会员时长', key: 'duration', width: 130,
     render: (row) => {
       if (row.type !== 'membership') return '-'
       const pid = row.metadata?.planId as number | undefined
       if (!pid) return '-'
       const plan = planMap.value.get(pid)
       if (!plan) return '-'
+      // 激活码自带 days 时优先显示（覆盖套餐默认），否则显示套餐默认时长
+      const codeDays = row.metadata?.days as number | undefined
+      if (codeDays !== undefined) {
+        // 自带时长：用主色标注，区别于套餐默认
+        if (codeDays === 0) return h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => '终身(码)' })
+        return h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => `${codeDays} 天(码)` })
+      }
+      // 套餐默认时长
       const days = plan.durationDays
-      if (days === 0) return h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => '终身' })
-      return h(NTag, { size: 'small', type: 'success', bordered: false }, { default: () => `${days} 天` })
+      if (days === 0) return h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => '终身(默认)' })
+      return h(NTag, { size: 'small', type: 'success', bordered: false }, { default: () => `${days} 天(默认)` })
     },
   },
   { title: '最大次数', key: 'maxUses', width: 80 },
@@ -637,6 +668,9 @@ onMounted(() => {
         <template v-if="formValue.type === 'membership'">
           <n-form-item label="关联套餐" path="planId">
             <n-select v-model:value="formValue.planId" :options="planOptions" placeholder="选择要开通的套餐" filterable />
+          </n-form-item>
+          <n-form-item label="会员时长覆盖（留空=套餐默认，0=终身，正数=指定天数）">
+            <n-input-number v-model:value="formValue.membershipDays" :min="0" placeholder="留空用套餐默认时长" style="width: 100%" clearable />
           </n-form-item>
         </template>
 

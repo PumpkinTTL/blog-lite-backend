@@ -3,7 +3,8 @@ import { ref, h, onMounted } from 'vue'
 import {
   NCard, NButton, NDataTable, NSpace, NInput, NIcon, NTag, NPagination, NTooltip,
   NModal, NForm, NFormItem, NInputNumber, NSelect, NRadioGroup, NRadioButton,
-  NGrid, NGi, useMessage, useDialog,
+  NGrid, NGi, NEmpty, NSpin, NTabs, NTabPane, NDescriptions, NDescriptionsItem,
+  NTimeline, NTimelineItem, NText, useMessage, useDialog,
 } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import {
@@ -15,9 +16,12 @@ import {
 import {
   getDonationList, getDonationStats, createDonation, updateDonation,
   deleteDonation, batchDeleteDonations, toggleDonationStatus, toggleDonationVisible,
-  exportDonations,
+  exportDonations, sendThanks, getDonationNotifications,
 } from '../../api/donation'
-import type { Donation, CreateDonationData, DonationStats } from '../../api/donation'
+import type { Donation, CreateDonationData, DonationStats, SendThanksResult, DonationNotification } from '../../api/donation'
+import { getCodes } from '../../api/code'
+import type { Code } from '../../api/code'
+import ThanksSendPanel from './ThanksSendPanel.vue'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -84,6 +88,35 @@ const formData = ref<Omit<CreateDonationData, 'status'> & { status: number }>({
   donorName: '', amount: 0, currency: 'CNY', payMethod: 'wechat', status: 1, isVisible: 1, sortOrder: 0,
 })
 
+// ── 发感谢（统一：三 Tab = 纯感谢 / 带激活码 / 记录）──
+/** 码池：可发放的 active membership 码（下拉用） */
+const codePoolOptions = ref<SelectOption[]>([])
+/** 感谢弹窗 */
+const showThanksModal = ref(false)
+/** 正在操作的捐赠记录 */
+const thanksDonation = ref<Donation | null>(null)
+/**
+ * 统一感谢表单（Tab 切换）
+ * - tab: 'thanks' 纯感谢 | 'code' 带激活码 | 'logs' 发送记录
+ * - codeId: 带码时从码池选
+ * - email: 收件邮箱（默认 donorEmail，可改）
+ * - message: 附加留言
+ * - sendEmail: 是否邮件通知
+ */
+const thanksForm = ref<{
+  tab: 'thanks' | 'code' | 'logs'
+  codeId: number | null
+  email: string
+  message: string
+  sendEmail: boolean
+}>({ tab: 'thanks', codeId: null, email: '', message: '', sendEmail: false })
+const thanksLoading = ref(false)
+/** 最近一次发送结果（成功后展示码+复制） */
+const lastResult = ref<SendThanksResult | null>(null)
+/** 记录 Tab 的通知历史列表 */
+const notifList = ref<DonationNotification[]>([])
+const notifLoading = ref(false)
+
 const formRules: FormRules = {
   donorName: { required: true, message: '请输入捐赠者昵称', trigger: 'blur' },
   amount: { required: true, type: 'number', message: '请输入金额', trigger: 'blur' },
@@ -144,6 +177,109 @@ async function loadList() {
 async function loadStats() {
   try { const res = await getDonationStats(); stats.value = res.data } catch { /* */ }
 }
+
+/** 加载码池：active 且 type=membership 的码，作为发码下拉选项 */
+async function loadCodePool() {
+  try {
+    const res = await getCodes({ type: 'membership', status: 'active', pageSize: 200 })
+    const list: Code[] = res?.data?.list || []
+    codePoolOptions.value = list.map((c) => {
+      // 时长标注：码自带 days 则显示，否则标注「套餐默认」
+      const days = c.metadata?.days as number | undefined
+      const durationLabel = days === 0 ? '终身' : days ? `${days}天` : '套餐默认'
+      // 过期标注
+      const expLabel = c.expiresAt ? `至${new Date(c.expiresAt).toLocaleDateString()}` : '永久'
+      return {
+        label: `${c.code}（${durationLabel}·${expLabel}）`,
+        value: c.id,
+      }
+    })
+  } catch { /* 静默 */ }
+}
+
+// ── 发感谢（统一入口）──
+
+/** 打开感谢弹窗。isCode=true 默认切到带码 Tab */
+function openThanksModal(row: Donation, isCode = false) {
+  thanksDonation.value = row
+  thanksForm.value = {
+    tab: isCode ? 'code' : 'thanks',
+    codeId: null,
+    email: row.donorEmail || '',
+    message: '',
+    sendEmail: !!row.donorEmail,
+  }
+  lastResult.value = null
+  notifList.value = []
+  loadCodePool()
+  loadNotifList(row.id)
+  showThanksModal.value = true
+}
+
+/** 加载通知记录（记录 Tab 用） */
+async function loadNotifList(donationId: number) {
+  notifLoading.value = true
+  try {
+    const res = await getDonationNotifications(donationId)
+    notifList.value = res.data || []
+  } catch (e: any) {
+    message.error(e?.message || '加载记录失败')
+  } finally {
+    notifLoading.value = false
+  }
+}
+
+/** Tab 切换时按需加载数据 */
+function handleTabChange(name: string) {
+  if (name === 'logs' && thanksDonation.value && notifList.value.length === 0) {
+    loadNotifList(thanksDonation.value.id)
+  }
+}
+
+async function handleSendThanks() {
+  if (!thanksDonation.value) return
+  const f = thanksForm.value
+  // 带码 Tab 必须选码
+  if (f.tab === 'code' && !f.codeId) {
+    message.warning('请选择要发放的激活码')
+    return
+  }
+  // 勾了发邮件但没填邮箱
+  if (f.sendEmail && !f.email.trim()) {
+    message.warning('勾选了邮件通知，请填写收件邮箱')
+    return
+  }
+  thanksLoading.value = true
+  try {
+    const res = await sendThanks(thanksDonation.value.id, {
+      codeId: f.tab === 'code' ? f.codeId : null,
+      email: f.email.trim() || null,
+      message: f.message.trim() || undefined,
+      sendEmail: f.sendEmail,
+    })
+    lastResult.value = res.data
+    message.success(res.message)
+    await loadList()
+    // 刷新记录 Tab 数据
+    loadNotifList(thanksDonation.value.id)
+  } catch (e: any) {
+    message.error(e?.message || '发送失败')
+  } finally {
+    thanksLoading.value = false
+  }
+}
+
+async function copyCode() {
+  if (!lastResult.value?.code) return
+  try {
+    await navigator.clipboard.writeText(lastResult.value.code)
+    message.success('激活码已复制')
+  } catch {
+    message.error('复制失败，请手动复制')
+  }
+}
+
+
 
 function handleSearch() { page.value = 1; loadList() }
 function handleReset() {
@@ -345,7 +481,7 @@ const columns: DataTableColumns<Donation> = [
     render: (row) => new Date(row.createdAt).toLocaleString('zh-CN'),
   },
   {
-    title: '操作', key: 'actions', width: 180, fixed: 'right',
+    title: '操作', key: 'actions', width: 280, fixed: 'right',
     render: (row) => h(NSpace, { size: 4, wrap: false }, {
       default: () => [
         h(NButton, {
@@ -358,6 +494,12 @@ const columns: DataTableColumns<Donation> = [
           loading: togglingId.value === row.id,
           onClick: () => handleToggleStatus(row),
         }, { default: () => row.status === 'confirmed' ? '取消确认' : '确认' }),
+        // 发感谢（弹窗内 Tab 切换纯感谢/带码/记录）；仅已确认可操作
+        h(NButton, {
+          size: 'tiny', quaternary: true, type: 'info',
+          disabled: row.status !== 'confirmed',
+          onClick: () => openThanksModal(row, !row.rewardCodeId),
+        }, { default: () => '感谢', icon: () => h(NIcon, null, { default: () => h(HeartOutline) }) }),
         h(NButton, {
           size: 'tiny', quaternary: true, type: 'error',
           onClick: () => handleDelete(row),
@@ -517,6 +659,76 @@ onMounted(() => { loadList(); loadStats() })
           <n-button type="primary" :loading="formLoading" @click="handleSubmit">{{ editingId ? '保存' : '创建' }}</n-button>
         </n-space>
       </template>
+    </n-modal>
+
+    <!-- 发感谢弹窗（三 Tab：纯感谢 / 带激活码 / 记录） -->
+    <n-modal v-model:show="showThanksModal" preset="card" style="width: 580px; max-width: 92vw">
+      <template #header>
+        <span>感谢 · {{ thanksDonation?.donorName || '-' }}</span>
+      </template>
+
+      <!-- 捐赠摘要（用 descriptions 组件，对齐美观） -->
+      <n-descriptions v-if="thanksDonation" label-placement="left" :column="2" size="small" bordered style="margin-bottom: 16px">
+        <n-descriptions-item label="金额">
+          <n-text strong style="color: #16A34A">{{ thanksDonation.amount }} {{ thanksDonation.currency }}</n-text>
+        </n-descriptions-item>
+        <n-descriptions-item label="邮箱">
+          {{ thanksDonation.donorEmail || '未留' }}
+        </n-descriptions-item>
+      </n-descriptions>
+
+      <n-tabs v-model:value="thanksForm.tab" type="line" @update:value="handleTabChange">
+        <!-- Tab 1: 纯感谢 -->
+        <n-tab-pane name="thanks" tab="纯感谢">
+          <thanks-send-panel
+            :form="thanksForm" :last-result="lastResult" :loading="thanksLoading"
+            :show-code="false" :code-pool-options="codePoolOptions"
+            @send="handleSendThanks" @copy="copyCode" @close="showThanksModal = false"
+          />
+        </n-tab-pane>
+
+        <!-- Tab 2: 带激活码 -->
+        <n-tab-pane name="code" tab="带激活码">
+          <thanks-send-panel
+            :form="thanksForm" :last-result="lastResult" :loading="thanksLoading"
+            :show-code="true" :code-pool-options="codePoolOptions"
+            @send="handleSendThanks" @copy="copyCode" @close="showThanksModal = false"
+          />
+        </n-tab-pane>
+
+        <!-- Tab 3: 发送记录（用 timeline 组件） -->
+        <n-tab-pane name="logs" tab="记录">
+          <n-spin :show="notifLoading">
+            <n-empty v-if="notifList.length === 0 && !notifLoading" description="暂无发送记录" style="padding: 32px 0" />
+            <n-timeline v-else size="large" style="padding: 8px 4px">
+              <n-timeline-item
+                v-for="n in notifList" :key="n.id"
+                :type="n.isSent ? 'success' : 'error'"
+                :time="new Date(n.createdAt).toLocaleString()"
+              >
+                <template #header>
+                  <n-space :size="6" align="center">
+                    <n-tag size="small" :type="n.type === 'code' ? 'info' : 'success'" :bordered="false" round>
+                      {{ n.type === 'code' ? '带码感谢' : '纯感谢' }}
+                    </n-tag>
+                    <n-text depth="2" style="font-size: 13px">
+                      {{ n.isSent ? '已送达' : '发送失败' }}
+                    </n-text>
+                  </n-space>
+                </template>
+                <div style="font-size: 13px; color: #374151; margin-top: 4px">{{ n.subject }}</div>
+                <n-text depth="3" style="font-size: 12px">收件：{{ n.recipientEmail || '（未填）' }}</n-text>
+                <n-alert v-if="n.errorMessage" type="error" :show-icon="false" style="margin-top: 6px; font-size: 12px">
+                  {{ n.errorMessage }}
+                </n-alert>
+              </n-timeline-item>
+            </n-timeline>
+          </n-spin>
+          <div style="text-align: right; margin-top: 12px">
+            <n-button @click="showThanksModal = false">关闭</n-button>
+          </div>
+        </n-tab-pane>
+      </n-tabs>
     </n-modal>
   </div>
 </template>

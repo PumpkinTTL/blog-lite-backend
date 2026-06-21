@@ -24,6 +24,8 @@ export interface Donation {
   isVisible: number
   sortOrder: number
   remark: string | null
+  /** 捐赠答谢激活码 ID（null=未发码） */
+  rewardCodeId: number | null
   createdAt: string
   updatedAt: string
 }
@@ -93,6 +95,56 @@ export function toggleDonationStatus(id: number) {
 
 export function toggleDonationVisible(id: number) {
   return request.put<any, { success: boolean; data: Donation; message: string }>(`/donation/${id}/toggle-visible`)
+}
+
+/**
+ * 发送感谢（统一入口：纯感谢 / 带激活码感谢）
+ */
+export interface SendThanksParams {
+  /** 可选激活码 ID（带则为发码感谢，不带为纯感谢） */
+  codeId?: number | null
+  /** 收件邮箱（缺省用捐赠记录的 donorEmail）；后端据此反查系统用户锁归属 */
+  email?: string | null
+  /** 可选附加留言 */
+  message?: string
+  /** 是否邮件通知（false 则只记录不发邮件） */
+  sendEmail?: boolean
+}
+
+export interface SendThanksResult {
+  /** 生成的激活码字符串（带码感谢时返回，纯感谢为 null） */
+  code: string | null
+  /** 后端按邮箱自动反查到的系统用户 ID（null=访客未锁） */
+  claimedUserId: number | null
+  /** 邮件是否发送成功 */
+  isSent: boolean
+  /** 通知记录 */
+  notif: DonationNotification
+}
+
+export function sendThanks(id: number, data: SendThanksParams) {
+  return request.post<any, { success: boolean; data: SendThanksResult; message: string }>(`/donation/${id}/send-thanks`, data)
+}
+
+/**
+ * 捐赠通知记录（发码邮件 / 感谢邮件的发送历史）
+ */
+export interface DonationNotification {
+  id: number
+  donationId: number
+  type: 'code' | 'thanks'
+  recipientEmail: string
+  codeId: number | null
+  subject: string
+  isSent: boolean
+  errorMessage: string | null
+  operatorId: number | null
+  createdAt: string
+}
+
+/** 查询某笔捐赠的通知历史 */
+export function getDonationNotifications(id: number) {
+  return request.get<any, { success: boolean; data: DonationNotification[]; message: string }>(`/donation/${id}/notifications`)
 }
 
 export function deleteDonation(id: number) {

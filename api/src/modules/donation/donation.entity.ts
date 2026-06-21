@@ -139,6 +139,14 @@ export class DonationEntity {
   })
   remark: string | null;
 
+  @Column({
+    type: 'int',
+    nullable: true,
+    name: 'reward_code_id',
+    comment: '捐赠答谢激活码 ID（关联 codes.id，null=未发码）',
+  })
+  rewardCodeId: number | null;
+
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })
   createdAt: Date;
 

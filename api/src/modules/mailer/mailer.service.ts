@@ -28,17 +28,22 @@ export class MailerService {
       return;
     }
 
+    // ConfigService 读 env 返回的是字符串，必须转 number，
+    // 否则 port='465'（字符串）时 secure 判断 '465'===465 为 false，
+    // 导致用明文 STARTTLS 连 465 SSL 端口 → 握手超时。
+    const portNum = Number(port) || 465;
+
     this.transporter = nodemailer.createTransport({
       host,
-      port: port || 465,
-      secure: (port || 465) === 465,
+      port: portNum,
+      secure: portNum === 465,
       auth: { user, pass },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 10000,
     });
 
-    this.logger.log(`SMTP 已配置: ${host}:${port}`);
+    this.logger.log(`SMTP 已配置: ${host}:${portNum} (secure=${portNum === 465})`);
   }
 
   /**

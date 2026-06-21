@@ -8,6 +8,9 @@ import {
   MaxLength,
   IsArray,
   IsInt,
+  IsDateString,
+  IsBoolean,
+  IsEmail,
 } from 'class-validator';
 import type {
   PayMethod,
@@ -93,6 +96,31 @@ export class BatchIdsDto {
   @IsArray()
   @IsInt({ each: true })
   ids: number[];
+}
+
+/**
+ * 发送感谢（统一入口）
+ * - codeId：可选，带码感谢（发激活码）；不带则纯感谢邮件
+ * - email：收件邮箱（缺省用捐赠记录的 donorEmail），后端据此反查系统用户锁归属
+ * - message：可选附加留言
+ * - sendEmail：是否邮件通知（false 则只记录不发邮件，用于线下转交）
+ */
+export class SendThanksDto {
+  @IsInt()
+  @IsOptional()
+  codeId?: number;
+
+  @IsEmail()
+  @IsOptional()
+  email?: string;
+
+  @IsString()
+  @IsOptional()
+  message?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  sendEmail?: boolean;
 }
 
 export class UpdateDonationDto {
