@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { renderVerifyCode } from './templates';
 
 @Injectable()
 export class MailerService {
@@ -81,25 +82,19 @@ export class MailerService {
   }
 
   /**
-   * 发送验证码邮件
+   * 发送验证码邮件（统一模板）
+   * @param opts.platformName 平台名（默认 bitlesu）
+   * @param opts.tagline 署名寄语
+   * @param opts.contact 联系方式
    */
   async sendVerifyCode(
     to: string,
     code: string,
     expireMinutes: number = 10,
+    opts?: { platformName?: string; tagline?: string; contact?: string },
   ): Promise<boolean> {
-    const html = `
-      <div style="max-width:480px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;">
-        <div style="padding:32px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;">
-          <h2 style="margin:0 0 8px;font-size:20px;color:#111;">密码重置验证码</h2>
-          <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">你正在重置观书星账号密码，请使用以下验证码完成操作：</p>
-          <div style="text-align:center;padding:16px;background:#f9fafb;border-radius:8px;margin-bottom:24px;">
-            <span style="font-size:32px;font-weight:700;letter-spacing:8px;color:#111;">${code}</span>
-          </div>
-          <p style="margin:0;color:#9ca3af;font-size:12px;">验证码 ${expireMinutes} 分钟内有效，如非本人操作请忽略此邮件。</p>
-        </div>
-      </div>
-    `;
-    return this.sendMail(to, '【观书星】密码重置验证码', html);
+    const platform = opts?.platformName || 'bitlesu';
+    const html = renderVerifyCode(code, expireMinutes, opts);
+    return this.sendMail(to, `【${platform}】验证码`, html);
   }
 }

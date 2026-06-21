@@ -102,7 +102,10 @@ export class BatchIdsDto {
  * 发送感谢（统一入口）
  * - codeId：可选，带码感谢（发激活码）；不带则纯感谢邮件
  * - email：收件邮箱（缺省用捐赠记录的 donorEmail），后端据此反查系统用户锁归属
- * - message：可选附加留言
+ * - message：可选管理员留言（浅琥珀底块）
+ * - contact：可选联系方式（不传则不显示"如有疑问"段）
+ * - platformName：可选平台名（默认 bitlesu）
+ * - tagline：可选署名寄语（默认"每一篇文章都是生活与阅读的深度思考"）
  * - sendEmail：是否邮件通知（false 则只记录不发邮件，用于线下转交）
  */
 export class SendThanksDto {
@@ -117,6 +120,18 @@ export class SendThanksDto {
   @IsString()
   @IsOptional()
   message?: string;
+
+  @IsString()
+  @IsOptional()
+  contact?: string;
+
+  @IsString()
+  @IsOptional()
+  platformName?: string;
+
+  @IsString()
+  @IsOptional()
+  tagline?: string;
 
   @IsBoolean()
   @IsOptional()

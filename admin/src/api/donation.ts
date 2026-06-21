@@ -105,8 +105,14 @@ export interface SendThanksParams {
   codeId?: number | null
   /** 收件邮箱（缺省用捐赠记录的 donorEmail）；后端据此反查系统用户锁归属 */
   email?: string | null
-  /** 可选附加留言 */
+  /** 可选管理员留言（浅琥珀底块） */
   message?: string
+  /** 可选联系方式（不传则不显示"如有疑问"段） */
+  contact?: string
+  /** 可选平台名（默认 bitlesu） */
+  platformName?: string
+  /** 可选署名寄语（默认"每一篇文章都是生活与阅读的深度思考"） */
+  tagline?: string
   /** 是否邮件通知（false 则只记录不发邮件） */
   sendEmail?: boolean
 }

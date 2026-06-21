@@ -7,6 +7,7 @@ import { applyFilters } from '../../common/utils/apply-filters';
 import { DONATION_STATUS } from '../../common/constants/status';
 import { CodeService } from '../code/code.service';
 import { MailerService } from '../mailer/mailer.service';
+import { renderDonationThanks } from '../mailer/templates';
 import { UserService } from '../user/user.service';
 
 @Injectable()
@@ -111,7 +112,10 @@ export class DonationService {
    * @param donationId  捐赠记录 ID
    * @param opts.email      收件邮箱（缺省用 donorEmail）
    * @param opts.codeId     可选，带码感谢
-   * @param opts.message    可选附加留言
+   * @param opts.message    可选管理员留言（浅琥珀底块）
+   * @param opts.contact    可选联系方式（不传则不显示"如有疑问"段）
+   * @param opts.platformName 可选平台名（默认 bitlesu）
+   * @param opts.tagline    可选署名寄语（默认"每一篇文章都是生活与阅读的深度思考"）
    * @param opts.sendEmail  是否邮件通知（false 则只记录不发邮件，用于线下转交流程）
    * @param operatorId      操作管理员
    */
@@ -121,6 +125,9 @@ export class DonationService {
       email?: string | null;
       codeId?: number | null;
       message?: string;
+      contact?: string;
+      platformName?: string;
+      tagline?: string;
       sendEmail?: boolean;
     },
     operatorId?: number,
@@ -173,20 +180,24 @@ export class DonationService {
 
     // —— 发送邮件 + 写通知记录 ——
     const hasCode = !!codeEntity;
+    const platform = opts.platformName || 'bitlesu';
     const subject = hasCode
-      ? '【观书星】感谢您的捐赠 · 会员激活码'
-      : '【观书星】感谢您的捐赠 ❤️';
+      ? `【${platform}】感谢您的捐赠 · 会员激活码`
+      : `【${platform}】感谢您的捐赠`;
     let isSent = false;
     let errorMessage: string | null = null;
 
     if (opts.sendEmail && effectiveEmail) {
       try {
-        const html = this.buildThanksHtml({
+        const html = renderDonationThanks({
           donorName: donation.donorName,
           amount: donation.amount,
           currency: donation.currency,
           message: opts.message,
           code: codeEntity?.code,
+          platformName: opts.platformName,
+          tagline: opts.tagline,
+          contact: opts.contact,
         });
         isSent = await this.mailerService.sendMail(effectiveEmail, subject, html);
       } catch (e) {
@@ -224,41 +235,6 @@ export class DonationService {
       where: { donationId },
       order: { createdAt: 'DESC' },
     });
-  }
-
-  // ── 统一邮件 HTML 模板（带码/不带码共用）──
-
-  private buildThanksHtml(p: {
-    donorName: string;
-    amount: number;
-    currency: string;
-    message?: string;
-    code?: string;
-  }): string {
-    const codeBlock = p.code
-      ? `<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:8px;margin:0 0 20px;">
-           <div style="font-size:11px;color:#9ca3af;margin-bottom:8px;">会员激活码</div>
-           <span style="font-size:24px;font-weight:700;letter-spacing:2px;color:#2563EB;font-family:monospace;">${p.code}</span>
-         </div>
-         <p style="margin:0 0 8px;color:#374151;font-size:13px;">请在「个人中心」输入此激活码开通会员。请妥善保管，勿泄露他人。</p>`
-      : '';
-    const messageBlock = p.message
-      ? `<div style="padding:16px;background:#f9fafb;border-radius:8px;margin:0 0 16px;color:#374151;font-size:13px;line-height:1.6;">${p.message}</div>`
-      : '';
-    return `
-      <div style="max-width:480px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;">
-        <div style="padding:32px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;">
-          <h2 style="margin:0 0 8px;font-size:20px;color:#111;">感谢您的捐赠 ❤️</h2>
-          <p style="margin:0 0 20px;color:#6b7280;font-size:14px;">${p.donorName}，您好！</p>
-          <p style="margin:0 0 16px;color:#374151;font-size:14px;line-height:1.6;">
-            诚挚感谢您对观书星的支持${p.amount ? `（${p.amount} ${p.currency}）` : ''}。您的慷慨捐赠是我们持续创作优质内容的动力。
-          </p>
-          ${codeBlock}
-          ${messageBlock}
-          <p style="margin:0;color:#9ca3af;font-size:12px;">如有疑问，请联系管理员。</p>
-        </div>
-      </div>
-    `;
   }
 
   /** 统计概览 */
