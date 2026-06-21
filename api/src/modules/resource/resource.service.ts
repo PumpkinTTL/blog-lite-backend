@@ -55,7 +55,8 @@ export class ResourceService {
   ) {
     const qb = this.repo
       .createQueryBuilder('e')
-      .leftJoinAndSelect('e.category', 'category');
+      .leftJoinAndSelect('e.category', 'category')
+      .leftJoinAndSelect('e.uploader', 'uploader');
     applyFilters(qb, {
       exact: {
         'e.id': filters?.id,
@@ -124,7 +125,7 @@ export class ResourceService {
       // draft 对非 admin 完全不可见（当作不存在）
       where.status = In([RESOURCE_STATUS.PUBLISHED, RESOURCE_STATUS.LOGIN, RESOURCE_STATUS.PRIVATE]);
     }
-    return this.repo.findOne({ where, relations: ['category'] });
+    return this.repo.findOne({ where, relations: ['category', 'uploader'] });
   }
 
   /**
@@ -293,7 +294,7 @@ export class ResourceService {
         allowedRoleIds ?? [],
       );
     }
-    return this.repo.findOne({ where: { id }, relations: ['category'] });
+    return this.repo.findOne({ where: { id }, relations: ['category', 'uploader'] });
   }
 
   async toggleStatus(id: number) {

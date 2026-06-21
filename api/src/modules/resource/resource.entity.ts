@@ -9,6 +9,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { ResourceCategoryEntity } from '../resource-category/resource-category.entity';
+import { UserEntity } from '../user/user.entity';
 
 /**
  * 网盘链接项
@@ -26,6 +27,7 @@ export interface PanLink {
 @Index('idx_resource_status', ['status'])
 @Index('idx_resource_sort', ['sortOrder'])
 @Index('idx_resource_category', ['categoryId'])
+@Index('idx_resource_uploader', ['uploaderId'])
 export class ResourceEntity {
   @PrimaryGeneratedColumn({ comment: '资源 ID' })
   id: number;
@@ -50,6 +52,19 @@ export class ResourceEntity {
   @ManyToOne(() => ResourceCategoryEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'category_id' })
   category: ResourceCategoryEntity | null;
+
+  /** 上传者（作者），用于前端资源卡片展示 */
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'uploader_id' })
+  uploader: UserEntity | null;
+
+  @Column({
+    type: 'int',
+    nullable: true,
+    name: 'uploader_id',
+    comment: '上传者用户 ID',
+  })
+  uploaderId: number | null;
 
   @Column({ type: 'text', nullable: true, comment: '资源详细说明（富文本）' })
   content: string | null;
