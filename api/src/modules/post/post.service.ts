@@ -73,11 +73,12 @@ export class PostService implements OnModuleInit {
       status?: string;
       categoryId?: number;
       tagId?: number;
+      sort?: 'latest' | 'popular';
     },
     publicOnly = false,
     withVisibility = false,
     isLoggedIn = false,
-  ) {
+) {
     const qb = this.postRepo
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.author', 'author')
@@ -117,10 +118,15 @@ export class PostService implements OnModuleInit {
     }
 
     qb.andWhere('p.deletedAt IS NULL')
-      .orderBy('p.isPinned', 'DESC')
-      .addOrderBy('p.createdAt', 'DESC')
-      .skip((page - 1) * pageSize)
-      .take(pageSize);
+      .orderBy('p.isPinned', 'DESC');
+    // 排序：popular=按浏览量；默认 latest=按创建时间
+    // 置顶始终优先（isPinned DESC 已设），二级排序按 sort 参数
+    if (filters?.sort === 'popular') {
+      qb.addOrderBy('p.viewCount', 'DESC').addOrderBy('p.createdAt', 'DESC');
+    } else {
+      qb.addOrderBy('p.createdAt', 'DESC');
+    }
+    qb.skip((page - 1) * pageSize).take(pageSize);
 
     const [list, total] = await qb.getManyAndCount();
 

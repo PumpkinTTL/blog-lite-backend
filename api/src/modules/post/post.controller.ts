@@ -43,6 +43,7 @@ export class PostController {
     @Query('keyword') keyword?: string,
     @Query('categoryId') categoryId?: string,
     @Query('tagId') tagId?: string,
+    @Query('sort') sort?: string,
     @Req() req?: Request,
   ) {
     // 已登录管理员看全部；登录用户看 published+login；未登录只看 published
@@ -58,6 +59,9 @@ export class PostController {
         status: status !== undefined ? status : undefined,
         categoryId: categoryId !== undefined ? parseInt(categoryId) : undefined,
         tagId: tagId !== undefined ? parseInt(tagId) : undefined,
+        // 仅接受合法 sort 值，其余按默认 latest
+        sort:
+          sort === 'popular' || sort === 'latest' ? sort : undefined,
       },
       !isAdmin,
       isAdmin, // withVisibility：admin 列表带可见性配置
