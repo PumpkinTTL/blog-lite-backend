@@ -47,6 +47,25 @@ export class UserEntity {
   @Column({ type: 'varchar', length: 255, nullable: true, comment: '头像 URL' })
   avatar: string | null;
 
+  /**
+   * 性别：0=未知 1=男 2=女。
+   * 用户可选填，前端 UserCenter 资料页编辑。
+   */
+  @Column({ type: 'int', nullable: true, default: 0, comment: '性别 0=未知 1=男 2=女' })
+  gender: number | null;
+
+  /**
+   * 个性签名：用户在 UserCenter 资料页填写，资料卡/评论侧栏展示。
+   */
+  @Column({ type: 'varchar', length: 200, nullable: true, comment: '个性签名' })
+  signature: string | null;
+
+  /**
+   * 手机号：nullable，预留未来手机号登录/绑定。当前仅资料展示。
+   */
+  @Column({ type: 'varchar', length: 20, nullable: true, comment: '手机号' })
+  phone: string | null;
+
   @Column({
     type: 'varchar',
     length: 20,

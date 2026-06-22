@@ -13,6 +13,8 @@ import {
  */
 @Entity('ai_conversations')
 @Index('idx_ai_conv_post', ['postId'])
+// 管理页列表 ORDER BY updatedAt DESC
+@Index('idx_ai_conv_updated', ['updatedAt'])
 export class AiConversationEntity {
   @PrimaryGeneratedColumn({ comment: '对话 ID' })
   id: number;

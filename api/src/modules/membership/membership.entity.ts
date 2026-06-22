@@ -20,6 +20,8 @@ export type MembershipSource = 'admin' | 'code' | 'payment';
 @Index('idx_member_status', ['status'])
 @Index('idx_member_expires', ['expiresAt'])
 @Index('idx_member_user_status', ['userId', 'status', 'expiresAt'])
+// 管理端会员列表默认 ORDER BY createdAt DESC，无条件分页避免 filesort（表长期累积）
+@Index('idx_member_created', ['createdAt'])
 export class MembershipEntity {
   @PrimaryGeneratedColumn({ comment: '订阅 ID' })
   id: number;

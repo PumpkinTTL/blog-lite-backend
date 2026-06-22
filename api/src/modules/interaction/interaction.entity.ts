@@ -20,6 +20,9 @@ export type InteractionEntityType = 'post' | 'comment';
 @Unique('uq_user_entity_type', ['userId', 'entityType', 'entityId', 'type'])
 @Index('idx_entity', ['entityType', 'entityId', 'type'])
 @Index('idx_user_type', ['userId', 'type'])
+// "我的点赞/收藏"列表热路径：WHERE userId=? AND type=? ORDER BY createdAt DESC
+// idx_user_type 能定位行但 ORDER BY createdAt 仍 filesort，补复合索引消除深翻页排序开销
+@Index('idx_interaction_user_type_created', ['userId', 'type', 'createdAt'])
 export class InteractionEntity {
   @PrimaryGeneratedColumn({ comment: 'ID' })
   id: number;

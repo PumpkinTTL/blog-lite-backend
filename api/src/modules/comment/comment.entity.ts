@@ -28,6 +28,10 @@ export type CommentStatus = 'pending' | 'approved' | 'rejected';
 @Index('idx_entity', ['entityType', 'entityId', 'status'])
 @Index('idx_parent', ['parentId'])
 @Index('idx_user', ['userId'])
+// 文章详情加载二级回复热路径：WHERE parentId=? AND status='approved' ORDER BY createdAt ASC
+@Index('idx_comment_parent_status_created', ['parentId', 'status', 'createdAt'])
+// 管理端审核列表：WHERE status=? ORDER BY createdAt DESC（idx_entity 末位列 status 不能作前缀）
+@Index('idx_comment_status_created', ['status', 'createdAt'])
 export class CommentEntity {
   @PrimaryGeneratedColumn({ comment: '评论 ID' })
   id: number;

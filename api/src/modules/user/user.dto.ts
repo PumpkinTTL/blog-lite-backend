@@ -9,6 +9,7 @@ import {
   ArrayNotEmpty,
   MaxLength,
   IsDateString,
+  Matches,
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -92,6 +93,25 @@ export class UpdateProfileDto {
   @IsOptional()
   @MaxLength(500)
   avatar?: string;
+
+  /** 性别 0=未知 1=男 2=女 */
+  @IsInt()
+  @IsIn([0, 1, 2])
+  @IsOptional()
+  gender?: number;
+
+  /** 个性签名 */
+  @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  signature?: string;
+
+  /** 手机号（简易格式校验，主要防乱填超长字符串） */
+  @IsString()
+  @IsOptional()
+  @MaxLength(20)
+  @Matches(/^[0-9+\-\s]*$/, { message: '手机号格式不正确' })
+  phone?: string;
 }
 
 /**

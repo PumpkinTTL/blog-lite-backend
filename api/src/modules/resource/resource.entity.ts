@@ -28,6 +28,8 @@ export interface PanLink {
 @Index('idx_resource_sort', ['sortOrder'])
 @Index('idx_resource_category', ['categoryId'])
 @Index('idx_resource_uploader', ['uploaderId'])
+// 公开资源列表默认 ORDER BY sortOrder ASC, createdAt DESC；idx_resource_sort 单列只能排第一级
+@Index('idx_resource_sort_created', ['sortOrder', 'createdAt'])
 export class ResourceEntity {
   @PrimaryGeneratedColumn({ comment: '资源 ID' })
   id: number;
