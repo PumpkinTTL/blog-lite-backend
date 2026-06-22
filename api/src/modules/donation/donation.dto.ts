@@ -214,3 +214,50 @@ export class UpdateDonationDto {
   @MaxLength(255)
   remark?: string;
 }
+
+/**
+ * 前台用户自助提交捐赠登记。
+ * 关键：不允许用户自己设 status / isVisible / sortOrder / remark 等管理字段，
+ * 后端强制 status=pending（待管理员确认到账）、isVisible=0（确认前不上墙）。
+ */
+export class PublicSubmitDonationDto {
+  @IsString()
+  @MaxLength(50)
+  donorName: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  donorEmail?: string;
+
+  @IsNumber()
+  @Min(0.01)
+  amount: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(10)
+  currency?: string;
+
+  @IsEnum(['wechat', 'alipay', 'crypto', 'other'])
+  payMethod: PayMethod;
+
+  @IsEnum(['TRC20', 'BSC', 'POL'])
+  @IsOptional()
+  cryptoNetwork?: CryptoNetwork;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(128)
+  cryptoTxHash?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  message?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  tradeNo?: string;
+}

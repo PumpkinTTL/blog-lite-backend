@@ -72,11 +72,6 @@ export function deleteAiConversation(id: number) {
   return request.delete(`/ai-conversations/${id}`)
 }
 
-/** 清空某文章的对话历史 */
-export function deleteConversationByPostId(postId: number) {
-  return request.delete(`/ai-conversations/post/${postId}`)
-}
-
 export function batchDeleteAiConversations(ids: number[]) {
   return request.delete('/ai-conversations/batch', { data: { ids } })
 }

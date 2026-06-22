@@ -13,7 +13,15 @@ import {
 import { RoleEntity } from './role.entity';
 import { CodeEntity } from '../code/code.entity';
 
+/**
+ * users 表索引：
+ * - username/email 已是 unique（隐式索引）
+ * - status：管理端过滤（findAll 的 exact filter + 临时封禁检查）
+ * - createdAt：管理端列表排序（orderBy createdAt DESC）
+ */
 @Entity('users')
+@Index('idx_user_status', ['status'])
+@Index('idx_user_created', ['createdAt'])
 export class UserEntity {
   @PrimaryGeneratedColumn({ comment: '用户 ID' })
   id: number;

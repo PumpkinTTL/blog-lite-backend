@@ -140,3 +140,30 @@ export class ResetPasswordByCodeDto {
   @MinLength(6)
   newPassword: string;
 }
+
+/**
+ * 发送登录/注册验证码（与忘记密码的 send-reset-code 区分）。
+ * 登录场景下未注册邮箱需明确报错（而非防枚举静默成功），
+ * 否则用户一直收不到码却看到"已发送"，体验断裂。
+ */
+export class SendLoginCodeDto {
+  @IsEmail()
+  email: string;
+}
+
+/**
+ * 邮箱验证码登录。
+ * 仅凭邮箱 + 验证码签发 token，无需密码。
+ */
+export class LoginByCodeDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  code: string;
+
+  /** 可选邀请码：若邮箱未注册，验证通过后自动注册并登录 */
+  @IsString()
+  @IsOptional()
+  invitationCode?: string;
+}

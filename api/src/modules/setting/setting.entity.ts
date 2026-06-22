@@ -4,9 +4,12 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 @Entity('settings')
+// group：按分组批量读（find({ where: { group } })）；key 已是 unique 隐式索引
+@Index('idx_setting_group', ['group'])
 export class SettingEntity {
   @PrimaryGeneratedColumn({ comment: 'ID' })
   id: number;

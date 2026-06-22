@@ -36,10 +36,6 @@ export function getCodes(params?: { id?: number; keyword?: string; status?: stri
   return request.get('/code', { params })
 }
 
-export function createCode(data: any) {
-  return request.post('/code', data)
-}
-
 export function batchCreateCodes(data: { count: number; type: string; maxUses?: number; expiresAt?: string; discount?: CodeDiscount; metadata?: Record<string, unknown> }) {
   return request.post('/code/batch', data)
 }
@@ -62,12 +58,4 @@ export function batchDeleteCodes(ids: number[]) {
 
 export function getAllUsageLogs(params?: { page?: number; pageSize?: number; keyword?: string }) {
   return request.get('/code/usage-logs', { params })
-}
-
-export function getCodeUsageLogs(id: number, params?: { page?: number; pageSize?: number }) {
-  return request.get(`/code/${id}/usage-logs`, { params })
-}
-
-export function verifyCode(data: { code: string; type?: string }) {
-  return request.post('/code/verify', data)
 }

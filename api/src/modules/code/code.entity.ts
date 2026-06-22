@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 export type CodeType =
@@ -14,7 +15,15 @@ export type CodeType =
   | 'resource';
 export type CodeStatus = 'active' | 'used' | 'expired' | 'disabled';
 
+/**
+ * codes 表索引：
+ * - code 列已是 unique（隐式索引），覆盖 findOne({ code }) 热路径
+ * - (type, status)：管理端过滤 + 兑换校验常用组合
+ * - status：单独过滤（兑换时校验 active）
+ */
 @Entity('codes')
+@Index('idx_code_type_status', ['type', 'status'])
+@Index('idx_code_status', ['status'])
 export class CodeEntity {
   @PrimaryGeneratedColumn({ comment: 'ID' })
   id: number;

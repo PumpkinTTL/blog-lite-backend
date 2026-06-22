@@ -15,6 +15,9 @@ import {
 @Entity('blacklists')
 @Index('uq_bl_type_value', ['type', 'value'], { unique: true })
 @Index('idx_bl_status', ['status'])
+// 管理端列表排序 + 定时扫描过期封禁解封
+@Index('idx_bl_created', ['createdAt'])
+@Index('idx_bl_expires', ['expiresAt'])
 export class BlacklistEntity {
   @PrimaryGeneratedColumn({ comment: '黑名单 ID' })
   id: number;

@@ -85,13 +85,14 @@ export class EmailCodeService {
     }
 
     if (record.expiresAt < Date.now()) {
-      this.store.delete(email);
+      // 验证码过期：连冷却记录一起清，否则用户立刻重发会被冷却拦住
+      this.releaseRecord(email);
       throw new BadRequestException('验证码已过期，请重新获取');
     }
 
     // 先判断是否已超尝试上限（自增前判断，避免多给 1 次机会 + 还剩次数显示负数）
     if (record.attempts >= this.MAX_ATTEMPTS) {
-      this.store.delete(email);
+      this.releaseRecord(email);
       throw new BadRequestException('验证码错误次数过多，请重新获取');
     }
 
@@ -103,22 +104,32 @@ export class EmailCodeService {
       );
     }
 
-    // 验证成功，删除记录
-    this.store.delete(email);
-    this.lastSentAt.delete(email);
+    // 验证成功，释放验证码记录 + 冷却记录
+    this.releaseRecord(email);
     return true;
   }
 
   /**
-   * 清理过期验证码
+   * 释放某邮箱的验证码记录 + 发送冷却记录。
+   * 集中清理点：成功 / 过期 / 超限 三种终态都走这里，避免 Map 残留导致内存泄漏 + 冷却卡死。
+   */
+  private releaseRecord(email: string) {
+    this.store.delete(email);
+    this.lastSentAt.delete(email);
+  }
+
+  /**
+   * 清理过期验证码 + 冷却记录（每分钟跑，兜底释放内存）
    */
   private cleanup() {
     const now = Date.now();
+    // 验证码过期：连冷却记录一起清（否则 lastSentAt 残留会让重发被冷却拦住）
     for (const [email, record] of this.store) {
       if (record.expiresAt < now) {
-        this.store.delete(email);
+        this.releaseRecord(email);
       }
     }
+    // 冷却记录兜底清理（releaseRecord 已处理配对清理，这里只兜底孤立残留）
     for (const [email, ts] of this.lastSentAt) {
       if (now - ts > this.SEND_COOLDOWN * 2) {
         this.lastSentAt.delete(email);

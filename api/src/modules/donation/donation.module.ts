@@ -4,6 +4,7 @@ import { DonationEntity } from './donation.entity';
 import { DonationNotificationEntity } from './donation-notification.entity';
 import { DonationService } from './donation.service';
 import { DonationController } from './donation.controller';
+import { DonationPublicController } from './donation-public.controller';
 import { CodeModule } from '../code/code.module';
 import { MailerModule } from '../mailer/mailer.module';
 import { UserModule } from '../user/user.module';
@@ -16,7 +17,9 @@ import { UserModule } from '../user/user.module';
     MailerModule,
     UserModule,
   ],
-  controllers: [DonationController],
+  // DonationController 是 @Roles('admin')；DonationPublicController 是 @Public（前台）
+  // 两者同前缀 /donation，靠路径 public/submit|wall|stats 区分，互不冲突
+  controllers: [DonationController, DonationPublicController],
   providers: [DonationService],
   exports: [DonationService],
 })

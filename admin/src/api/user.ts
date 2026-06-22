@@ -26,10 +26,6 @@ export function loginApi(params: LoginParams): Promise<ApiResponse<LoginResult>>
   return request.post('/user/login', params)
 }
 
-export function refreshTokenApi(refreshToken: string, deviceId: string): Promise<ApiResponse<LoginResult>> {
-  return request.post('/user/refresh', { refreshToken, deviceId })
-}
-
 /**
  * 获取当前登录用户的个人资料（含头像、昵称、角色）。
  * 登录成功后调用一次，用于填充顶栏头像/昵称，替代硬编码 'Admin'。

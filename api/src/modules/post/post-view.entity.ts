@@ -12,6 +12,8 @@ import { PostEntity } from './post.entity';
 @Entity('post_views')
 @Index('idx_postview_post', ['postId'])
 @Index('idx_postview_viewed', ['viewedAt'])
+// 浏览去重热路径：findOne({ where: { postId, ip } }) 每次浏览都跑，复合索引变单次定位
+@Index('idx_postview_post_ip', ['postId', 'ip'])
 export class PostViewEntity {
   @PrimaryGeneratedColumn({ comment: 'ID' })
   id: number;

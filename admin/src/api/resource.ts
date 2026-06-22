@@ -38,10 +38,6 @@ export function getResources(params?: {
   return request.get('/resource', { params })
 }
 
-export function getResource(id: number) {
-  return request.get(`/resource/${id}`)
-}
-
 export function createResource(data: any) {
   return request.post('/resource', data)
 }
@@ -55,10 +51,6 @@ export function updateResourceVisibility(
   data: { allowedUserIds: number[]; allowedRoleIds: number[] },
 ) {
   return request.put(`/resource/${id}/visibility`, data)
-}
-
-export function toggleResourceStatus(id: number) {
-  return request.put(`/resource/${id}/toggle-status`)
 }
 
 export function deleteResource(id: number) {

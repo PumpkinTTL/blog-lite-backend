@@ -23,6 +23,8 @@ import {
   ResetPasswordByCodeDto,
   BatchIdsDto,
   ToggleStatusDto,
+  SendLoginCodeDto,
+  LoginByCodeDto,
 } from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
@@ -116,12 +118,72 @@ export class UserController {
     };
   }
 
+  // ===== 用户端：邮箱验证码登录 =====
+
+  /**
+   * 发送登录验证码。
+   * 与 send-reset-code 区别：登录场景需明确告知邮箱是否已注册，
+   * 未注册直接抛错（而非防枚举静默成功），避免用户空等验证码。
+   */
+  @Public()
+  @Post('send-login-code')
+  async sendLoginCode(@Body() dto: SendLoginCodeDto) {
+    const user = await this.userService.findByEmail(dto.email);
+    if (!user) {
+      return {
+        success: false,
+        message: '该邮箱尚未注册，请先注册',
+      };
+    }
+    await this.emailCodeService.sendCode(dto.email);
+    return { success: true, message: '验证码已发送' };
+  }
+
+  /**
+   * 邮箱验证码登录（无需密码）。
+   */
+  @Public()
+  @Post('login-by-code')
+  async loginByCode(@Body() dto: LoginByCodeDto, @Req() req: Request) {
+    // 前端未传 fingerprint（DTO forbidNonWhitelisted 不允许该字段），
+    // deviceId 仅由 IP 派生，与密码登录保持同套 hash 逻辑。
+    const fingerprint = '';
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const tokenPayload = await this.userService.loginByCode(
+      dto.email,
+      dto.code,
+      fingerprint,
+      ip,
+    );
+
+    return {
+      success: true,
+      data: {
+        ...tokenPayload,
+        tokenType: 'Bearer',
+      },
+      message: '登录成功',
+    };
+  }
+
   // ===== 用户端登出 =====
 
+  /**
+   * 用户端登出。
+   * 加 @Public：用户 accessToken 可能已过期（挂很久才点退出），
+   * 若强制鉴权会触发 401 → 续签 → "登录已过期"弹窗，体验断裂。
+   * logout 语义本身就是"清理会话"，应容忍无 token 调用：
+   * 有 userId 就更新 lastLoginAt，没有就只靠 refreshToken 吊销 Redis 会话。
+   */
+  @Public()
   @Post('logout')
   async logout(@Req() req: Request, @Body() body: { refreshToken?: string }) {
     const userId = parseInt((req as any).user?.sub, 10);
-    await this.userService.logout(userId, body?.refreshToken);
+    await this.userService.logout(
+      Number.isNaN(userId) ? 0 : userId,
+      body?.refreshToken,
+    );
     return { success: true, message: '登出成功' };
   }
 

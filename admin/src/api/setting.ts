@@ -12,14 +12,6 @@ export function getSettings() {
   return request.get('/setting')
 }
 
-export function getSettingsByGroup(group: string) {
-  return request.get(`/setting/group/${group}`)
-}
-
-export function batchUpdateByGroup(group: string, items: Record<string, string>) {
-  return request.put(`/setting/group/${group}`, { items })
-}
-
 export function createSetting(data: any) {
   return request.post('/setting', data)
 }

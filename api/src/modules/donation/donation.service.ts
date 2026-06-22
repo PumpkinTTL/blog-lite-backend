@@ -339,4 +339,52 @@ export class DonationService {
 
     return header + rows.join('\n');
   }
+
+  // ===== 公开（前台）=====
+
+  /**
+   * 捐赠墙：只返回 isVisible=1 && status=confirmed 的记录，脱敏（不返回邮箱/交易号/备注）。
+   * 前台展示用，按 sortOrder + createdAt 倒序。
+   */
+  async findPublicWall(page = 1, pageSize = 50) {
+    const [list, total] = await this.repo
+      .createQueryBuilder('e')
+      .select([
+        'e.id',
+        'e.donorName',
+        'e.donorAvatar',
+        'e.amount',
+        'e.currency',
+        'e.payMethod',
+        'e.message',
+        'e.createdAt',
+      ])
+      .where('e.isVisible = 1')
+      .andWhere('e.status = :status', { status: DONATION_STATUS.CONFIRMED })
+      .orderBy('e.sortOrder', 'ASC')
+      .addOrderBy('e.createdAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    return { list, total, page, pageSize };
+  }
+
+  /**
+   * 公开统计：累计金额 + 赞助人数（仅已确认）。
+   * 不暴露 byMethod/byCrypto 等运营细节给前台。
+   */
+  async getPublicStats() {
+    const row = await this.repo
+      .createQueryBuilder('e')
+      .select('COUNT(*)', 'totalDonors')
+      .addSelect('COALESCE(SUM(e.amount), 0)', 'totalAmount')
+      .where('e.status = :status', { status: DONATION_STATUS.CONFIRMED })
+      .getRawOne();
+
+    return {
+      totalDonors: parseInt(row?.totalDonors || '0'),
+      totalAmount: parseFloat(row?.totalAmount || '0'),
+    };
+  }
 }

@@ -18,6 +18,7 @@ import { MembershipService } from '../membership/membership.service';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { MediaService } from '../media/media.service';
+import { EmailCodeService } from '../email-code/email-code.service';
 
 export interface TokenPayload {
   accessToken: string;
@@ -42,6 +43,7 @@ export class UserService {
     private readonly dataSource: DataSource,
     private readonly auditLog: AuditLogService,
     private readonly mediaService: MediaService,
+    private readonly emailCodeService: EmailCodeService,
   ) {}
 
   /**
@@ -570,7 +572,91 @@ export class UserService {
   }
 
   /**
+   * 邮箱验证码登录（无需密码，仅凭邮箱 + 验证码签发 Token）。
+   * 验证码由 send-login-code 接口发送，校验通过即登录。
+   * 与忘记密码的 reset-password-by-code 共用 EmailCodeService 的存储/校验逻辑，
+   * 但走独立的 purpose 语义：这里是"登录证明"，不是"重置密码授权"。
+   */
+  async loginByCode(
+    email: string,
+    code: string,
+    clientFingerprint: string,
+    clientIp: string,
+  ): Promise<TokenPayload> {
+    // 1. 校验验证码（verifyCode 失败会抛 BadRequestException）
+    this.emailCodeService.verifyCode(email, code);
+
+    // 2. 查用户（带角色）
+    const user = await this.userRepo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.roles', 'r')
+      .where('u.email = :email', { email })
+      .getOne();
+
+    if (!user) {
+      // 登录场景明确告知未注册（不沿用忘记密码的防枚举静默成功）
+      throw new UnauthorizedException('该邮箱尚未注册');
+    }
+
+    // 3. 状态检查 + 临时封禁惰性解封（与密码登录 login() 保持一致）
+    if (user.status !== USER_STATUS.ACTIVE) {
+      if (
+        user.status === USER_STATUS.DISABLED &&
+        user.bannedUntil &&
+        user.bannedUntil < new Date()
+      ) {
+        await this.userRepo.update(user.id, {
+          status: USER_STATUS.ACTIVE,
+          bannedUntil: null,
+        });
+        user.status = USER_STATUS.ACTIVE;
+        user.bannedUntil = null;
+      } else {
+        throw new UnauthorizedException('账号不存在或已禁用');
+      }
+    }
+
+    // 4. 签发 Token（复用密码登录同一套指纹 + issueToken 逻辑）
+    const deviceId = crypto
+      .createHash('sha256')
+      .update(`${clientFingerprint}-${clientIp}`)
+      .digest('hex');
+
+    const roles = user.roles.map((r) => r.name);
+    const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
+    const refreshTtl = this.configService.get<number>(
+      'REFRESH_TOKEN_TTL',
+      604800,
+    );
+
+    const tokenData = await this.authService.issueToken(
+      user.id,
+      deviceId,
+      { roles, nickname: user.nickname },
+      undefined,
+      accessTtl,
+      refreshTtl,
+    );
+
+    // 5. 更新最后登录时间
+    await this.userRepo.update(user.id, { lastLoginAt: new Date() });
+
+    this.logger.log(
+      `用户 ${user.username}(#${user.id}) 验证码登录成功`,
+    );
+
+    return {
+      accessToken: tokenData.accessToken,
+      refreshToken: tokenData.refreshToken,
+      expiresIn: tokenData.expiresIn,
+      deviceId,
+    };
+  }
+
+  /**
    * 用户端登出（清理本地 Token，后端暂无操作）
+   * userId 可能为 0（@Public 路由，accessToken 已过期未解出 user），
+   * 此时只靠 refreshToken 吊销 Redis 会话，跳过 lastLoginAt 更新。
    */
   async logout(userId: number, refreshToken?: string): Promise<void> {
     // 调鉴权中心吊销 refreshToken（删除 Redis 中的会话）
@@ -584,9 +670,13 @@ export class UserService {
         );
       }
     }
-    // 更新最后登录时间
-    await this.userRepo.update(userId, { lastLoginAt: new Date() });
-    this.logger.log(`用户 ${userId} 登出`);
+    // 更新最后登录时间（仅当解出了有效 userId）
+    if (userId > 0) {
+      await this.userRepo.update(userId, { lastLoginAt: new Date() });
+      this.logger.log(`用户 ${userId} 登出`);
+    } else {
+      this.logger.log('匿名登出（accessToken 已过期，仅吊销 refreshToken）');
+    }
   }
 
   /**

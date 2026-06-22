@@ -39,36 +39,6 @@ export function getR2MediaList(params?: { page?: number; pageSize?: number; id?:
 }
 
 /**
- * 上传文件到 R2
- */
-export function uploadToR2(file: File, options?: { note?: string; app?: string; folder?: string }) {
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('storageType', 'oss')
-  formData.append('ossPlatform', 'cloudflare')
-  if (options?.note) formData.append('note', options.note)
-  if (options?.app) formData.append('app', options.app)
-  if (options?.folder) formData.append('folder', options.folder)
-  return request.post('/media/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
-}
-
-/**
- * 批量上传文件到 R2
- */
-export function uploadToR2Many(files: File[], options?: { note?: string }) {
-  const formData = new FormData()
-  files.forEach((f) => formData.append('files', f))
-  formData.append('storageType', 'oss')
-  formData.append('ossPlatform', 'cloudflare')
-  if (options?.note) formData.append('note', options.note)
-  return request.post('/media/upload-many', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
-}
-
-/**
  * 删除 R2 文件
  */
 export function deleteR2Media(id: number) {
@@ -80,11 +50,4 @@ export function deleteR2Media(id: number) {
  */
 export function batchDeleteR2Media(ids: number[]) {
   return request.delete('/media/batch', { data: { ids } })
-}
-
-/**
- * 更新 R2 文件信息
- */
-export function updateR2Media(id: number, data: { originalName?: string }) {
-  return request.put(`/media/${id}`, data)
 }

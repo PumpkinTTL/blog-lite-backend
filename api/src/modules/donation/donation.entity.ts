@@ -4,13 +4,31 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 export type PayMethod = 'wechat' | 'alipay' | 'crypto' | 'other';
 export type CryptoNetwork = 'TRC20' | 'BSC' | 'POL' | null;
 export type DonationStatus = 'pending' | 'confirmed' | 'refunded';
 
+/**
+ * donations 表索引：
+ * - status / payMethod：管理端过滤（findAll 的 exact filter）
+ * - (isVisible, status)：捐赠墙热路径（WHERE isVisible=1 AND status='confirmed'）
+ * - sortOrder：列表排序
+ * - createdAt：默认排序 + dashboard 时间范围聚合
+ * - cryptoTxHash：链上交易哈希反查（非 unique，允许 null）
+ * - tradeNo：第三方流水号反查
+ */
 @Entity('donations')
+@Index('idx_don_status', ['status'])
+@Index('idx_don_visible_status', ['isVisible', 'status'])
+@Index('idx_don_sort', ['sortOrder'])
+@Index('idx_don_created', ['createdAt'])
+@Index('idx_don_paymethod', ['payMethod'])
+@Index('idx_don_crypto_network', ['payMethod', 'cryptoNetwork'])
+@Index('idx_don_txhash', ['cryptoTxHash'])
+@Index('idx_don_tradeno', ['tradeNo'])
 export class DonationEntity {
   @PrimaryGeneratedColumn({ comment: '捐赠 ID' })
   id: number;

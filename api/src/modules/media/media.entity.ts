@@ -20,6 +20,10 @@ export type OssPlatform =
 @Index('idx_media_hash', ['hash'])
 @Index('idx_media_uploader', ['uploaderId'])
 @Index('idx_media_created', ['createdAt'])
+// findByUrl 反查（媒体去重/引用校验）
+@Index('idx_media_url', ['url'])
+// 去重热路径：WHERE hash=? AND storage_type=? AND oss_platform=? 单次定位
+@Index('idx_media_dedup', ['hash', 'storageType', 'ossPlatform'])
 @Entity('media')
 export class MediaEntity {
   @PrimaryGeneratedColumn({ comment: '素材 ID' })

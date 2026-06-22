@@ -26,14 +26,6 @@ export function getPlans() {
   return request.get('/plan')
 }
 
-export function getPublicPlans() {
-  return request.get('/plan/public')
-}
-
-export function getPlan(id: number) {
-  return request.get(`/plan/${id}`)
-}
-
 export function createPlan(data: Partial<Plan>) {
   return request.post('/plan', data)
 }

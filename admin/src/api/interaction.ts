@@ -17,60 +17,6 @@ export interface InteractionListResult {
   total: number
 }
 
-/**
- * 切换当前用户对实体的互动状态
- * @returns { active: boolean } active=true 表示已新增，false 表示已取消
- */
-export function toggleInteraction(params: {
-  entityType: InteractionEntityType
-  entityId: number
-  type: InteractionType
-}) {
-  return request.post('/interaction/toggle', params)
-}
-
-/**
- * 批量查当前用户在某组实体上的互动状态
- * @returns Record<entityId, boolean>
- */
-export function getInteractionStatus(params: {
-  entityType: InteractionEntityType
-  type: InteractionType
-  entityIds: number[]
-}) {
-  const qs = new URLSearchParams({
-    entityType: params.entityType,
-    type: params.type,
-    entityIds: params.entityIds.join(','),
-  }).toString()
-  return request.get(`/interaction/status?${qs}`)
-}
-
-/**
- * 批量查多个实体的互动计数
- * @returns Record<entityId, { likeCount, favoriteCount }>
- */
-export function getInteractionCounts(params: {
-  entityType: InteractionEntityType
-  entityIds: number[]
-}) {
-  return request.post('/interaction/count', params)
-}
-
-/**
- * 当前用户的互动列表（点赞/收藏，分页）
- */
-export function getMyInteractions(params: {
-  type: InteractionType
-  entityType?: InteractionEntityType
-  page?: number
-  pageSize?: number
-}) {
-  return request.get('/interaction/me', { params })
-}
-
-// ===== 管理端 =====
-
 export interface AdminInteractionUser {
   id: number
   username: string

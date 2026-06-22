@@ -57,10 +57,6 @@ export function getMemberships(params?: MembershipListParams) {
   return request.get('/membership', { params })
 }
 
-export function getMembership(id: number) {
-  return request.get(`/membership/${id}`)
-}
-
 export function grantMembership(data: GrantMembershipParams) {
   return request.post('/membership/grant', data)
 }
@@ -75,12 +71,4 @@ export function deleteMembership(id: number) {
 
 export function batchDeleteMemberships(ids: number[]) {
   return request.delete('/membership/batch', { data: { ids } })
-}
-
-export function redeemMembership(code: string) {
-  return request.post('/membership/redeem', { code })
-}
-
-export function getMyMembershipStatus() {
-  return request.get('/membership/me/status')
 }
