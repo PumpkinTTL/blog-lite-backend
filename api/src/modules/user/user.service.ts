@@ -765,7 +765,14 @@ export class UserService {
     }
 
     Object.assign(user, data);
-    return this.userRepo.save(user);
+    await this.userRepo.save(user);
+    // 重新查一次返回完整对象。TypeORM save() 返回值在带 @ManyToMany 关系时
+    // 可能缺失部分非关系字段（实测 nickname 偶发为 undefined），reload 保证完整。
+    const reloaded = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['roles'],
+    });
+    return reloaded ?? user;
   }
 
   async resetPassword(id: number, newPassword: string) {
