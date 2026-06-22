@@ -714,9 +714,56 @@ export class UserService {
     return user;
   }
 
+  /**
+   * 客户端用户自助修改个人资料。
+   * 与 admin 的 update() 区别：operator 是用户自己，字段范围受 UpdateProfileDto 限制。
+   * 关键：
+   * - findOne 加 relations: ['roles']，保证返回完整对象（前端 adaptUserInfo 要映射 roles）
+   * - 写审计日志（targetType='user'，operator=用户自己），与 admin 改资料保持同一套审计链路
+   */
   async updateProfile(userId: number, data: UpdateProfileDto) {
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['roles'],
+    });
     if (!user) throw new NotFoundException('用户不存在');
+
+    // 变更审计：对比允许修改的字段，diff 出实际变更项
+    const targetName = `${user.nickname || user.username}(#${userId})`;
+    const entries = AuditLogService.diff(
+      'user',
+      userId,
+      {
+        nickname: user.nickname,
+        email: user.email,
+        avatar: user.avatar,
+        gender: user.gender,
+        signature: user.signature,
+        phone: user.phone,
+      },
+      {
+        nickname: data.nickname ?? user.nickname,
+        email: data.email ?? user.email,
+        avatar: data.avatar ?? user.avatar,
+        gender: data.gender ?? user.gender,
+        signature: data.signature ?? user.signature,
+        phone: data.phone ?? user.phone,
+      },
+      ['nickname', 'email', 'avatar', 'gender', 'signature', 'phone'],
+      {
+        // 自助修改：operator 就是用户自己
+        operatorId: userId,
+        operatorName: user.nickname || user.username,
+        targetName,
+        note: '用户自助修改资料',
+      },
+    );
+    if (entries.length > 0) {
+      this.auditLog
+        .logMany(entries)
+        .catch((e) => this.logger.warn('审计日志写入失败', e));
+    }
+
     Object.assign(user, data);
     return this.userRepo.save(user);
   }
