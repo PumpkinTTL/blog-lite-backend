@@ -123,29 +123,64 @@ SET @sql := IF(@idx_exists = 0,
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- ── code_usage_logs: 兑换记录查询 (codeId, usedAt) + (userId) + (usedAt) ──
--- 原代码三个 @Index 装饰器悬空（夹在 @Column 和 @ManyToOne 之间，未挂在任何列上），
--- TypeORM 未生成索引。这里补回。
+-- ── code_usage_logs: 清理历史脏索引 + 建正确索引 ──
+-- 背景：原 code-usage-log.entity.ts 三个 @Index 装饰器悬空（未挂任何列），
+-- TypeORM 错误地把名为 used_at 的索引建在了 code_id 列上，且被外键复用，
+-- 导致 DROP INDEX used_at 报 ER_DROP_INDEX_FK，后端启动崩溃。
+-- 此段幂等完成：建新索引 → 删外键 → 删脏索引 → 重建外键。
+-- 已在各环境手工执行过，此脚本作为新环境/重置环境的兜底。
+
+-- 1. 若正确索引 idx_codeusage_code 不存在，先建它（外键需要 code_id 上有索引）
 SET @idx_exists := (
   SELECT COUNT(*) FROM information_schema.STATISTICS
   WHERE table_schema = DATABASE()
     AND table_name = 'code_usage_logs'
-    AND index_name = 'idx_codeusage_code_used'
+    AND index_name = 'idx_codeusage_code'
 );
 SET @sql := IF(@idx_exists = 0,
-  'CREATE INDEX idx_codeusage_code_used ON code_usage_logs(code_id, used_at)',
-  'SELECT "idx_codeusage_code_used 已存在，跳过" AS msg'
+  'CREATE INDEX idx_codeusage_code ON code_usage_logs(code_id)',
+  'SELECT "idx_codeusage_code 已存在，跳过" AS msg'
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @idx_exists := (
+-- 2. 若脏索引 used_at 仍存在（其索引列实际是 code_id），清理它
+--    先找到引用它的外键并删除，再删脏索引，最后重建外键
+SET @dirty_exists := (
   SELECT COUNT(*) FROM information_schema.STATISTICS
   WHERE table_schema = DATABASE()
     AND table_name = 'code_usage_logs'
-    AND index_name = 'IDX_code_usage_logs_user_id'
+    AND index_name = 'used_at'
 );
-SET @sql := IF(@idx_exists = 0,
-  'CREATE INDEX IDX_code_usage_logs_user_id ON code_usage_logs(user_id)',
-  'SELECT "IDX_code_usage_logs_user_id 已存在，跳过" AS msg'
+-- 仅当脏索引存在时执行清理（用 information_schema 动态拼 SQL）
+SET @fk_name := (
+  SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'code_usage_logs'
+    AND COLUMN_NAME = 'code_id'
+    AND REFERENCED_TABLE_NAME IS NOT NULL
+  LIMIT 1
+);
+SET @sql := IF(@dirty_exists > 0 AND @fk_name IS NOT NULL,
+  CONCAT('ALTER TABLE code_usage_logs DROP FOREIGN KEY ', @fk_name),
+  'SELECT "无外键需删除或无脏索引" AS msg'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(@dirty_exists > 0,
+  'DROP INDEX used_at ON code_usage_logs',
+  'SELECT "脏索引 used_at 不存在，跳过" AS msg'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 重建外键（若已不存在）。用 NOT EXISTS 判断避免重复创建报错。
+SET @fk_exists := (
+  SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'code_usage_logs'
+    AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+);
+SET @sql := IF(@fk_exists = 0,
+  'ALTER TABLE code_usage_logs ADD CONSTRAINT FK_code_usage_logs_code FOREIGN KEY (code_id) REFERENCES codes(id) ON DELETE CASCADE',
+  'SELECT "外键已存在，跳过重建" AS msg'
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;

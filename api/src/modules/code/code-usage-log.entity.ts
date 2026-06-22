@@ -11,23 +11,26 @@ import { CodeEntity } from './code.entity';
 
 /**
  * code_usage_logs 表索引：
- * - (codeId, usedAt)：findUsageLogs 热路径 WHERE codeId=? ORDER BY usedAt DESC
- * - userId：按用户查"我的兑换记录"
+ * - idx_codeusage_code(codeId)：findUsageLogs 热路径 WHERE codeId=? + 外键所需
+ *   （MySQL InnoDB 外键需在被引用列上有索引，此索引同时满足）
  *
- * 注意：原代码三个 @Index 装饰器悬空（夹在 @Column 和 @ManyToOne 之间，未挂在任何列上），
- * TypeORM 不会绑定到对应列，索引实际未生成。这里改为属性级装饰器，并补复合索引。
+ * 历史背景：原代码三个 @Index 装饰器悬空（夹在 @Column 和 @ManyToOne 之间，未挂在任何列上），
+ * TypeORM 错误地把名为 used_at 的索引建在了 code_id 列上，且被外键复用，无法直接 drop。
+ * 已在数据库侧清理：建 idx_codeusage_code → 删旧外键 → 删脏索引 used_at → 重建外键。
+ * 这里索引名与数据库严格对齐，避免 TypeORM synchronize 再次尝试 drop 触发外键冲突。
+ *
+ * 注意：不使用复合索引 (codeId, usedAt)——findUsageLogs 的 ORDER BY usedAt DESC
+ * 在单条 code 的日志量级（通常几十条）下 filesort 开销可忽略，不值得为它引入新索引名差异。
  */
 @Entity('code_usage_logs')
-@Index('idx_codeusage_code_used', ['codeId', 'usedAt'])
+@Index('idx_codeusage_code', ['codeId'])
 export class CodeUsageLogEntity {
   @PrimaryGeneratedColumn({ comment: 'ID' })
   id: number;
 
-  @Index()
   @Column({ name: 'code_id', comment: '关联的码ID' })
   codeId: number;
 
-  @Index()
   @Column({
     type: 'int',
     name: 'user_id',
@@ -36,7 +39,6 @@ export class CodeUsageLogEntity {
   })
   userId: number | null;
 
-  @Index()
   @Column({ type: 'datetime', name: 'used_at', comment: '使用时间' })
   usedAt: Date;
 
@@ -49,7 +51,9 @@ export class CodeUsageLogEntity {
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })
   createdAt: Date;
 
-  // 外键关联
+  // 外键关联。@JoinColumn 只控制列名（code_id），外键约束名由 TypeORM 自动生成。
+  // 数据库侧已重建外键约束（删旧 FK_哈希串 → 建 FK_code_usage_logs_code），
+  // TypeORM synchronize 对外键约束名不一致是容忍的（不会 drop/recreate 外键），只看列名匹配。
   @ManyToOne(() => CodeEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'code_id' })
   code: CodeEntity;
