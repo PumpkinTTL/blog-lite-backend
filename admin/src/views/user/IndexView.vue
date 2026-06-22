@@ -64,6 +64,12 @@ const userStatusOptions = [
   { label: '禁用', value: 'disabled' },
 ] as unknown as SelectOption[]
 
+// 表单用的状态选项（不含"全部"）
+const formStatusOptions = [
+  { label: '正常', value: 'active' },
+  { label: '禁用', value: 'disabled' },
+] as unknown as SelectOption[]
+
 // 会员等级标签（与 membership 页一致）
 const levelTagType: Record<PlanLevel, 'info' | 'success' | 'warning'> = {
   plus: 'info',
@@ -155,7 +161,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     deleteApi: deleteUser,
     batchDeleteApi: batchDeleteUsers,
     deleteContent: (row) => `确定删除用户「${row.nickname}」？`,
-    defaultForm: () => ({ username: '', password: '', nickname: '', email: '', status: 1, roleIds: [] }),
+    defaultForm: () => ({ username: '', password: '', nickname: '', email: '', status: 'active', roleIds: [] }),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) {
@@ -305,8 +311,14 @@ const columns: DataTableColumns<User> = [
         src: row.avatar || undefined,
         color: '#2563EB',
         style: 'font-weight:600;font-size:14px',
+        // 图片加载失败时清掉 src，让 NAvatar 回退到 default slot 显示首字母
+        onError: (e: Event) => {
+          const img = e.target as HTMLImageElement
+          if (img) img.style.display = 'none'
+        },
       }, {
-        default: () => row.avatar ? '' : (row.nickname?.charAt(0)?.toUpperCase() || '?'),
+        // 始终返回首字母兜底：图片加载成功会盖住文字，失败时显示文字（不再留空）
+        default: () => row.nickname?.charAt(0)?.toUpperCase() || '?',
       }),
   },
   { title: '账号', key: 'username', width: 140 },
@@ -451,6 +463,9 @@ const columns: DataTableColumns<User> = [
         </n-form-item>
         <n-form-item label="邮箱" path="email">
           <n-input v-model:value="formValue.email" placeholder="可选" />
+        </n-form-item>
+        <n-form-item label="状态" path="status">
+          <n-select v-model:value="formValue.status" :options="formStatusOptions" placeholder="选择状态" />
         </n-form-item>
         <n-form-item label="角色" path="roleIds">
           <n-select v-model:value="formValue.roleIds" :options="roleOptions" placeholder="选择角色" multiple clearable />
