@@ -431,6 +431,14 @@ export class UserService {
       throw new BadRequestException('用户名已存在');
     }
 
+    // 1.1 检查邮箱是否已被注册（友好提示，避免触发数据库 unique 约束的原生报错）
+    if (dto.email) {
+      const existingEmail = await this.findByEmail(dto.email);
+      if (existingEmail) {
+        throw new BadRequestException('该邮箱已被注册，若忘记密码请重置');
+      }
+    }
+
     // 2. 检查邀请码是否有效
     const verifyResult = await this.codeService.verifyCode({
       code: dto.invitationCode,
@@ -768,6 +776,61 @@ export class UserService {
     await this.userRepo.save(user);
     // 重新查一次返回完整对象。TypeORM save() 返回值在带 @ManyToMany 关系时
     // 可能缺失部分非关系字段（实测 nickname 偶发为 undefined），reload 保证完整。
+    const reloaded = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['roles'],
+    });
+    return reloaded ?? user;
+  }
+
+  /**
+   * 校验邮箱是否可用：未被其他用户占用（占用者是自己则视为可用，支持重复提交同邮箱）。
+   * 换绑/绑定的预校验共用。
+   */
+  async canUseEmail(email: string, currentUserId: number): Promise<boolean> {
+    const existing = await this.findByEmail(email);
+    return !existing || existing.id === currentUserId;
+  }
+
+  /**
+   * 邮箱换绑（含首次绑定，新邮箱未被占用即可）。
+   * 验证码由 controller 层校验后调用本方法，本方法只负责落库 + 审计。
+   * 再次校验邮箱可用性防并发抢占（验证码发送与换绑之间被别人注册）。
+   */
+  async changeEmail(userId: number, newEmail: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['roles'],
+    });
+    if (!user) throw new NotFoundException('用户不存在');
+
+    // 并发保护：发码后到换绑之间，新邮箱可能被别人注册
+    if (!(await this.canUseEmail(newEmail, userId))) {
+      throw new BadRequestException('该邮箱已被其他账号绑定');
+    }
+
+    const oldEmail = user.email;
+    // 没变化直接返回（用户重复提交同邮箱）
+    if (oldEmail === newEmail) return user;
+
+    // 审计
+    const targetName = `${user.nickname || user.username}(#${userId})`;
+    this.auditLog
+      .log({
+        targetType: 'user',
+        targetId: userId,
+        field: 'email',
+        oldValue: oldEmail,
+        newValue: newEmail,
+        operatorId: userId,
+        operatorName: user.nickname || user.username,
+        targetName,
+        note: '用户自助换绑邮箱',
+      })
+      .catch((e) => this.logger.warn('审计日志写入失败', e));
+
+    await this.userRepo.update(userId, { email: newEmail });
+    // reload 返回完整对象（与 updateProfile 同套，避免 save 返回值缺字段）
     const reloaded = await this.userRepo.findOne({
       where: { id: userId },
       relations: ['roles'],

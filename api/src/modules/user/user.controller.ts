@@ -25,6 +25,8 @@ import {
   ToggleStatusDto,
   SendLoginCodeDto,
   LoginByCodeDto,
+  SendChangeEmailCodeDto,
+  ChangeEmailDto,
 } from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
@@ -201,6 +203,43 @@ export class UserController {
     const userId = parseInt((req as any).user?.sub, 10);
     const data = await this.userService.updateProfile(userId, dto);
     return { success: true, data, message: '更新成功' };
+  }
+
+  // ===== 用户端：邮箱换绑（需登录）=====
+
+  /**
+   * 给新邮箱发换绑验证码。
+   * 校验新邮箱未被其他用户占用（占用者是自己则放行，支持重复提交）。
+   * 不走防枚举：换绑场景用户应知道新邮箱是否可用，被占用需明确报错。
+   */
+  @Post('send-change-email-code')
+  async sendChangeEmailCode(
+    @Req() req: Request,
+    @Body() dto: SendChangeEmailCodeDto,
+  ) {
+    const userId = parseInt((req as any).user?.sub, 10);
+    if (!(await this.userService.canUseEmail(dto.newEmail, userId))) {
+      return {
+        success: false,
+        message: '该邮箱已被其他账号绑定，请更换',
+      };
+    }
+    await this.emailCodeService.sendCode(dto.newEmail);
+    return { success: true, message: '验证码已发送至新邮箱' };
+  }
+
+  /**
+   * 完成邮箱换绑。
+   * 校验新邮箱验证码 → 落库 → 记审计。
+   * 不要求验证旧邮箱：accessToken 已证明身份，旧邮箱验证是冗余。
+   */
+  @Post('change-email')
+  async changeEmail(@Req() req: Request, @Body() dto: ChangeEmailDto) {
+    const userId = parseInt((req as any).user?.sub, 10);
+    // 校验验证码（verifyCode 失败抛 BadRequestException）
+    this.emailCodeService.verifyCode(dto.newEmail, dto.code);
+    const data = await this.userService.changeEmail(userId, dto.newEmail);
+    return { success: true, data, message: '邮箱换绑成功' };
   }
 
   // ===== 管理接口 =====

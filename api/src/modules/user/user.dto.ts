@@ -172,6 +172,26 @@ export class SendLoginCodeDto {
 }
 
 /**
+ * 邮箱换绑：给新邮箱发验证码。
+ * newEmail 必须未被其他用户占用（service 层校验）。
+ */
+export class SendChangeEmailCodeDto {
+  @IsEmail()
+  newEmail: string;
+}
+
+/**
+ * 邮箱换绑：用新邮箱 + 验证码完成换绑。
+ */
+export class ChangeEmailDto {
+  @IsEmail()
+  newEmail: string;
+
+  @IsString()
+  code: string;
+}
+
+/**
  * 邮箱验证码登录。
  * 仅凭邮箱 + 验证码签发 token，无需密码。
  */
