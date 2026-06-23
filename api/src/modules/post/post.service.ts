@@ -28,6 +28,8 @@ export class PostService implements OnModuleInit {
     private readonly postViewRepo: Repository<PostViewEntity>,
     @InjectRepository(TagEntity)
     private readonly tagRepo: Repository<TagEntity>,
+    @InjectRepository(InteractionEntity)
+    private readonly interactionRepo: Repository<InteractionEntity>,
     private readonly visibilityService: EntityVisibilityService,
     private readonly mediaService: MediaService,
     private readonly dataSource: DataSource,
@@ -81,7 +83,8 @@ export class PostService implements OnModuleInit {
     publicOnly = false,
     withVisibility = false,
     isLoggedIn = false,
-) {
+    userId?: number,
+  ) {
     const qb = this.postRepo
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.author', 'author')
@@ -147,6 +150,30 @@ export class PostService implements OnModuleInit {
             (p as any).allowedRoleIds = v.allowedRoleIds;
           }
         }
+      }
+    }
+
+    // 登录用户：批量查互动状态（收藏/点赞），避免前端 N+1 或卡片无法显示初始态。
+    // 一次性 WHERE userId AND entityType='post' AND entityId IN (...) 查出，给每篇附 isFavorited/isLiked。
+    if (userId && list.length) {
+      const postIds = list.map((p) => p.id);
+      const interactions = await this.interactionRepo.find({
+        where: {
+          userId,
+          entityType: 'post' as any,
+          entityId: In(postIds),
+        },
+        select: ['entityId', 'type'],
+      });
+      const favSet = new Set<number>();
+      const likeSet = new Set<number>();
+      for (const it of interactions) {
+        if (it.type === 'favorite') favSet.add(it.entityId);
+        else if (it.type === 'like') likeSet.add(it.entityId);
+      }
+      for (const p of list) {
+        (p as any).isFavorited = favSet.has(p.id);
+        (p as any).isLiked = likeSet.has(p.id);
       }
     }
 

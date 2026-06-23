@@ -48,6 +48,7 @@ export class PostController {
     const user = (req as any)?.user;
     const isAdmin = user?.roles?.includes('admin') ?? false;
     const isLoggedIn = !!user && !isAdmin;
+    const userId = user?.sub ? Number(user.sub) : undefined;
     const data = await this.postService.findAll(
       parsePage(page),
       parsePageSize(pageSize),
@@ -64,6 +65,7 @@ export class PostController {
       !isAdmin,
       isAdmin, // withVisibility：admin 列表带可见性配置
       isLoggedIn, // 登录用户额外可见 login 状态文章
+      isLoggedIn ? userId : undefined, // 登录用户：联查收藏/点赞状态
     );
     return { success: true, data, message: 'ok' };
   }
