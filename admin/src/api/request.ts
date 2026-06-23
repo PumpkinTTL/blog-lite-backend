@@ -2,6 +2,7 @@ import axios from 'axios'
 // 关键：续期/登出兜底时通过 tokenState 同步 store ref，
 // 否则 refresh 轮换 refreshToken 后 store 里仍是旧值，登出会吊销失败。
 import { persistTokens, clearTokens } from '../stores/tokenState'
+import { genRequestId, extractRequestId } from '../utils/req-id'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
@@ -15,12 +16,14 @@ function getToken(key: string): string | null {
   return localStorage.getItem(key) || sessionStorage.getItem(key)
 }
 
-// 请求拦截器 - 自动带 token
+// 请求拦截器 - 自动带 token + X-Request-Id（请求追溯）
 request.interceptors.request.use((config) => {
   const token = getToken('accessToken')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  // 每个请求生成唯一追溯 ID，后端日志/错误响应都带它，方便排障
+  config.headers['X-Request-Id'] = genRequestId()
   return config
 })
 
@@ -29,15 +32,33 @@ let isRedirecting = false
 
 // 刷新 Token 相关
 let isRefreshing = false
-let refreshSubscribers: ((token: string) => void)[] = []
+let refreshSubscribers: { onToken: (token: string) => void; reject: (e: unknown) => void }[] = []
+
+/** 会话过期错误：401 且续签失败时 reject，让调用方 catch/finally 能执行，避免 loading 卡死 */
+class SessionExpiredError extends Error {
+  constructor(msg = '登录已过期，请重新登录') {
+    super(msg)
+    this.name = 'SessionExpiredError'
+  }
+}
 
 function onRefreshed(token: string) {
-  refreshSubscribers.forEach((cb) => cb(token))
+  refreshSubscribers.forEach((cb) => cb.onToken(token))
   refreshSubscribers = []
 }
 
-function addRefreshSubscriber(cb: (token: string) => void) {
-  refreshSubscribers.push(cb)
+/** 续签失败时 reject 掉所有排队请求，避免它们永久挂起导致 loading 卡死 */
+function rejectQueued() {
+  const err = new SessionExpiredError()
+  refreshSubscribers.forEach((cb) => cb.reject(err))
+  refreshSubscribers = []
+}
+
+function addRefreshSubscriber(
+  onToken: (token: string) => void,
+  reject: (e: unknown) => void,
+) {
+  refreshSubscribers.push({ onToken, reject })
 }
 
 function redirectToLogin() {
@@ -61,13 +82,18 @@ request.interceptors.response.use(
     const status = error.response?.status
     const serverMsg = error.response?.data?.message || ''
     const config = error.config
+    // 请求追溯 ID（错误时带上，方便用户上报排障）
+    const reqId = extractRequestId(error)
 
     // 非 401 → 正常错误处理
     if (status !== 401) {
+      const baseMsg = serverMsg || error.message || '请求失败'
+      // 403/500 等错误附上 requestId，用户截图上报时后端能定位日志
+      const fullMsg = reqId ? `${baseMsg}（追踪号：${reqId}）` : baseMsg
       if (status === 403) {
         return Promise.reject(new Error(serverMsg || '无权访问'))
       }
-      return Promise.reject(new Error(serverMsg || error.message || '请求失败'))
+      return Promise.reject(new Error(fullMsg))
     }
 
     // === 以下全是 401 处理 ===
@@ -80,8 +106,10 @@ request.interceptors.response.use(
     // 刷新请求本身 401 → refreshToken 也过期了，直接跳登录
     if (config?.url?.includes('/user/refresh')) {
       clearTokens()
+      rejectQueued()
       redirectToLogin()
-      return new Promise(() => {})
+      // 用 reject 代替 new Promise(()=>{})，避免调用方永久挂起导致 loading 卡死
+      return Promise.reject(new SessionExpiredError())
     }
 
     // 其他 401：尝试用 refreshToken 刷新
@@ -89,8 +117,9 @@ request.interceptors.response.use(
     const deviceId = getToken('deviceId')
     if (!refreshToken || !deviceId) {
       clearTokens()
+      rejectQueued()
       redirectToLogin()
-      return new Promise(() => {})
+      return Promise.reject(new SessionExpiredError())
     }
 
     // 同一时间只发起一次刷新，其他请求排队
@@ -116,18 +145,21 @@ request.interceptors.response.use(
         // refresh 失败
       }
       isRefreshing = false
-      refreshSubscribers = []
       clearTokens()
+      rejectQueued()
       redirectToLogin()
-      return new Promise(() => {})
+      return Promise.reject(new SessionExpiredError())
     }
 
-    // 正在刷新中 → 排队等待
-    return new Promise((resolve) => {
-      addRefreshSubscriber((token) => {
-        config.headers.Authorization = `Bearer ${token}`
-        resolve(request(config))
-      })
+    // 正在刷新中 → 排队等待（带 reject，续签失败时能释放，不卡死）
+    return new Promise((resolve, reject) => {
+      addRefreshSubscriber(
+        (token) => {
+          config.headers.Authorization = `Bearer ${token}`
+          resolve(request(config))
+        },
+        reject,
+      )
     })
   },
 )

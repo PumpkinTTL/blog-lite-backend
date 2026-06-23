@@ -1,13 +1,15 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
+import * as crypto from 'crypto';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuthGuard } from './modules/auth/auth.guard';
 import { RolesGuard } from './modules/auth/roles.guard';
 import { RateLimitGuard } from './modules/rate-limit/rate-limit.guard';
 import { BlacklistGuard } from './common/guards/blacklist.guard';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { RedisModule } from './modules/redis/redis.module';
 import { RateLimitModule } from './modules/rate-limit/rate-limit.module';
 import { UserModule } from './modules/user/user.module';
@@ -72,6 +74,17 @@ import { AiConversationModule } from './modules/ai-conversation/ai-conversation.
             level:
               configService.get('LOG_LEVEL') ??
               (isProduction ? 'info' : 'debug'),
+            // 与 RequestIdMiddleware 协同：读 X-Request-Id 头，没传则生成。
+            // 这样每条请求日志的 reqId 字段与响应头/响应体的 requestId 一致，
+            // 出问题时可用同一个 ID 串联前端报错 ↔ 后端日志。
+            genReqId: (req: any) => {
+              const incoming = req.headers['x-request-id'];
+              if (incoming && typeof incoming === 'string' && incoming.length <= 128) {
+                return incoming;
+              }
+              // 兜底：中间件未先执行时也能生成（正常路径下中间件已挂 req.id）
+              return req.id || crypto.randomUUID();
+            },
             transport: isProduction
               ? undefined
               : {
@@ -134,4 +147,10 @@ import { AiConversationModule } from './modules/ai-conversation/ai-conversation.
     AiConversationModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  // 注册请求追溯中间件（全局，所有路由）。
+  // 必须在 Guard 之前执行——Guard/Service/Filter 都要读 req.reqId。
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
+  }
+}

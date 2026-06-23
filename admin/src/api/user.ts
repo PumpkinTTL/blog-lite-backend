@@ -5,6 +5,8 @@ import type { PlanLevel } from './plan'
 export interface LoginParams {
   username: string
   password: string
+  // 设备 ID：前端生成（crypto.randomUUID），续签凭证，登录与续签须用同一个
+  deviceId: string
   fingerprint?: string
 }
 

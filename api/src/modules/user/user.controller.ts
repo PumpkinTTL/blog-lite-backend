@@ -47,10 +47,15 @@ export class UserController {
   @Public()
   @Post('login')
   async login(@Body() dto: LoginDto, @Req() req: Request) {
-    const fingerprint = req.body.fingerprint || '';
+    const fingerprint = dto.fingerprint || '';
     const ip =
       req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
-    const tokenPayload = await this.userService.login(dto, fingerprint, ip);
+    const tokenPayload = await this.userService.login(
+      dto,
+      dto.deviceId,
+      fingerprint,
+      ip,
+    );
 
     return {
       success: true,
@@ -81,10 +86,15 @@ export class UserController {
   @Public()
   @Post('register')
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
-    const fingerprint = req.body.fingerprint || '';
+    const fingerprint = dto.fingerprint || '';
     const ip =
       req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
-    const tokenPayload = await this.userService.register(dto, fingerprint, ip);
+    const tokenPayload = await this.userService.register(
+      dto,
+      dto.deviceId,
+      fingerprint,
+      ip,
+    );
 
     return {
       success: true,
@@ -101,11 +111,12 @@ export class UserController {
   @Public()
   @Post('client-login')
   async clientLogin(@Body() dto: ClientLoginDto, @Req() req: Request) {
-    const fingerprint = dto.fingerprint || req.body.fingerprint || '';
+    const fingerprint = dto.fingerprint || '';
     const ip =
       req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
     const tokenPayload = await this.userService.clientLogin(
       dto,
+      dto.deviceId,
       fingerprint,
       ip,
     );
@@ -147,14 +158,13 @@ export class UserController {
   @Public()
   @Post('login-by-code')
   async loginByCode(@Body() dto: LoginByCodeDto, @Req() req: Request) {
-    // 前端未传 fingerprint（DTO forbidNonWhitelisted 不允许该字段），
-    // deviceId 仅由 IP 派生，与密码登录保持同套 hash 逻辑。
-    const fingerprint = '';
+    const fingerprint = dto.fingerprint || '';
     const ip =
       req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
     const tokenPayload = await this.userService.loginByCode(
       dto.email,
       dto.code,
+      dto.deviceId,
       fingerprint,
       ip,
     );

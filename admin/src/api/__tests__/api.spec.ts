@@ -103,7 +103,7 @@ describe('User API', () => {
       data: { accessToken: 'token', refreshToken: 'refresh', deviceId: 'device' },
     }
     ;(request.post as any).mockResolvedValue(mockResult)
-    const params = { username: 'admin', password: '123456' }
+    const params = { username: 'admin', password: '123456', deviceId: 'test-device-id' }
     const result = await userApi.loginApi(params)
     expect(request.post).toHaveBeenCalledWith('/user/login', params)
     expect(result).toEqual(mockResult)

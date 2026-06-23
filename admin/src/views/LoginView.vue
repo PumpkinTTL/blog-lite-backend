@@ -1,33 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useMessage, type FormInst, type FormRules } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { isDark } from '../theme'
 import { loginApi } from '../api/user'
 import { useAuth } from '../stores/auth'
-import FpJS from '@fingerprintjs/fingerprintjs'
+import { getDeviceIdentity } from '../utils/device'
 
 const message = useMessage()
 const router = useRouter()
 const { setTokens, fetchUserInfo } = useAuth()
 const formRef = ref<FormInst | null>(null)
 const loading = ref(false)
-const visitorId = ref('')
 const formValue = ref({
   username: '',
   password: '',
   remember: true,
-})
-
-onMounted(async () => {
-  try {
-    const fp = await FpJS.load()
-    const result = await fp.get()
-    visitorId.value = result.visitorId
-  } catch {
-    // 指纹加载失败（如浏览器扩展阻止），静默降级
-    visitorId.value = ''
-  }
 })
 
 const rules: FormRules = {
@@ -44,17 +32,21 @@ async function handleLogin() {
     await formRef.value?.validate()
     loading.value = true
 
+    // 登录前获取 deviceId（续签凭证，前端生成存 storage）+ fingerprint（风控指纹）
+    const { deviceId, fingerprint } = await getDeviceIdentity()
+
     const res = await loginApi({
       username: formValue.value.username,
       password: formValue.value.password,
-      fingerprint: visitorId.value,
+      deviceId,
+      fingerprint,
     })
 
     if (res.success && res.data) {
-      const { accessToken, refreshToken, deviceId } = res.data
+      const { accessToken, refreshToken, deviceId: returnedDeviceId } = res.data
       // 通过 store 统一写入入口：同步更新 store ref + 按策略写入对应 storage。
-      // 这样登录后无需刷新，store 内的 token 已就绪，logout 等依赖 store 的逻辑可立即生效。
-      setTokens(accessToken, refreshToken, deviceId, formValue.value.remember)
+      // deviceId 用后端返回的（与传入一致），保证续签时读到的和鉴权中心绑定的一致。
+      setTokens(accessToken, refreshToken, returnedDeviceId, formValue.value.remember)
       // 拉取用户信息填充顶栏头像/昵称（失败不阻断，UI 兜底 'Admin'）
       await fetchUserInfo(formValue.value.remember)
       message.success('登录成功')

@@ -201,4 +201,13 @@ export class LoginByCodeDto {
 
   @IsString()
   code: string;
+
+  // 设备 ID：同 LoginDto，前端生成，续签凭证
+  @IsString()
+  @IsNotEmpty({ message: '设备标识缺失' })
+  deviceId: string;
+
+  @IsString()
+  @IsOptional()
+  fingerprint?: string;
 }

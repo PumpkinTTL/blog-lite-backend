@@ -31,6 +31,15 @@ export class RegisterDto {
   @IsOptional()
   @IsEnum(['web', 'mobile', 'api'])
   registerSource?: string;
+
+  // 设备 ID：同 LoginDto，前端生成，续签凭证
+  @IsString()
+  @IsNotEmpty({ message: '设备标识缺失' })
+  deviceId: string;
+
+  @IsString()
+  @IsOptional()
+  fingerprint?: string;
 }
 
 export class ClientLoginDto {
@@ -41,6 +50,10 @@ export class ClientLoginDto {
   @IsString()
   @IsNotEmpty()
   password: string;
+
+  @IsString()
+  @IsNotEmpty({ message: '设备标识缺失' })
+  deviceId: string;
 
   @IsString()
   @IsOptional()

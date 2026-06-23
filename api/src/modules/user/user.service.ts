@@ -2,7 +2,6 @@ import { Injectable, UnauthorizedException, Logger, NotFoundException, BadReques
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { UserEntity } from './user.entity';
 import { RoleEntity } from './role.entity';
@@ -55,9 +54,14 @@ export class UserService {
    * 1. 查用户（带角色）
    * 2. 校验密码
    * 3. 调用鉴权中心 POST /auth/token 签发双 Token
+   *
+   * deviceId 由前端生成（crypto.randomUUID，存 localStorage），续签时原样回传。
+   * 不再由后端 IP 派生——IP 会变（切 WiFi/移动网络），导致续签时 deviceId 不一致
+   * 被鉴权中心拒绝。clientIp 仅用于审计日志，不参与 deviceId 计算。
    */
   async login(
     dto: LoginDto,
+    deviceId: string,
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
@@ -92,12 +96,6 @@ export class UserService {
     if (!passwordValid) {
       throw new UnauthorizedException('密码错误');
     }
-
-    // 设备指纹 = hash(浏览器指纹 + IP)
-    const deviceId = crypto
-      .createHash('sha256')
-      .update(`${clientFingerprint}-${clientIp}`)
-      .digest('hex');
 
     // 收集角色信息传给鉴权中心，后续 AT payload 里会带上
     const roles = user.roles.map((r) => r.name);
@@ -491,6 +489,7 @@ export class UserService {
    */
   async register(
     dto: RegisterDto,
+    deviceId: string,
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
@@ -592,11 +591,7 @@ export class UserService {
     );
 
     // 4. 事务外签发 Token（外部 HTTP 调用，不占用 DB 连接）
-    const deviceId = crypto
-      .createHash('sha256')
-      .update(`${clientFingerprint}-${clientIp}`)
-      .digest('hex');
-
+    // deviceId 由前端传入（crypto.randomUUID），不再由 IP 派生
     const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
     const refreshTtl = this.configService.get<number>(
       'REFRESH_TOKEN_TTL',
@@ -639,12 +634,14 @@ export class UserService {
    */
   async clientLogin(
     dto: ClientLoginDto,
+    deviceId: string,
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
-    // 复用现有的 login 方法
+    // 复用现有的 login 方法（deviceId 作为独立参数传，login 内部用它调鉴权中心）
     return this.login(
-      { username: dto.username, password: dto.password },
+      { username: dto.username, password: dto.password, deviceId },
+      deviceId,
       dto.fingerprint || clientFingerprint,
       clientIp,
     );
@@ -659,6 +656,7 @@ export class UserService {
   async loginByCode(
     email: string,
     code: string,
+    deviceId: string,
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
@@ -695,12 +693,7 @@ export class UserService {
       }
     }
 
-    // 4. 签发 Token（复用密码登录同一套指纹 + issueToken 逻辑）
-    const deviceId = crypto
-      .createHash('sha256')
-      .update(`${clientFingerprint}-${clientIp}`)
-      .digest('hex');
-
+    // 4. 签发 Token（deviceId 由前端传入，不再由 IP 派生）
     const roles = user.roles.map((r) => r.name);
     const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
     const refreshTtl = this.configService.get<number>(
