@@ -11,8 +11,8 @@
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { PostService } from './post.service';
 import { PostEntity } from './post.entity';
 import { CreatePostDto, UpdatePostDto, BatchIdsDto } from './post.dto';
@@ -27,8 +27,6 @@ import { InteractionService } from '../interaction/interaction.service';
 export class PostController {
   constructor(
     private readonly postService: PostService,
-    @InjectRepository(PostEntity)
-    private readonly postRepo: Repository<PostEntity>,
     private readonly interactionService: InteractionService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}

@@ -5,35 +5,36 @@ import * as crypto from 'crypto';
 /**
  * 请求追溯中间件（业界标准 X-Request-Id 方案）。
  *
- * 职责：
- * 1. 读取请求头 X-Request-Id；前端传了就用（便于跨端追溯），没传则生成（crypto.randomUUID）。
- * 2. 把 reqId 挂到 req.reqId / req.id，供后续所有中间件/Guard/Service/Filter 访问。
- * 3. 写入响应头 X-Request-Id 返回给前端，前端报错时可直接展示这个 ID 给用户上报。
+ * 关键：ID 生成由 pino-http 的 genReqId 统一负责（它在请求最早期执行）。
+ * 本中间件只做两件事：
+ * 1. 把 pino 生成的 req.id 同步到 req.reqId（供 Guard/Service/Filter 用语义化字段读取）
+ * 2. 写入响应头 X-Request-Id 返回给前端
  *
- * 与 pino-http 协同：pinoHttp 配置 genReqId 读同一个 header + req.reqId，
- * 这样每条日志的 reqId 字段与本中间件一致，日志和响应体能用同一个 ID 串联。
- *
- * 追溯闭环：
- *   前端生成 reqId → 带 X-Request-Id 请求 → 后端日志带 reqId → 响应头返回 reqId
- *   → 出错时响应体带 requestId → 用户上报 → 后端用 reqId grep 日志，定位完整行为链。
+ * 不在本中间件里生成 ID——避免与 pino genReqId 双重生成导致日志 reqId 与响应体
+ * requestId 不一致（那样用户上报的 ID 在日志里查不到）。
+ * 兜底：万一 pino 未先执行（req.id 为空），才用 crypto.randomUUID 生成，保证必有值。
  */
 @Injectable()
 export class RequestIdMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction): void {
-    // 优先用前端传入的（跨端追溯），否则后端生成
-    const incoming = req.headers['x-request-id'] as string | undefined;
-    const reqId =
-      incoming && incoming.length <= 128
-        ? incoming
-        : crypto.randomUUID();
+    // pino-http 已通过 genReqId 生成并挂到 req.id；这里同步到语义化字段
+    // 兜底：极端情况下 pino 未先执行，现场生成（与 genReqId 读同样的 header 逻辑）
+    const reqId = (req as any).id || this.resolveId(req);
 
-    // 挂到 req 上，供 Guard/Service/Filter 读取
     (req as any).reqId = reqId;
-    (req as any).id = reqId; // pino-http 默认读 req.id
 
-    // 响应头返回（即使前端没传，也把后端生成的返回，方便前端记录）
+    // 响应头返回（让前端能拿到，错误时展示追踪号）
     res.setHeader('X-Request-Id', reqId);
 
     next();
+  }
+
+  /** 与 app.module 的 genReqId 保持一致的头解析逻辑，确保兜底生成的 ID 也对齐 */
+  private resolveId(req: Request): string {
+    const incoming = req.headers['x-request-id'];
+    if (typeof incoming === 'string' && incoming.length > 0 && incoming.length <= 128) {
+      return incoming;
+    }
+    return crypto.randomUUID();
   }
 }

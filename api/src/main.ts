@@ -44,6 +44,9 @@ async function bootstrap() {
       .map((origin) => origin.trim())
       .filter(Boolean),
     credentials: true,
+    // 暴露 X-Request-Id 给前端 JS：跨域下未列入 exposedHeaders 的自定义响应头
+    // 浏览器不暴露，前端 extractRequestId 读不到，追溯闭环失效
+    exposedHeaders: ['X-Request-Id'],
   });
 
   await app.listen(port);

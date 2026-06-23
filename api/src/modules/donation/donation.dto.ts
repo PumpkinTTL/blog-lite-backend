@@ -8,7 +8,6 @@ import {
   MaxLength,
   IsArray,
   IsInt,
-  IsDateString,
   IsBoolean,
   IsEmail,
 } from 'class-validator';

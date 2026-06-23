@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DonationEntity, DonationStatus } from './donation.entity';
-import { DonationNotificationEntity, DonationNotificationType } from './donation-notification.entity';
+import { DonationNotificationEntity } from './donation-notification.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { DONATION_STATUS } from '../../common/constants/status';
 import { CodeService } from '../code/code.service';

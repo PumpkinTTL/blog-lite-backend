@@ -3,7 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import type { AxiosError } from 'axios';
 import type { Readable } from 'stream';
-import type { AiGenerateField, AiChatMessage, AiToolCall } from './ai.dto';
+import type { AiGenerateField, AiChatMessage } from './ai.dto';
 import { POST_AGENT_SYSTEM_PROMPT, POST_AGENT_TOOLS, CONVERSATION_COMPACT_SYSTEM_PROMPT } from './ai.prompts';
 import { AiProviderService } from '../ai-provider/ai-provider.service';
 

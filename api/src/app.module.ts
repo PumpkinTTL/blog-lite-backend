@@ -74,16 +74,16 @@ import { AiConversationModule } from './modules/ai-conversation/ai-conversation.
             level:
               configService.get('LOG_LEVEL') ??
               (isProduction ? 'info' : 'debug'),
-            // 与 RequestIdMiddleware 协同：读 X-Request-Id 头，没传则生成。
-            // 这样每条请求日志的 reqId 字段与响应头/响应体的 requestId 一致，
-            // 出问题时可用同一个 ID 串联前端报错 ↔ 后端日志。
+            // 【ID 唯一来源】genReqId 是 reqId 的唯一生成点（pino-http 在请求最早期执行）。
+            // RequestIdMiddleware 不再生成，只把 req.id 同步到 req.reqId + 写响应头，
+            // 保证日志 reqId、响应头 X-Request-Id、响应体 requestId 三者一致，
+            // 用户上报任一个都能 grep 到对应日志。
             genReqId: (req: any) => {
               const incoming = req.headers['x-request-id'];
-              if (incoming && typeof incoming === 'string' && incoming.length <= 128) {
+              if (typeof incoming === 'string' && incoming.length > 0 && incoming.length <= 128) {
                 return incoming;
               }
-              // 兜底：中间件未先执行时也能生成（正常路径下中间件已挂 req.id）
-              return req.id || crypto.randomUUID();
+              return crypto.randomUUID();
             },
             transport: isProduction
               ? undefined

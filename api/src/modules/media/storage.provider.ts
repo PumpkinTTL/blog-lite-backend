@@ -194,11 +194,11 @@ export class StorageProvider {
 
   /**
    * 探测对象是否存在（HEAD）—— 用于 confirm 阶段校验文件真已上传
-   * @returns 存在则返回 { exists: true, size }；不存在返回 { exists: false }
+   * @returns 存在则返回 { exists: true, size, contentType }；不存在返回 { exists: false }
    */
   async headObject(
     key: string,
-  ): Promise<{ exists: boolean; size?: number }> {
+  ): Promise<{ exists: boolean; size?: number; contentType?: string }> {
     if (this.config.provider === 'local') {
       throw new Error('[StorageProvider] headObject 仅支持 S3 兼容云存储');
     }
@@ -211,6 +211,8 @@ export class StorageProvider {
       return {
         exists: true,
         size: typeof res.ContentLength === 'number' ? res.ContentLength : undefined,
+        // R2/S3 的 ContentType 在 PUT 时由客户端设置，HEAD 可回读用于二次校验
+        contentType: res.ContentType,
       };
     } catch (err) {
       const code = (err as { name?: string }).name;

@@ -693,8 +693,7 @@ export class UserService {
       }
     }
 
-    // 4. 签发 Token（deviceId 由前端传入，不再由 IP 派生）
-    const roles = user.roles.map((r) => r.name);
+    // 4. 签发 Token（deviceId 由前端传入，不再由 IP 派生；roles 由 issueLoginToken 内部从 user 取）
     const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
     const refreshTtl = this.configService.get<number>(
       'REFRESH_TOKEN_TTL',
