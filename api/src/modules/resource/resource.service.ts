@@ -90,24 +90,20 @@ export class ResourceService {
       list.forEach((r) => (r.panLinks = null));
     }
 
-    // admin 列表注入可见性配置（仅对 private 资源，避免 N+1）
+    // admin 列表注入可见性配置（仅对 private 资源，用批量查询避免 N+1）
     if (withAdminVisibility && list.length > 0) {
       const privateIds = list
         .filter((r) => r.status === RESOURCE_STATUS.PRIVATE)
         .map((r) => r.id);
       if (privateIds.length > 0) {
-        // 注入到任意一个 userId 即可，这里只用于管理后台展示配置
-        const visibilities = await Promise.all(
-          privateIds.map((id) =>
-            this.visibilityService
-              .getVisibility(RESOURCE_ENTITY_TYPE, id)
-              .then((v) => ({ id, v })),
-          ),
+        // 用 getVisibilityBatch（一次 WHERE IN 查询）替代 N 次单查
+        const visMap = await this.visibilityService.getVisibilityBatch(
+          RESOURCE_ENTITY_TYPE,
+          privateIds,
         );
-        const map = new Map(visibilities.map((x) => [x.id, x.v]));
         list.forEach((r) => {
           if (r.status === RESOURCE_STATUS.PRIVATE) {
-            const v = map.get(r.id);
+            const v = visMap.get(r.id);
             (r as any).allowedUserIds = v?.allowedUserIds ?? [];
             (r as any).allowedRoleIds = v?.allowedRoleIds ?? [];
           }
@@ -163,14 +159,10 @@ export class ResourceService {
       };
     }
 
-    // private：必须被授权
+    // private：必须被授权，未授权直接当作不存在（不泄露标题/封面等元信息，防 ID 遍历探测）
     if (resource.status === RESOURCE_STATUS.PRIVATE) {
       if (userId === null) {
-        return {
-          resource: this.stripSensitive(resource),
-          accessStatus: 'locked',
-          lockReason: 'login_required',
-        };
+        return null;
       }
       const allowed = await this.visibilityService.canAccess(
         RESOURCE_ENTITY_TYPE,
@@ -179,11 +171,7 @@ export class ResourceService {
         userRoleIds,
       );
       if (!allowed) {
-        return {
-          resource: this.stripSensitive(resource),
-          accessStatus: 'locked',
-          lockReason: 'need_redeem',
-        };
+        return null;
       }
     }
 
@@ -245,21 +233,15 @@ export class ResourceService {
 
   /**
    * 单条追加用户解锁（兑换码 / 购买成功后调用）
-   * 不同于 setVisibility 的全量覆盖语义，这里只追加一个用户
+   * 用 INSERT IGNORE 幂等追加（依赖组合唯一约束），避免旧的 read-modify-write
+   * 并发覆盖问题（两个兑换同时 grantAccess 可能丢一个用户的授权）。
    */
   async grantAccess(id: number, userId: number): Promise<void> {
-    const current = await this.visibilityService.getVisibility(
+    await this.visibilityService.grantAccess(
       RESOURCE_ENTITY_TYPE,
       id,
-    );
-    if (!current.allowedUserIds.includes(userId)) {
-      current.allowedUserIds.push(userId);
-    }
-    await this.visibilityService.setVisibility(
-      RESOURCE_ENTITY_TYPE,
-      id,
-      current.allowedUserIds,
-      current.allowedRoleIds,
+      'user',
+      userId,
     );
   }
 

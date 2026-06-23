@@ -1,6 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../redis/redis.module';
 import { PostEntity } from '../post/post.entity';
 import { CategoryEntity } from '../category/category.entity';
 import { TagEntity } from '../tag/tag.entity';
@@ -38,9 +40,34 @@ export class DashboardService {
     private readonly interactionRepo: Repository<InteractionEntity>,
     @InjectRepository(DonationEntity)
     private readonly donationRepo: Repository<DonationEntity>,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
+  /** 仪表盘聚合查询缓存 key + TTL（60s，admin 频繁刷新不压 DB） */
+  private readonly STATS_CACHE_KEY = 'dashboard:stats';
+  private readonly STATS_CACHE_TTL = 60;
+
   async getStats() {
+    // 60s 缓存：dashboard 是 admin 后台聚合视图，数据延迟可接受；
+    // Redis 故障时 catch 兜底直接查 DB（不阻塞）
+    const cached = await this.redis.get(this.STATS_CACHE_KEY).catch(() => null);
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch {
+        // 缓存损坏，继续走 DB
+      }
+    }
+    const result = await this.computeStats();
+    await this.redis
+      .set(this.STATS_CACHE_KEY, JSON.stringify(result), 'EX', this.STATS_CACHE_TTL)
+      .catch(() => {
+        // Redis 故障不阻塞
+      });
+    return result;
+  }
+
+  private async computeStats() {
     const [
       postCount,
       publishedCount,

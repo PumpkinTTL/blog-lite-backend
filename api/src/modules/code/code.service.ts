@@ -10,6 +10,7 @@ import { Repository, DataSource, In } from 'typeorm';
 import { CodeEntity, CodeType, CodeStatus } from './code.entity';
 import { CodeUsageLogEntity } from './code-usage-log.entity';
 import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto, BatchCreateCodeDto } from './code.dto';
+import { escapeLike } from '../../common/utils/apply-filters';
 
 /**
  * 码状态 → 用户友好的中文提示。
@@ -228,7 +229,7 @@ export class CodeService {
     if (filters?.status)
       qb.andWhere('c.status = :status', { status: filters.status });
     if (filters?.keyword)
-      qb.andWhere('c.code LIKE :keyword', { keyword: `%${filters.keyword}%` });
+      qb.andWhere('c.code LIKE :keyword ESCAPE \'\\\\\'', { keyword: `%${escapeLike(filters.keyword)}%` });
     if (filters?.onlyAvailable) {
       // 码池可选：未分配给任何捐赠单（assignedDonationId IS NULL）
       qb.andWhere('c.assignedDonationId IS NULL');
@@ -366,7 +367,7 @@ export class CodeService {
       .take(pageSize);
 
     if (keyword) {
-      qb.andWhere('c.code LIKE :keyword', { keyword: `%${keyword}%` });
+      qb.andWhere('c.code LIKE :keyword ESCAPE \'\\\\\'', { keyword: `%${escapeLike(keyword)}%` });
     }
 
     const [list, total] = await qb.getManyAndCount();

@@ -663,7 +663,7 @@ export class UserService {
     clientIp: string,
   ): Promise<TokenPayload> {
     // 1. 校验验证码（verifyCode 失败会抛 BadRequestException）
-    this.emailCodeService.verifyCode(email, code);
+    await this.emailCodeService.verifyCode(email, code);
 
     // 2. 查用户（带角色）
     const user = await this.userRepo

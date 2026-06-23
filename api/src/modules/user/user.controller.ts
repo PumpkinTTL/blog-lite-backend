@@ -237,7 +237,7 @@ export class UserController {
   async changeEmail(@Req() req: Request, @Body() dto: ChangeEmailDto) {
     const userId = parseInt((req as any).user?.sub, 10);
     // 校验验证码（verifyCode 失败抛 BadRequestException）
-    this.emailCodeService.verifyCode(dto.newEmail, dto.code);
+    await this.emailCodeService.verifyCode(dto.newEmail, dto.code);
     const data = await this.userService.changeEmail(userId, dto.newEmail);
     return { success: true, data, message: '邮箱换绑成功' };
   }
@@ -380,7 +380,7 @@ export class UserController {
   @Post('reset-password-by-code')
   async resetPasswordByCode(@Body() dto: ResetPasswordByCodeDto) {
     // 验证验证码
-    this.emailCodeService.verifyCode(dto.email, dto.code);
+    await this.emailCodeService.verifyCode(dto.email, dto.code);
 
     // 查找用户并重置密码
     const user = await this.userService.findByEmail(dto.email);

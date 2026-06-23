@@ -236,15 +236,16 @@ export class PostController {
       id,
       type,
     );
-    // 同步冗余计数：toggle 后重新 count 并更新。
-    // 用事务包裹 count + update，保证两者原子（避免 toggle 成功但 count 更新失败导致计数失真）。
-    await this.dataSource.transaction(async (manager) => {
-      const count = await this.interactionService.countOne('post', id, type);
-      await manager.update(PostEntity, id, {
-        ...(type === 'like' ? { likeCount: count } : {}),
-        ...(type === 'favorite' ? { favoriteCount: count } : {}),
-      });
-    });
+    // 原子计数：toggle 返回 active（新增=+1，取消=-1），直接原子增减，
+    // 无需 count 重算（避免并发 toggle 计数反复横跳 + 省 1 次查询）。
+    const delta = result.active ? 1 : -1;
+    const field = type === 'like' ? 'likeCount' : 'favoriteCount';
+    await this.dataSource
+      .createQueryBuilder()
+      .update(PostEntity)
+      .set({ [field]: () => `${field} + ${delta}` })
+      .where('id = :id', { id })
+      .execute();
     return {
       success: true,
       data: result,

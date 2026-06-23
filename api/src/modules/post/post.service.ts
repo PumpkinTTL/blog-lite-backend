@@ -13,6 +13,7 @@ import { TagEntity } from '../tag/tag.entity';
 import { InteractionEntity } from '../interaction/interaction.entity';
 import { EntityVisibilityService } from '../entity-visibility/entity-visibility.service';
 import { POST_STATUS } from '../../common/constants/status';
+import { escapeLike } from '../../common/utils/apply-filters';
 import { MediaService } from '../media/media.service';
 
 const POST_ENTITY_TYPE = 'post';
@@ -105,7 +106,7 @@ export class PostService implements OnModuleInit {
       qb.andWhere('p.id = :id', { id: filters.id });
     }
     if (filters?.keyword) {
-      qb.andWhere('p.title LIKE :keyword', { keyword: `%${filters.keyword}%` });
+      qb.andWhere('p.title LIKE :keyword ESCAPE \'\\\\\'', { keyword: `%${escapeLike(filters.keyword)}%` });
     }
     if (filters?.categoryId !== undefined) {
       qb.andWhere('p.categoryId = :categoryId', {

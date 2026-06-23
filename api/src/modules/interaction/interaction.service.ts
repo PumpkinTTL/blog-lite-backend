@@ -5,6 +5,7 @@ import { InteractionEntity } from './interaction.entity';
 import { UserEntity } from '../user/user.entity';
 import { PostEntity } from '../post/post.entity';
 import type { InteractionEntityType, InteractionType } from './interaction.dto';
+import { escapeLike } from '../../common/utils/apply-filters';
 
 /**
  * 互动服务：点赞 / 收藏（多态）
@@ -26,7 +27,9 @@ export class InteractionService {
   ) {}
 
   /**
-   * 切换互动：已存在 → 删除（取消）；不存在 → 创建
+   * 切换互动：已存在 → 删除（取消）；不存在 → 创建。
+   * 原子化实现：先 DELETE，affected=1 表示已取消；否则 INSERT（catch unique 冲突视为已点赞）。
+   * 解决旧的 findOne→save 并发双击点赞触发 unique 约束抛错的问题。
    * @returns { active: boolean } active=true 表示新增，false 表示已取消
    */
   async toggle(
@@ -39,19 +42,28 @@ export class InteractionService {
       throw new BadRequestException('无效的互动参数');
     }
 
-    const existing = await this.repo.findOne({
-      where: { userId, entityType, entityId, type },
+    // 先尝试 DELETE（取消）。affected=1 表示原本存在 → 已取消。
+    const del = await this.repo.delete({
+      userId,
+      entityType,
+      entityId,
+      type,
     });
-
-    if (existing) {
-      await this.repo.remove(existing);
+    if (del.affected && del.affected > 0) {
       return { active: false };
     }
 
-    await this.repo.save(
-      this.repo.create({ userId, entityType, entityId, type }),
-    );
-    return { active: true };
+    // 不存在 → INSERT。并发下唯一一个赢，另一个走 catch。
+    try {
+      await this.repo.insert({ userId, entityType, entityId, type });
+      return { active: true };
+    } catch (e: any) {
+      // ER_DUP_ENTRY：别人抢先 INSERT 了，本次视为已点赞（幂等）
+      if (e?.code === 'ER_DUP_ENTRY') {
+        return { active: true };
+      }
+      throw e;
+    }
   }
 
   /**
@@ -189,8 +201,8 @@ export class InteractionService {
     if (userId) qb.andWhere('i.userId = :uid', { uid: userId });
     if (entityId) qb.andWhere('i.entityId = :eid', { eid: entityId });
     if (keyword) {
-      qb.andWhere('(u.username LIKE :kw OR u.nickname LIKE :kw)', {
-        kw: `%${keyword}%`,
+      qb.andWhere('(u.username LIKE :kw ESCAPE \'\\\\\' OR u.nickname LIKE :kw ESCAPE \'\\\\\')', {
+        kw: `%${escapeLike(keyword)}%`,
       });
     }
 
@@ -205,8 +217,8 @@ export class InteractionService {
     if (userId) countQb.andWhere('i.userId = :uid', { uid: userId });
     if (entityId) countQb.andWhere('i.entityId = :eid', { eid: entityId });
     if (keyword) {
-      countQb.andWhere('(u.username LIKE :kw OR u.nickname LIKE :kw)', {
-        kw: `%${keyword}%`,
+      countQb.andWhere('(u.username LIKE :kw ESCAPE \'\\\\\' OR u.nickname LIKE :kw ESCAPE \'\\\\\')', {
+        kw: `%${escapeLike(keyword)}%`,
       });
     }
     const finalTotal = await countQb.getCount();

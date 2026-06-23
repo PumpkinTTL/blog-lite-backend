@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import {
   EntityVisibilityEntity,
   VisibilitySubjectType,
@@ -13,11 +13,13 @@ export class EntityVisibilityService {
   constructor(
     @InjectRepository(EntityVisibilityEntity)
     private readonly repo: Repository<EntityVisibilityEntity>,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
    * 设置某资源的可见性（全量覆盖）
-   * 传入 allowedUserIds + allowedRoleIds，会清掉该资源原有所有授权并重新写入
+   * 传入 allowedUserIds + allowedRoleIds，会清掉该资源原有所有授权并重新写入。
+   * 整个 delete + insert 包在事务里，避免中途崩溃导致该资源所有授权丢失。
    */
   async setVisibility(
     entityType: EntityType,
@@ -25,30 +27,53 @@ export class EntityVisibilityService {
     allowedUserIds: number[] = [],
     allowedRoleIds: number[] = [],
   ): Promise<void> {
-    // 1. 删除该资源原有的所有授权
-    await this.repo.delete({ entityType, entityId });
+    await this.dataSource.transaction(async (manager) => {
+      // 1. 删除该资源原有的所有授权
+      await manager.delete(EntityVisibilityEntity, { entityType, entityId });
 
-    // 2. 批量写入新授权
-    const rows: Partial<EntityVisibilityEntity>[] = [];
-    for (const userId of dedupe(allowedUserIds)) {
-      rows.push({
-        entityType,
-        entityId,
-        subjectType: 'user',
-        subjectId: userId,
-      });
-    }
-    for (const roleId of dedupe(allowedRoleIds)) {
-      rows.push({
-        entityType,
-        entityId,
-        subjectType: 'role',
-        subjectId: roleId,
-      });
-    }
-    if (rows.length) {
-      await this.repo.save(rows);
-    }
+      // 2. 批量写入新授权
+      const rows: Partial<EntityVisibilityEntity>[] = [];
+      for (const userId of dedupe(allowedUserIds)) {
+        rows.push({
+          entityType,
+          entityId,
+          subjectType: 'user',
+          subjectId: userId,
+        });
+      }
+      for (const roleId of dedupe(allowedRoleIds)) {
+        rows.push({
+          entityType,
+          entityId,
+          subjectType: 'role',
+          subjectId: roleId,
+        });
+      }
+      if (rows.length) {
+        await manager.save(EntityVisibilityEntity, rows);
+      }
+    });
+  }
+
+  /**
+   * 给单个用户/角色追加访问授权（不改原有授权）。
+   * 用 INSERT IGNORE 幂等：依赖 uq_entity_visibility 组合唯一约束，
+   * 并发场景下两个兑换同时 grantAccess 同一用户不会重复插入也不会丢授权。
+   * 解决旧 grantAccess（read-modify-write）并发覆盖丢授权的问题。
+   */
+  async grantAccess(
+    entityType: EntityType,
+    entityId: number,
+    subjectType: VisibilitySubjectType,
+    subjectId: number,
+  ): Promise<void> {
+    await this.dataSource
+      .createQueryBuilder()
+      .insert()
+      .into(EntityVisibilityEntity)
+      .values({ entityType, entityId, subjectType, subjectId })
+      .orIgnore()
+      .execute();
   }
 
   /**

@@ -13,6 +13,7 @@ import {
   UpdateCommentDto,
 } from './comment.dto';
 import { PostEntity } from '../post/post.entity';
+import { escapeLike } from '../../common/utils/apply-filters';
 
 /**
  * 评论服务（2 层嵌套 + 审核）
@@ -187,7 +188,7 @@ export class CommentService {
     if (entityId) qb.andWhere('c.entityId = :eid', { eid: entityId });
     if (status) qb.andWhere('c.status = :s', { s: status });
     if (keyword) {
-      qb.andWhere('c.content LIKE :kw', { kw: `%${keyword}%` });
+      qb.andWhere('c.content LIKE :kw ESCAPE \'\\\\\'', { kw: `%${escapeLike(keyword)}%` });
     }
 
     const [list, total] = await qb.getManyAndCount();

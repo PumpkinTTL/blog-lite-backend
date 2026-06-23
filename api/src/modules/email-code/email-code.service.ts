@@ -1,141 +1,110 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException } from '@nestjs/common';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../redis/redis.module';
 import { MailerService } from '../mailer/mailer.service';
 
-interface CodeRecord {
-  code: string;
-  expiresAt: number;
-  attempts: number;
-}
-
+/**
+ * 邮箱验证码服务（Redis 存储）。
+ *
+ * 之前用进程内 Map 存储，存在三个问题：
+ * 1. 多实例部署不共享（A 实例发码 B 实例验证必失败）
+ * 2. 进程重启丢失所有待验证码
+ * 3. 防刷维度（尝试次数、发送冷却）只限单实例，多实例可绕过
+ *
+ * 改用 Redis 后：验证码用 hash 存（code + attempts），冷却用独立 key + PX NX 原子保证
+ * 60s 一次。所有操作原子，多实例安全。
+ */
 @Injectable()
 export class EmailCodeService {
-  private readonly logger = new Logger(EmailCodeService.name);
-
-  /** email -> CodeRecord */
-  private readonly store = new Map<string, CodeRecord>();
-
-  /** 验证码有效期（毫秒） */
-  private readonly CODE_TTL = 10 * 60 * 1000; // 10 分钟
-
+  /** 验证码有效期 10 分钟 */
+  private readonly CODE_TTL = 10 * 60 * 1000;
+  /** 发送冷却 60 秒（同一邮箱） */
+  private readonly SEND_COOLDOWN = 60 * 1000;
   /** 最大尝试次数 */
   private readonly MAX_ATTEMPTS = 5;
 
-  /** 发送冷却（毫秒） */
-  private readonly SEND_COOLDOWN = 60 * 1000; // 60 秒
-  private readonly lastSentAt = new Map<string, number>();
+  private readonly PREFIX = 'emailcode:';
+  private readonly COOLDOWN_PREFIX = 'emailcode:cd:';
 
-  constructor(private readonly mailerService: MailerService) {
-    // 每分钟清理过期验证码
-    setInterval(() => this.cleanup(), 60 * 1000);
-  }
+  constructor(
+    private readonly mailerService: MailerService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+  ) {}
 
   /**
-   * 发送验证码到指定邮箱
+   * 发送验证码。
+   * 用 SETNX + PX 原子保证冷却：60s 内同一邮箱只能发一次。
    */
   async sendCode(email: string): Promise<void> {
-    // 冷却检查
-    const lastSent = this.lastSentAt.get(email) || 0;
-    if (Date.now() - lastSent < this.SEND_COOLDOWN) {
-      const remaining = Math.ceil(
-        (this.SEND_COOLDOWN - (Date.now() - lastSent)) / 1000,
-      );
-      throw new BadRequestException(`操作过于频繁，请 ${remaining} 秒后再试`);
+    // 冷却检查：SET NX PX 原子，ok=null 表示仍在冷却
+    const cooldownKey = this.COOLDOWN_PREFIX + email;
+    const ok = await this.redis.set(
+      cooldownKey,
+      '1',
+      'PX',
+      this.SEND_COOLDOWN,
+      'NX',
+    );
+    if (!ok) {
+      const ttl = await this.redis.pttl(cooldownKey);
+      const wait = Math.ceil((ttl || this.SEND_COOLDOWN) / 1000);
+      throw new BadRequestException(`操作过于频繁，请 ${wait} 秒后再试`);
     }
 
-    // 生成 6 位数字验证码
-    const code = Array.from({ length: 6 }, () =>
-      Math.floor(Math.random() * 10),
-    ).join('');
+    // 生成 6 位验证码
+    const code = String(Math.floor(100000 + Math.random() * 900000));
 
-    // 发送邮件
+    // 发送邮件（失败则清除冷却，允许立即重试）
     const expireMinutes = this.CODE_TTL / 60000;
-    let sent: boolean;
     try {
-      sent = await this.mailerService.sendVerifyCode(
+      const sent = await this.mailerService.sendVerifyCode(
         email,
         code,
         expireMinutes,
       );
+      if (!sent) {
+        await this.redis.del(cooldownKey);
+        throw new BadRequestException('邮件发送失败，请稍后重试');
+      }
     } catch (err) {
-      // 记录完整错误用于排障，对用户只返回通用提示（避免暴露 SMTP host/凭证等内部链路信息）
+      // 清除冷却让用户能重试，记日志（不暴露 SMTP 细节给用户）
+      await this.redis.del(cooldownKey);
+      if (err instanceof BadRequestException) throw err;
       console.error('[EmailCodeService] 邮件发送失败', err);
       throw new BadRequestException('邮件发送失败，请稍后重试');
     }
-    if (!sent) {
-      throw new BadRequestException('邮件发送失败，请稍后重试');
-    }
 
-    // 存储
-    this.store.set(email, {
-      code,
-      expiresAt: Date.now() + this.CODE_TTL,
-      attempts: 0,
-    });
-    this.lastSentAt.set(email, Date.now());
-
-    this.logger.log(`验证码已发送至 ${email}`);
+    // 存验证码：hash 含 code + attempts，整体 TTL 10 分钟
+    const key = this.PREFIX + email;
+    await this.redis.hset(key, 'code', code, 'attempts', '0');
+    await this.redis.pexpire(key, this.CODE_TTL);
   }
 
   /**
-   * 验证验证码
+   * 校验验证码（异步，调用方需 await）。
+   * HINCRBY attempts 原子自增，防并发绕过次数上限。
+   * 校验成功删除 key + 冷却 key；失败达上限也删除 key 强制重新获取。
    */
-  verifyCode(email: string, code: string): boolean {
-    const record = this.store.get(email);
-
-    if (!record) {
-      throw new BadRequestException('请先获取验证码');
-    }
-
-    if (record.expiresAt < Date.now()) {
-      // 验证码过期：连冷却记录一起清，否则用户立刻重发会被冷却拦住
-      this.releaseRecord(email);
-      throw new BadRequestException('验证码已过期，请重新获取');
-    }
-
-    // 先判断是否已超尝试上限（自增前判断，避免多给 1 次机会 + 还剩次数显示负数）
-    if (record.attempts >= this.MAX_ATTEMPTS) {
-      this.releaseRecord(email);
+  async verifyCode(email: string, code: string): Promise<boolean> {
+    const key = this.PREFIX + email;
+    // 原子自增尝试次数
+    const attempts = await this.redis.hincrby(key, 'attempts', 1);
+    if (attempts > this.MAX_ATTEMPTS) {
+      await this.redis.del(key);
       throw new BadRequestException('验证码错误次数过多，请重新获取');
     }
-
-    record.attempts++;
-
-    if (record.code !== code) {
+    const stored = await this.redis.hget(key, 'code');
+    if (stored === null) {
+      throw new BadRequestException('请先获取验证码');
+    }
+    if (stored !== code) {
       throw new BadRequestException(
-        `验证码错误，还剩 ${this.MAX_ATTEMPTS - record.attempts} 次机会`,
+        `验证码错误，还剩 ${this.MAX_ATTEMPTS - attempts} 次机会`,
       );
     }
-
-    // 验证成功，释放验证码记录 + 冷却记录
-    this.releaseRecord(email);
+    // 成功：清除验证码 + 冷却
+    await this.redis.del(key);
+    await this.redis.del(this.COOLDOWN_PREFIX + email);
     return true;
-  }
-
-  /**
-   * 释放某邮箱的验证码记录 + 发送冷却记录。
-   * 集中清理点：成功 / 过期 / 超限 三种终态都走这里，避免 Map 残留导致内存泄漏 + 冷却卡死。
-   */
-  private releaseRecord(email: string) {
-    this.store.delete(email);
-    this.lastSentAt.delete(email);
-  }
-
-  /**
-   * 清理过期验证码 + 冷却记录（每分钟跑，兜底释放内存）
-   */
-  private cleanup() {
-    const now = Date.now();
-    // 验证码过期：连冷却记录一起清（否则 lastSentAt 残留会让重发被冷却拦住）
-    for (const [email, record] of this.store) {
-      if (record.expiresAt < now) {
-        this.releaseRecord(email);
-      }
-    }
-    // 冷却记录兜底清理（releaseRecord 已处理配对清理，这里只兜底孤立残留）
-    for (const [email, ts] of this.lastSentAt) {
-      if (now - ts > this.SEND_COOLDOWN * 2) {
-        this.lastSentAt.delete(email);
-      }
-    }
   }
 }
