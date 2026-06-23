@@ -300,7 +300,16 @@ export class ResourceService {
   async toggleStatus(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('资源不存在');
-    // 在 published / draft 之间切换（发布/下架）
+    // 只在 published ↔ draft 之间切换；login/private 是独立可见性状态，
+    // toggle 会丢失其语义，应通过专门的接口（如 update）修改
+    if (
+      entity.status !== RESOURCE_STATUS.PUBLISHED &&
+      entity.status !== RESOURCE_STATUS.DRAFT
+    ) {
+      throw new BadRequestException(
+        `当前状态为「${entity.status}」，只能在已发布/草稿之间切换`,
+      );
+    }
     entity.status =
       entity.status === RESOURCE_STATUS.PUBLISHED
         ? RESOURCE_STATUS.DRAFT

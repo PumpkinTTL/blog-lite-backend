@@ -57,7 +57,9 @@ export class EmailCodeService {
         expireMinutes,
       );
     } catch (err) {
-      throw new BadRequestException(`邮件发送失败: ${err.message}`);
+      // 记录完整错误用于排障，对用户只返回通用提示（避免暴露 SMTP host/凭证等内部链路信息）
+      console.error('[EmailCodeService] 邮件发送失败', err);
+      throw new BadRequestException('邮件发送失败，请稍后重试');
     }
     if (!sent) {
       throw new BadRequestException('邮件发送失败，请稍后重试');

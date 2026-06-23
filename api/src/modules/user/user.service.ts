@@ -11,10 +11,14 @@ import { RegisterDto, ClientLoginDto } from './register.dto';
 import { USER_STATUS } from '../../common/constants/status';
 import { UpdateProfileDto } from './user.dto';
 import { AuthService } from '../auth/auth.service';
+import type { AuthTokenResponse } from '../auth/auth.service';
 import { CodeService } from '../code/code.service';
 import { CodeEntity } from '../code/code.entity';
 import { CodeUsageLogEntity } from '../code/code-usage-log.entity';
 import { MembershipService } from '../membership/membership.service';
+import { MembershipEntity } from '../membership/membership.entity';
+import { InteractionEntity } from '../interaction/interaction.entity';
+import { PostEntity } from '../post/post.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { MediaService } from '../media/media.service';
@@ -104,11 +108,9 @@ export class UserService {
       604800,
     );
 
-    const tokenData = await this.authService.issueToken(
-      user.id,
+    const tokenData = await this.issueLoginToken(
+      user,
       deviceId,
-      { roles, nickname: user.nickname },
-      undefined,
       accessTtl,
       refreshTtl,
     );
@@ -123,6 +125,36 @@ export class UserService {
       expiresIn: tokenData.expiresIn,
       deviceId,
     };
+  }
+
+  /**
+   * 登录/注册后统一签发 Token（login + loginByCode 共用）。
+   * 包装 authService.issueToken，捕获签发失败转成友好提示，
+   * 避免鉴权中心不可用时把内部 Error 透传成 500。
+   * 返回 AuthTokenResponse（不含 deviceId，由调用方拼成完整 TokenPayload）。
+   */
+  private async issueLoginToken(
+    user: UserEntity,
+    deviceId: string,
+    accessTtl: number,
+    refreshTtl: number,
+  ): Promise<AuthTokenResponse> {
+    const roles = (user.roles || []).map((r) => r.name);
+    try {
+      return await this.authService.issueToken(
+        user.id,
+        deviceId,
+        { roles, nickname: user.nickname },
+        undefined,
+        accessTtl,
+        refreshTtl,
+      );
+    } catch (err) {
+      this.logger.error(
+        `签发 Token 失败 userId=${user.id}: ${err.message}`,
+      );
+      throw new BadRequestException('登录服务暂时不可用，请稍后重试');
+    }
   }
 
   /**
@@ -303,12 +335,51 @@ export class UserService {
       );
     }
 
-    // 清理用户头像文件
-    if (user.avatar) {
-      await this.deleteMediaByUrl(user.avatar);
-    }
+    // 级联清理：comments 和 user_roles 有 FK CASCADE 会随用户删除自动清理，
+    // 但 interactions / memberships / code_usage_logs 是裸列无 FK，需手动清。
+    // interactions 清理后还要回算受影响文章的 likeCount/favoriteCount，否则计数虚高。
+    await this.dataSource.transaction(async (manager) => {
+      // 1. 收集该用户所有 post 互动（点赞/收藏），用于删除后回算文章计数
+      const userInteractions = await manager.find(InteractionEntity, {
+        where: { userId: id, entityType: 'post' },
+      });
+      const affectedPostIds = new Set(
+        userInteractions.map((i) => i.entityId),
+      );
+      const affectedTypes = new Set(userInteractions.map((i) => i.type));
 
-    await this.userRepo.delete(id);
+      // 2. 删 interactions（孤儿数据）
+      await manager.delete(InteractionEntity, { userId: id });
+
+      // 3. 删 memberships（避免已删用户在会员列表残留）
+      await manager.delete(MembershipEntity, { userId: id });
+
+      // 4. 删 code_usage_logs（兑换记录，避免引用已删用户）
+      await manager.delete(CodeUsageLogEntity, { userId: id });
+
+      // 5. 回算受影响文章的 likeCount/favoriteCount（用户删了，计数要扣掉）
+      for (const postId of affectedPostIds) {
+        for (const type of affectedTypes) {
+          const count = await manager.count(InteractionEntity, {
+            where: { entityType: 'post', entityId: postId, type },
+          });
+          const patch =
+            type === 'like' ? { likeCount: count } : { favoriteCount: count };
+          await manager.update(PostEntity, { id: postId }, patch as any);
+        }
+      }
+
+      // 6. 清理用户头像文件（事务外删文件不安全，放事务内先记 URL）
+      // 7. 删用户（comments/user_roles 因 FK CASCADE 自动删）
+      await manager.delete(UserEntity, { id });
+    });
+
+    // 头像文件删除放事务外（OSS 调用不应在 DB 事务里）
+    if (user.avatar) {
+      await this.deleteMediaByUrl(user.avatar).catch((e) =>
+        this.logger.warn(`删除用户 ${id} 头像文件失败: ${e.message}`),
+      );
+    }
   }
 
   async batchRemove(ids: number[], currentUserId: number): Promise<void> {
@@ -637,11 +708,9 @@ export class UserService {
       604800,
     );
 
-    const tokenData = await this.authService.issueToken(
-      user.id,
+    const tokenData = await this.issueLoginToken(
+      user,
       deviceId,
-      { roles, nickname: user.nickname },
-      undefined,
       accessTtl,
       refreshTtl,
     );
@@ -678,9 +747,9 @@ export class UserService {
         );
       }
     }
-    // 更新最后登录时间（仅当解出了有效 userId）
+    // 注意：登出不更新 lastLoginAt（那是"最后登录时间"，登出时改它语义错误，
+    // 会让前端展示的"最后登录"变成"最后登出"）。如需统计最后活跃时间，应另加字段。
     if (userId > 0) {
-      await this.userRepo.update(userId, { lastLoginAt: new Date() });
       this.logger.log(`用户 ${userId} 登出`);
     } else {
       this.logger.log('匿名登出（accessToken 已过期，仅吊销 refreshToken）');

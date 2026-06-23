@@ -7,6 +7,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -155,7 +156,8 @@ export class UpdateVisibilityDto {
 
 /** 资源兑换入口 */
 export class RedeemResourceDto {
-  @IsString()
+  @IsString({ message: '兑换码格式不正确' })
+  @IsNotEmpty({ message: '请输入兑换码' })
   code: string;
 }
 

@@ -61,10 +61,13 @@ export class AnnouncementService {
   async togglePin(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('公告不存在');
-    if (entity.sortOrder >= 1000) {
-      entity.sortOrder = 0;
+    // 置顶语义：sortOrder ASC 排序，置顶的要在最前面。
+    // 用负数表示置顶（-1 排在所有正常 sortOrder>=0 之前），0=正常。
+    // 之前用 9999 置顶反而排到最后，逻辑反了。
+    if (entity.sortOrder < 0) {
+      entity.sortOrder = 0; // 取消置顶，恢复正常排序
     } else {
-      entity.sortOrder = 9999;
+      entity.sortOrder = -1; // 置顶
     }
     return this.repo.save(entity);
   }

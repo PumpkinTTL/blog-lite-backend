@@ -119,12 +119,25 @@ export class AuthService implements OnModuleInit {
    * @param refreshToken 要吊销的 refreshToken
    */
   async revokeToken(refreshToken: string): Promise<void> {
-    await firstValueFrom(
-      this.httpService.post(`${this.authCenterUrl}/auth/revoke`, {
-        refreshToken,
-      }),
-    );
-    this.logger.log('已吊销 refreshToken（登出）');
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post(`${this.authCenterUrl}/auth/revoke`, {
+          refreshToken,
+        }),
+      );
+      // 鉴权中心返回失败时（如 refreshToken 已过期/无效），只记日志不抛错：
+      // 登出场景下，token 失效不应阻塞用户退出
+      if (data?.success === false) {
+        this.logger.warn(
+          `吊销 refreshToken 返回失败：${data.message || '未知原因'}`,
+        );
+        return;
+      }
+      this.logger.log('已吊销 refreshToken（登出）');
+    } catch (err) {
+      // 鉴权中心不可用不阻塞登出（本地态已在调用方清理）
+      this.logger.warn(`吊销 refreshToken 请求失败：${err.message}`);
+    }
   }
 
   /**

@@ -87,6 +87,11 @@ export class UpdateCodeDto {
     value: number;
     threshold?: number;
   };
+
+  /** 已分配的捐赠单 ID（发码用，null=未分配仍在码池） */
+  @IsInt()
+  @IsOptional()
+  assignedDonationId?: number | null;
 }
 
 export class VerifyCodeDto {

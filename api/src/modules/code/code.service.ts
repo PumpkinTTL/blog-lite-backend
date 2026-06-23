@@ -11,6 +11,24 @@ import { CodeEntity, CodeType, CodeStatus } from './code.entity';
 import { CodeUsageLogEntity } from './code-usage-log.entity';
 import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto, BatchCreateCodeDto } from './code.dto';
 
+/**
+ * 码状态 → 用户友好的中文提示。
+ * 用于兑换失败时把英文枚举值（active/used/expired/disabled）转成中文，
+ * 避免直接把 "码状态为 used" 这样的英文拼进中文句子。
+ */
+function codeStatusToMessage(status: CodeStatus): string {
+  switch (status) {
+    case 'used':
+      return '该兑换码已被使用';
+    case 'expired':
+      return '该兑换码已过期';
+    case 'disabled':
+      return '该兑换码已停用';
+    default:
+      return '该兑换码不可使用';
+  }
+}
+
 @Injectable()
 export class CodeService {
   private readonly logger = new Logger(CodeService.name);
@@ -79,26 +97,26 @@ export class CodeService {
     });
 
     if (!codeEntity) {
-      return { valid: false, message: '码不存在' };
+      return { valid: false, message: '兑换码不存在，请检查输入' };
     }
 
     if (dto.type && codeEntity.type !== dto.type) {
-      return { valid: false, message: '码类型不匹配' };
+      return { valid: false, message: '此兑换码类型不正确' };
     }
 
     if (codeEntity.status !== 'active') {
       return {
         valid: false,
-        message: `码状态为 ${codeEntity.status}，不可使用`,
+        message: codeStatusToMessage(codeEntity.status),
       };
     }
 
     if (codeEntity.expiresAt && codeEntity.expiresAt < new Date()) {
-      return { valid: false, message: '码已过期' };
+      return { valid: false, message: '该兑换码已过期' };
     }
 
     if (codeEntity.maxUses > 0 && codeEntity.usedCount >= codeEntity.maxUses) {
-      return { valid: false, message: '码已用完' };
+      return { valid: false, message: '该兑换码使用次数已用完' };
     }
 
     return { valid: true, code: codeEntity };
@@ -119,24 +137,33 @@ export class CodeService {
       });
 
       if (!codeEntity) {
-        throw new NotFoundException('码不存在');
+        throw new NotFoundException('兑换码不存在，请检查输入');
       }
 
       if (codeEntity.status !== 'active') {
-        throw new BadRequestException(
-          `码状态为 ${codeEntity.status}，不可使用`,
-        );
+        throw new BadRequestException(codeStatusToMessage(codeEntity.status));
       }
 
       if (codeEntity.expiresAt && codeEntity.expiresAt < new Date()) {
-        throw new BadRequestException('码已过期');
+        throw new BadRequestException('该兑换码已过期');
       }
 
       if (
         codeEntity.maxUses > 0 &&
         codeEntity.usedCount >= codeEntity.maxUses
       ) {
-        throw new BadRequestException('码已用完');
+        throw new BadRequestException('该兑换码使用次数已用完');
+      }
+
+      // 防刷：同一登录用户不能重复用同一码（避免一个用户用 maxUses=10 的码刷满）
+      // 未登录用户（userId=null）不限制（场景：游客资源码）
+      if (userId !== null) {
+        const alreadyUsed = await manager.findOne(CodeUsageLogEntity, {
+          where: { codeId: codeEntity.id, userId },
+        });
+        if (alreadyUsed) {
+          throw new BadRequestException('您已使用过此兑换码');
+        }
       }
 
       // 插入使用记录
@@ -187,7 +214,13 @@ export class CodeService {
   async findAll(
     page = 1,
     pageSize = 20,
-    filters?: { type?: CodeType; status?: CodeStatus; keyword?: string },
+    filters?: {
+      type?: CodeType;
+      status?: CodeStatus;
+      keyword?: string;
+      /** 仅返回未分配给捐赠单的码（码池可选） */
+      onlyAvailable?: boolean;
+    },
   ) {
     const qb = this.codeRepo.createQueryBuilder('c');
 
@@ -196,6 +229,10 @@ export class CodeService {
       qb.andWhere('c.status = :status', { status: filters.status });
     if (filters?.keyword)
       qb.andWhere('c.code LIKE :keyword', { keyword: `%${filters.keyword}%` });
+    if (filters?.onlyAvailable) {
+      // 码池可选：未分配给任何捐赠单（assignedDonationId IS NULL）
+      qb.andWhere('c.assignedDonationId IS NULL');
+    }
 
     qb.orderBy('c.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
@@ -231,6 +268,9 @@ export class CodeService {
     if (dto.discount !== undefined) {
       this.validateDiscount(code.type, dto.discount);
       code.discount = dto.discount;
+    }
+    if (dto.assignedDonationId !== undefined) {
+      code.assignedDonationId = dto.assignedDonationId;
     }
 
     return this.codeRepo.save(code);

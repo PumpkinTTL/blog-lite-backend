@@ -6,10 +6,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import { PostEntity } from './post.entity';
 import { PostViewEntity } from './post-view.entity';
 import { TagEntity } from '../tag/tag.entity';
+import { InteractionEntity } from '../interaction/interaction.entity';
 import { EntityVisibilityService } from '../entity-visibility/entity-visibility.service';
 import { POST_STATUS } from '../../common/constants/status';
 import { MediaService } from '../media/media.service';
@@ -28,6 +29,7 @@ export class PostService implements OnModuleInit {
     private readonly tagRepo: Repository<TagEntity>,
     private readonly visibilityService: EntityVisibilityService,
     private readonly mediaService: MediaService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -308,9 +310,25 @@ export class PostService implements OnModuleInit {
     if (force) {
       const post = await this.postRepo.findOne({ where: { id } });
       if (!post) throw new NotFoundException('文章不存在');
+
+      // 硬删前清理无 FK 约束的关联数据，避免孤儿：
+      // - interactions（点赞/收藏，裸列无 FK CASCADE）
+      // - entity_visibility（多态授权表，无 FK）
+      // comments / post_views / ai_conversations 有 FK CASCADE 会随 post 删除自动清理
+      await this.dataSource.transaction(async (manager) => {
+        await manager.delete(InteractionEntity, {
+          entityType: 'post',
+          entityId: id,
+        });
+        await this.visibilityService.purgeEntity('post', id);
+        await manager.delete(PostEntity, { id });
+      });
+
+      // 图片文件删除放事务外（OSS 调用不在 DB 事务里）
       const urls = this.extractImageUrls(post.coverImage, post.content);
-      await this.deleteMediaByUrls(urls);
-      await this.postRepo.delete(id);
+      await this.deleteMediaByUrls(urls).catch((e) =>
+        this.logger.warn(`删除文章 ${id} 图片失败: ${e.message}`),
+      );
     } else {
       await this.postRepo.update(id, { deletedAt: new Date() });
     }

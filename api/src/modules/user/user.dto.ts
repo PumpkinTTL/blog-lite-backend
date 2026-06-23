@@ -26,7 +26,7 @@ export class CreateUserDto {
   @MaxLength(50)
   nickname: string;
 
-  @IsEmail()
+  @IsEmail({}, { message: '邮箱格式不正确' })
   @MaxLength(100)
   @IsOptional()
   email?: string;
@@ -58,7 +58,7 @@ export class UpdateUserDto {
   @MaxLength(100)
   password?: string;
 
-  @IsEmail()
+  @IsEmail({}, { message: '邮箱格式不正确' })
   @IsOptional()
   @MaxLength(100)
   email?: string;
@@ -84,7 +84,7 @@ export class UpdateProfileDto {
   @MaxLength(50)
   nickname?: string;
 
-  @IsEmail()
+  @IsEmail({}, { message: '邮箱格式不正确' })
   @IsOptional()
   @MaxLength(100)
   email?: string;
@@ -145,12 +145,12 @@ export class ResetPasswordDto {
 }
 
 export class SendResetCodeDto {
-  @IsEmail()
+  @IsEmail({}, { message: '邮箱格式不正确' })
   email: string;
 }
 
 export class ResetPasswordByCodeDto {
-  @IsEmail()
+  @IsEmail({}, { message: '邮箱格式不正确' })
   email: string;
 
   @IsString()
@@ -167,7 +167,7 @@ export class ResetPasswordByCodeDto {
  * 否则用户一直收不到码却看到"已发送"，体验断裂。
  */
 export class SendLoginCodeDto {
-  @IsEmail()
+  @IsEmail({}, { message: '邮箱格式不正确' })
   email: string;
 }
 
@@ -176,7 +176,7 @@ export class SendLoginCodeDto {
  * newEmail 必须未被其他用户占用（service 层校验）。
  */
 export class SendChangeEmailCodeDto {
-  @IsEmail()
+  @IsEmail({}, { message: '邮箱格式不正确' })
   newEmail: string;
 }
 
@@ -184,7 +184,7 @@ export class SendChangeEmailCodeDto {
  * 邮箱换绑：用新邮箱 + 验证码完成换绑。
  */
 export class ChangeEmailDto {
-  @IsEmail()
+  @IsEmail({}, { message: '邮箱格式不正确' })
   newEmail: string;
 
   @IsString()
@@ -196,14 +196,9 @@ export class ChangeEmailDto {
  * 仅凭邮箱 + 验证码签发 token，无需密码。
  */
 export class LoginByCodeDto {
-  @IsEmail()
+  @IsEmail({}, { message: '邮箱格式不正确' })
   email: string;
 
   @IsString()
   code: string;
-
-  /** 可选邀请码：若邮箱未注册，验证通过后自动注册并登录 */
-  @IsString()
-  @IsOptional()
-  invitationCode?: string;
 }

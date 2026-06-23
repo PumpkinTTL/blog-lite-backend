@@ -116,8 +116,13 @@ function drawDon() {
 }
 function draw() { drawTrend(); drawPie(); drawDon() }
 watch(isDark, () => nextTick(draw))
-onMounted(() => { load(); addEventListener('resize', () => { tcInst?.resize(); pcInst?.resize(); dcInst?.resize() }) })
-onBeforeUnmount(() => { tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose() })
+// resize 监听必须用具名函数，才能在卸载时 removeEventListener，避免反复进出页面监听堆积
+function handleResize() { tcInst?.resize(); pcInst?.resize(); dcInst?.resize() }
+onMounted(() => { load(); window.addEventListener('resize', handleResize) })
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  tcInst?.dispose(); pcInst?.dispose(); dcInst?.dispose()
+})
 </script>
 
 <template>

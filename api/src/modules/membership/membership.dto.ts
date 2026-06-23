@@ -7,6 +7,7 @@ import {
   MaxLength,
   Min,
   IsArray,
+  IsNotEmpty,
 } from 'class-validator';
 
 export class GrantMembershipDto {
@@ -45,7 +46,8 @@ export class GrantMembershipDto {
  * 兑换码兑换会员（用户端调用）
  */
 export class RedeemMembershipDto {
-  @IsString()
+  @IsString({ message: '兑换码格式不正确' })
+  @IsNotEmpty({ message: '请输入兑换码' })
   code: string;
 }
 

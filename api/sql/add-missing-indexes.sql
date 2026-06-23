@@ -184,3 +184,53 @@ SET @sql := IF(@fk_exists = 0,
   'SELECT "外键已存在，跳过重建" AS msg'
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ════════════════════════════════════════════════════════════
+-- codes.assigned_donation_id 列 + 捐赠发码语义修复
+-- 背景：原设计捐赠发码时把 status 置 disabled 来"移出码池"，但兑换只接受
+-- active，导致捐赠答谢码用户拿到后无法兑换（P0 致命 bug）。
+-- 修复：新增 assigned_donation_id 列标记"已分配"，码保持 active；
+-- 历史被错误 disabled 的捐赠码（metadata 含 donationId）恢复成 active。
+-- ════════════════════════════════════════════════════════════
+
+-- 1. 新增 assigned_donation_id 列（若不存在）
+SET @col_exists := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'codes'
+    AND COLUMN_NAME = 'assigned_donation_id'
+);
+SET @sql := IF(@col_exists = 0,
+  'ALTER TABLE codes ADD COLUMN assigned_donation_id INT NULL COMMENT ''已分配给的捐赠单 ID（null=未分配，仍在码池中）''',
+  'SELECT "assigned_donation_id 列已存在，跳过" AS msg'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 2. 从 metadata.donationId 回填 assigned_donation_id（历史数据迁移）
+--    JSON_EXTRACT 取出 metadata 里的 donationId 写入正式列
+UPDATE codes
+SET assigned_donation_id = CAST(JSON_EXTRACT(metadata, '$.donationId') AS UNSIGNED)
+WHERE assigned_donation_id IS NULL
+  AND JSON_EXTRACT(metadata, '$.donationId') IS NOT NULL;
+
+-- 3. 索引（若不存在）：码池查询 WHERE assigned_donation_id IS NULL 热路径
+SET @idx_exists := (
+  SELECT COUNT(*) FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'codes'
+    AND INDEX_NAME = 'idx_code_assigned_donation'
+);
+SET @sql := IF(@idx_exists = 0,
+  'CREATE INDEX idx_code_assigned_donation ON codes(assigned_donation_id)',
+  'SELECT "idx_code_assigned_donation 已存在，跳过" AS msg'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 4. 修复历史被错误 disabled 的捐赠答谢码（恢复成 active 让用户能兑换）
+--    只恢复"因捐赠发码被 disabled 且未使用"的码；admin 主动停用的码不动。
+UPDATE codes
+SET status = 'active'
+WHERE status = 'disabled'
+  AND assigned_donation_id IS NOT NULL
+  AND used_count = 0;
+

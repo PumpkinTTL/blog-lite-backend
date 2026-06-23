@@ -6,7 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { MembershipEntity } from './membership.entity';
 import { PlanLevel } from '../plan/plan.entity';
 import { PlanService } from '../plan/plan.service';
@@ -34,6 +34,7 @@ export class MembershipService implements OnModuleInit {
     @InjectRepository(MembershipEntity)
     private readonly memberRepo: Repository<MembershipEntity>,
     private readonly planService: PlanService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -123,6 +124,37 @@ export class MembershipService implements OnModuleInit {
    * - 不存在 → 新建记录
    * - dto.days 显式覆盖时长（0=终身，>0=按天），不传则用 plan.durationDays
    */
+  /**
+   * 兑换前预检查：判断该用户能否兑换此套餐（不落库）。
+   * 用于在消耗兑换码之前先校验，避免码被消耗后 grant 失败导致码白白浪费。
+   * 检查项：套餐存在且上架 + 不是降级（降级会被 grant 拒绝）。
+   * 注意：这只是预检查，grant 内部仍会在事务里再查一次防并发。
+   */
+  async preCheckGrant(userId: number, planId: number): Promise<void> {
+    const plan = await this.planService.findById(planId);
+    if (!plan.isActive) {
+      throw new BadRequestException(`套餐「${plan.name}」已下架，无法开通`);
+    }
+    const newLevelWeight = LEVEL_WEIGHT[plan.level];
+    const now = new Date();
+    const actives = await this.memberRepo.find({
+      where: { userId, status: 'active' },
+      relations: ['plan'],
+    });
+    const validActives = actives.filter(
+      (m) => !m.expiresAt || m.expiresAt > now,
+    );
+    const higherLevels = validActives.filter(
+      (m) => LEVEL_WEIGHT[m.plan.level] > newLevelWeight,
+    );
+    if (higherLevels.length > 0) {
+      const higher = higherLevels[0];
+      throw new BadRequestException(
+        `您当前是「${higher.plan.name}」，未到期无法兑换更低等级「${plan.name}」，请到期后再兑换`,
+      );
+    }
+  }
+
   async grant(dto: GrantMembershipDto): Promise<MembershipEntity> {
     const plan = await this.planService.findById(dto.planId);
     if (!plan.isActive) {
@@ -130,45 +162,103 @@ export class MembershipService implements OnModuleInit {
     }
 
     const now = new Date();
-    // 时长：优先 dto.days（管理员灵活赠送），其次 plan.durationDays
     const durationDays = dto.days ?? plan.durationDays;
-    const durationMs = durationDays * 24 * 60 * 60 * 1000;
+    const newLevelWeight = LEVEL_WEIGHT[plan.level];
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-    // 查找该用户该套餐的活跃订阅
-    const existing = await this.memberRepo.findOne({
-      where: { userId: dto.userId, planId: dto.planId, status: 'active' },
+    // 整个 grant 包在事务里：升降级判断 + 作废低级 + 续期/开通 必须原子，
+    // 否则并发两个兑换请求会同时查到"无同级 active"，各建一条 → 数据污染。
+    // 用 SELECT ... FOR UPDATE 锁住该用户的所有 active 会员记录，保证串行化。
+    return this.dataSource.transaction(async (manager) => {
+      // 悲观锁：锁住该用户的活跃会员行，并发请求会等这里提交后才继续
+      const actives = await manager
+        .createQueryBuilder(MembershipEntity, 'm')
+        .setLock('pessimistic_write')
+        .leftJoinAndSelect('m.plan', 'plan')
+        .where('m.userId = :userId', { userId: dto.userId })
+        .andWhere('m.status = :status', { status: 'active' })
+        .getMany();
+      // 过滤掉已过期但 sweep 还没跑到的（按 expiresAt 二次校验）
+      const validActives = actives.filter(
+        (m) => !m.expiresAt || m.expiresAt > now,
+      );
+
+      // 升降级策略
+      const sameLevel = validActives.find(
+        (m) => m.plan.level === plan.level,
+      );
+      const lowerLevels = validActives.filter(
+        (m) => LEVEL_WEIGHT[m.plan.level] < newLevelWeight,
+      );
+      const higherLevels = validActives.filter(
+        (m) => LEVEL_WEIGHT[m.plan.level] > newLevelWeight,
+      );
+
+      // 降级：拒绝（当前是更高级会员，未到期不能换更低级）
+      if (higherLevels.length > 0) {
+        const higher = higherLevels[0];
+        throw new BadRequestException(
+          `您当前是「${higher.plan.name}」，未到期无法兑换更低等级「${plan.name}」，请到期后再兑换`,
+        );
+      }
+
+      // 升级：作废所有低级 active 会员（标 cancelled，保留记录供审计）
+      if (lowerLevels.length > 0) {
+        for (const lower of lowerLevels) {
+          lower.status = 'cancelled';
+          const note = (lower.note || '').replace(/\s*\|.*$/, '');
+          lower.note = `${note} | 因升级到「${plan.name}」于 ${now.toISOString()} 作废`.trimStart();
+          await manager.save(lower);
+        }
+        this.logger.log(
+          `升级：userId=${dto.userId} 作废 ${lowerLevels.length} 条低级会员，开通「${plan.name}」`,
+        );
+      }
+
+      // 同等级续期：基于 expiresAt 续，终身不被限时码覆盖
+      if (sameLevel) {
+        // 已是终身（expiresAt=null）+ 新码非终身：保持终身不缩短
+        if (sameLevel.expiresAt === null) {
+          if (durationDays !== 0) {
+            this.logger.log(
+              `userId=${dto.userId} 已是终身会员，忽略 ${durationDays} 天续期码`,
+            );
+          }
+          return sameLevel;
+        }
+        // 限时会员续期：未过期则基于原 expiresAt 续，已过期则从 now 起算
+        const baseTime = sameLevel.expiresAt > now ? sameLevel.expiresAt : now;
+        sameLevel.expiresAt =
+          durationDays === 0
+            ? null
+            : new Date(baseTime.getTime() + durationDays * MS_PER_DAY);
+        sameLevel.status = 'active';
+        if (dto.note) sameLevel.note = dto.note;
+        const saved = await manager.save(sameLevel);
+        this.logger.log(
+          `续期：userId=${dto.userId} plan=${plan.slug} days=${durationDays} → 到期 ${saved.expiresAt?.toISOString() || '终身'}`,
+        );
+        return saved;
+      }
+
+      // 全新开通（升级作废低级后 或 首次开通）
+      const record = manager.create(MembershipEntity, {
+        userId: dto.userId,
+        planId: dto.planId,
+        startedAt: now,
+        expiresAt:
+          durationDays === 0 ? null : new Date(now.getTime() + durationDays * MS_PER_DAY),
+        status: 'active',
+        source: dto.source ?? 'admin',
+        sourceId: dto.sourceId ?? null,
+        note: dto.note ?? null,
+      });
+      const saved = await manager.save(record);
+      this.logger.log(
+        `开通会员：userId=${dto.userId} plan=${plan.slug} days=${durationDays} source=${dto.source ?? 'admin'}`,
+      );
+      return saved;
     });
-
-    if (existing) {
-      // 续期：基于现有 expiresAt（如果还没过期）或 now（已过期或终身已激活）向后延
-      const baseTime =
-        existing.expiresAt && existing.expiresAt > now
-          ? existing.expiresAt
-          : now;
-      existing.expiresAt =
-        durationDays === 0 ? null : new Date(baseTime.getTime() + durationMs);
-      existing.status = 'active';
-      if (dto.note) existing.note = dto.note;
-      return this.memberRepo.save(existing);
-    }
-
-    // 新建
-    const record = this.memberRepo.create({
-      userId: dto.userId,
-      planId: dto.planId,
-      startedAt: now,
-      expiresAt:
-        durationDays === 0 ? null : new Date(now.getTime() + durationMs),
-      status: 'active',
-      source: dto.source ?? 'admin',
-      sourceId: dto.sourceId ?? null,
-      note: dto.note ?? null,
-    });
-    const saved = await this.memberRepo.save(record);
-    this.logger.log(
-      `开通会员：userId=${dto.userId} plan=${plan.slug} days=${durationDays} source=${dto.source ?? 'admin'}`,
-    );
-    return saved;
   }
 
   async update(

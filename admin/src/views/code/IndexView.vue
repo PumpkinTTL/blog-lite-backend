@@ -35,17 +35,17 @@ const typeOptions = [
 
 const statusOptions = [
   { label: '全部', value: null },
-  { label: '有效', value: 'active' },
-  { label: '已用', value: 'used' },
-  { label: '过期', value: 'expired' },
-  { label: '禁用', value: 'disabled' },
+  { label: '可用', value: 'active' },
+  { label: '已使用', value: 'used' },
+  { label: '已过期', value: 'expired' },
+  { label: '已停用', value: 'disabled' },
 ] as unknown as SelectOption[]
 
 type TagType = 'default' | 'info' | 'success' | 'warning' | 'error' | 'primary'
 const typeTagMap: Record<string, TagType> = { invitation: 'info', activation: 'success', discount: 'warning', membership: 'error', resource: 'primary' }
 const typeLabelMap: Record<string, string> = { invitation: '邀请码', activation: '激活码', discount: '优惠码', membership: '会员码', resource: '资源访问码' }
 const statusTagMap: Record<string, TagType> = { active: 'success', used: 'warning', expired: 'default', disabled: 'error' }
-const statusLabelMap: Record<string, string> = { active: '有效', used: '已用', expired: '过期', disabled: '禁用' }
+const statusLabelMap: Record<string, string> = { active: '可用', used: '已使用', expired: '已过期', disabled: '已停用' }
 
 function renderDiscount(discount: CodeDiscount | null) {
   if (!discount) return '-'
@@ -355,10 +355,10 @@ const rules: FormRules = {
 }
 
 const editStatusOptions = [
-  { label: '有效', value: 'active' },
-  { label: '已用', value: 'used' },
-  { label: '过期', value: 'expired' },
-  { label: '禁用', value: 'disabled' },
+  { label: '可用', value: 'active' },
+  { label: '已使用', value: 'used' },
+  { label: '已过期', value: 'expired' },
+  { label: '已停用', value: 'disabled' },
 ]
 
 const createTypeOptions = [

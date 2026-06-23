@@ -159,6 +159,18 @@ export class MembershipController {
       };
     }
 
+    // 2.5 预检查能否开通（升降级校验）——必须在 useCode 之前，否则降级时
+    // 码已被消耗但 grant 失败，导致码白白浪费（用户被扣码却没开通会员）
+    try {
+      await this.memberService.preCheckGrant(userId, planId);
+    } catch (e: any) {
+      return {
+        success: false,
+        message: e.message || '当前会员状态不允许兑换此套餐',
+        data: null,
+      };
+    }
+
     // 3. 使用码（事务扣减 usedCount，插日志）
     try {
       await this.codeService.useCode(dto.code, userId, ip, {

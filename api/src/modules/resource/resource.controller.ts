@@ -9,6 +9,7 @@ import {
   Query,
   ParseIntPipe,
   Req,
+  Logger,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { ResourceService } from './resource.service';
@@ -28,6 +29,7 @@ import { MembershipService } from '../membership/membership.service';
 @Controller('resource')
 @Roles('admin')
 export class ResourceController {
+  private readonly logger = new Logger(ResourceController.name);
   constructor(
     private readonly resourceService: ResourceService,
     private readonly membershipService: MembershipService,
@@ -97,9 +99,11 @@ export class ResourceController {
       return { success: false, message: '资源不存在', data: null };
     }
 
-    // 记录浏览（仅 published 资源）
+    // 记录浏览（仅 published 资源）— fire-and-forget，失败记日志不阻塞主流程
     if (result.resource.status === RESOURCE_STATUS.PUBLISHED) {
-      this.resourceService.incrementView(id).catch(() => void 0);
+      this.resourceService.incrementView(id).catch((e) =>
+        this.logger.warn(`记录资源 ${id} 浏览失败: ${e.message}`),
+      );
     }
 
     const { resource, accessStatus, lockReason } = result;

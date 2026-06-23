@@ -20,10 +20,12 @@ export type CodeStatus = 'active' | 'used' | 'expired' | 'disabled';
  * - code 列已是 unique（隐式索引），覆盖 findOne({ code }) 热路径
  * - (type, status)：管理端过滤 + 兑换校验常用组合
  * - status：单独过滤（兑换时校验 active）
+ * - assignedDonationId：码池查询 WHERE assignedDonationId IS NULL（发码热路径）
  */
 @Entity('codes')
 @Index('idx_code_type_status', ['type', 'status'])
 @Index('idx_code_status', ['status'])
+@Index('idx_code_assigned_donation', ['assignedDonationId'])
 export class CodeEntity {
   @PrimaryGeneratedColumn({ comment: 'ID' })
   id: number;
@@ -51,6 +53,22 @@ export class CodeEntity {
     comment: '状态',
   })
   status: CodeStatus;
+
+  /**
+   * 已分配给的捐赠单 ID。
+   * - null：未分配，码仍在码池中可选（发码热路径 WHERE assignedDonationId IS NULL）
+   * - 有值：已发给某个捐赠者，不再进入码池，但仍保持 active 供持有者兑换
+   *
+   * 背景：原设计发码时把 status 置 disabled 来"移出码池"，但兑换只接受 active，
+   * 导致捐赠答谢码用户拿到后无法兑换。用这列把"池内可见性"和"可兑换性"解耦。
+   */
+  @Column({
+    name: 'assigned_donation_id',
+    type: 'int',
+    nullable: true,
+    comment: '已分配给的捐赠单 ID（null=未分配，仍在码池中）',
+  })
+  assignedDonationId: number | null;
 
   @Column({ default: 1, comment: '最大使用次数（0=无限制）' })
   maxUses: number;

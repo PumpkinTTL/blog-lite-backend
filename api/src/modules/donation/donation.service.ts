@@ -85,6 +85,11 @@ export class DonationService {
   async toggleStatus(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('捐赠记录不存在');
+    // refunded 是终态（已退款），不能再 toggle 回 confirmed/pending，否则丢失退款语义
+    if (entity.status === DONATION_STATUS.REFUNDED) {
+      throw new BadRequestException('已退款的捐赠记录不能切换状态');
+    }
+    // 只在 pending ↔ confirmed 之间切换
     entity.status =
       entity.status === DONATION_STATUS.CONFIRMED
         ? DONATION_STATUS.PENDING
@@ -150,6 +155,10 @@ export class DonationService {
       if (code.status !== 'active') {
         throw new BadRequestException(`该激活码状态为 ${code.status}，不可发放`);
       }
+      // 已分配给其他捐赠单的码不能再发（防止一个码发给多人）
+      if (code.assignedDonationId && code.assignedDonationId !== donationId) {
+        throw new BadRequestException('该激活码已分配给其他捐赠单');
+      }
 
       // 按邮箱反查系统用户锁归属
       if (effectiveEmail) {
@@ -157,15 +166,18 @@ export class DonationService {
         if (sysUser) claimedUserId = sysUser.id;
       }
 
-      // 写 metadata（donationId 追溯 + 锁归属）
+      // 写 metadata（donationId 追溯 + 锁归属）+ 锁定捐赠单归属
+      // 关键：码保持 active（用户才能兑换），用 assignedDonationId 标记"已分配"
+      // 移出码池（码池查询 WHERE assignedDonationId IS NULL 过滤掉已分配的）
       const metadata: Record<string, unknown> = {
         ...(code.metadata || {}),
         donationId,
       };
       if (claimedUserId) metadata.claimedUserId = claimedUserId;
-      await this.codeService.update(opts.codeId, { metadata });
-      // 码置 disabled，移出码池防重复发
-      await this.codeService.update(opts.codeId, { status: 'disabled' });
+      await this.codeService.update(opts.codeId, {
+        metadata,
+        assignedDonationId: donationId,
+      });
       // 反向回写 donation
       donation.rewardCodeId = code.id;
       await this.repo.save(donation);
