@@ -127,6 +127,14 @@ export class PostController {
       visibility = await this.postService.getVisibility(id);
     }
 
+    // 文章确认可访问 → 顺便记录浏览量（同 IP 同文章 24h 去重）。
+    // 合并进详情接口，避免前端再单独发一次 /post/:id/view（多一次往返且易丢）。
+    // 失败不阻塞详情返回（浏览量统计不应影响阅读）。
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ua = req.headers['user-agent'] || '';
+    this.postService.recordView(id, ip, ua, userId ?? undefined).catch(() => {});
+
     return {
       success: true,
       data: {
@@ -140,16 +148,6 @@ export class PostController {
       },
       message: 'ok',
     };
-  }
-
-  @Public()
-  @Post(':id/view')
-  async recordView(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
-    const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
-    const ua = req.headers['user-agent'] || '';
-    await this.postService.recordView(id, ip, ua);
-    return { success: true, message: 'ok' };
   }
 
   @Post('batch/publish')
