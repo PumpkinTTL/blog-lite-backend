@@ -112,8 +112,10 @@ export class InteractionService {
   }
 
   /**
-   * 我的收藏/点赞列表（分页）
-   * 仅返回 entityId 列表，由调用方自行 hydrate（如 post 详情）
+   * 我的收藏/点赞列表（分页）。
+   * 对 post 类型直接 JOIN 文章表返回标题/封面，避免前端逐条 getPostDetail
+   * （那会导致已删除文章弹"文章不存在"，且 N 次请求）。
+   * 软删除的文章（deletedAt 非空）通过 JOIN 条件排除，不出现在列表里。
    */
   async listMine(
     userId: number,
@@ -121,16 +123,63 @@ export class InteractionService {
     entityType?: InteractionEntityType,
     page = 1,
     pageSize = 20,
-  ): Promise<{ list: InteractionEntity[]; total: number }> {
-    const where: any = { userId, type };
-    if (entityType) where.entityType = entityType;
+  ): Promise<{ list: any[]; total: number }> {
+    const qb = this.repo
+      .createQueryBuilder('i')
+      // 仅 post 类型 join 文章；deletedAt IS NULL 排除软删除文章（不让收藏列表残留死链）
+      .leftJoin(
+        PostEntity,
+        'p',
+        'p.id = i.entityId AND i.entityType = :postType AND p.deletedAt IS NULL',
+        { postType: 'post' },
+      )
+      .addSelect([
+        'i.id AS id',
+        'i.entityType AS entityType',
+        'i.entityId AS entityId',
+        'i.type AS type',
+        'i.createdAt AS createdAt',
+        'p.title AS postTitle',
+        'p.cover_image AS postCover',
+        'p.category_id AS postCategoryId',
+        'p.created_at AS postCreatedAt',
+      ])
+      .where('i.userId = :uid', { uid: userId })
+      .andWhere('i.type = :t', { t: type })
+      .orderBy('i.createdAt', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
 
-    const [list, total] = await this.repo.findAndCount({
-      where,
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    });
+    if (entityType) qb.andWhere('i.entityType = :et', { et: entityType });
+
+    const rows = await qb.getRawMany();
+
+    // total 用独立 count（join 不影响计数，统计的是用户的所有互动记录）
+    const countQb = this.repo
+      .createQueryBuilder('i')
+      .where('i.userId = :uid', { uid: userId })
+      .andWhere('i.type = :t', { t: type });
+    if (entityType) countQb.andWhere('i.entityType = :et', { et: entityType });
+    const total = await countQb.getCount();
+
+    const list = rows.map((r: any) => ({
+      id: Number(r.id),
+      entityType: r.entityType,
+      entityId: Number(r.entityId),
+      type: r.type,
+      createdAt: r.createdAt,
+      // post 类型附带文章摘要（已删除的为 null，前端据此过滤）
+      post: r.postTitle
+        ? {
+            id: Number(r.entityId),
+            title: r.postTitle,
+            coverImage: r.postCover || '',
+            categoryId: r.postCategoryId ? Number(r.postCategoryId) : null,
+            createdAt: r.postCreatedAt,
+          }
+        : null,
+    }));
+
     return { list, total };
   }
 

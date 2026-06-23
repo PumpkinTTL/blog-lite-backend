@@ -87,22 +87,24 @@ export class AuthService implements OnModuleInit {
   }
 
   /**
-   * 调用鉴权中心 POST /auth/token 刷新双 Token
+   * 调用鉴权中心 POST /auth/refresh 刷新双 Token。
+   *
+   * 注意：鉴权中心有专门的 /auth/refresh 端点（只需 refreshToken + deviceId，
+   * 内部从 Redis 反查 userId/clientId，是标准 OAuth2 设计）。
+   * 不能调 /auth/token（带 grantType）——那个端点强制要求 userId，
+   * 而续签时后端没有 userId（refreshToken 是随机串），会导致 401。
    */
   async refreshToken(
     refreshToken: string,
     deviceId: string,
   ): Promise<AuthTokenResponse> {
     const body: Record<string, unknown> = {
-      clientId: this.clientId,
-      clientSecret: this.clientSecret,
-      grantType: 'refresh_token',
       refreshToken,
       deviceId,
     };
 
     const { data } = await firstValueFrom(
-      this.httpService.post(`${this.authCenterUrl}/auth/token`, body),
+      this.httpService.post(`${this.authCenterUrl}/auth/refresh`, body),
     );
 
     if (!data.success) {
