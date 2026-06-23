@@ -93,7 +93,8 @@ export class PostController {
 
     // admin 看全部，登录用户看 published+login，未登录只看 published
     const publicOnly = !isAdmin && userId === null;
-    const post = await this.postService.findById(id, publicOnly);
+    // 登录用户联查点赞/收藏状态（避免前端再单独发 interaction/status）
+    const post = await this.postService.findById(id, publicOnly, userId ?? undefined);
     if (!post) {
       return { success: false, message: '文章不存在', data: null };
     }

@@ -180,7 +180,7 @@ export class PostService implements OnModuleInit {
     return { list, total, page, pageSize };
   }
 
-  async findById(id: number, publicOnly = false) {
+  async findById(id: number, publicOnly = false, userId?: number) {
     const where: any = { id };
     if (publicOnly) {
       where.status = POST_STATUS.PUBLISHED;
@@ -193,6 +193,18 @@ export class PostService implements OnModuleInit {
     // 之前 findById 没过滤 deletedAt，软删的文章仍可通过 /post/:id 访问到完整内容。
     if (post && post.deletedAt) {
       return null;
+    }
+    // 登录用户：联查这篇的点赞/收藏状态，附 isLiked/isFavorited
+    // 避免前端再单独发两次 interaction/status 请求
+    if (post && userId) {
+      const interactions = await this.interactionRepo.find({
+        where: { userId, entityType: 'post' as any, entityId: id },
+        select: ['type'],
+      });
+      (post as any).isLiked = interactions.some((i) => i.type === 'like');
+      (post as any).isFavorited = interactions.some(
+        (i) => i.type === 'favorite',
+      );
     }
     return post;
   }
