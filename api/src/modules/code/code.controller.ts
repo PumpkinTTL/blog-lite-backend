@@ -30,14 +30,27 @@ export class CodeController {
 
   /**
    * 验证码是否可用（公开接口）
+   * 注意：只回白名单字段（type/status/expiresAt/maxUses/usedCount），
+   * 不回 metadata/assignedDonationId/creatorId 等敏感字段，
+   * 避免泄露码归属、捐赠单关系等内部数据。
    */
   @Public()
   @Post('verify')
   async verify(@Body() dto: VerifyCodeDto) {
     const result = await this.codeService.verifyCode(dto);
+    // 只回前端需要的字段，保护内部数据
+    const safeData = result.code
+      ? {
+          type: result.code.type,
+          status: result.code.status,
+          expiresAt: result.code.expiresAt,
+          maxUses: result.code.maxUses,
+          usedCount: result.code.usedCount,
+        }
+      : null;
     return {
       success: result.valid,
-      data: result.code,
+      data: safeData,
       message: result.message,
     };
   }

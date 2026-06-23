@@ -157,10 +157,16 @@ export class PostService implements OnModuleInit {
     if (publicOnly) {
       where.status = POST_STATUS.PUBLISHED;
     }
-    return this.postRepo.findOne({
+    const post = await this.postRepo.findOne({
       where,
       relations: ['author', 'category', 'tags'],
     });
+    // 软删的文章（deletedAt != null）对所有人不可见（包括详情接口）。
+    // 之前 findById 没过滤 deletedAt，软删的文章仍可通过 /post/:id 访问到完整内容。
+    if (post && post.deletedAt) {
+      return null;
+    }
+    return post;
   }
 
   async create(

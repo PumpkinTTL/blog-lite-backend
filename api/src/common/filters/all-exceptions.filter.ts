@@ -32,11 +32,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
         this.logger.warn(`HTTP ${status}: ${message}`);
       }
     } else if (exception instanceof Error) {
-      message = exception.message;
+      // 非 HttpException 的原生错误（TypeORM 的 ER_DUP_ENTRY、SQL 错误、
+      // 连接错误带主机名等）：完整 message 只记日志用于排障，
+      // 对客户端只返回通用提示，避免泄露数据库结构/表名/SQL 片段/内部主机。
       this.logger.error(
         `Unhandled exception: ${exception.message}`,
         exception.stack,
       );
+      // message 保持默认 '服务器内部错误'，不覆盖
     } else {
       this.logger.error('Unhandled exception', String(exception));
     }

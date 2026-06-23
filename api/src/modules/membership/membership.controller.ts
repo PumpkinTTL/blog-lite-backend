@@ -105,8 +105,10 @@ export class MembershipController {
 
   /**
    * 用户输入会员码 → 自动开通
+   * 需登录：去掉 @Public，让 AuthGuard 统一处理 401，
+   * 同时配合限流规则（rate-limit-config）防刷码。
    */
-  @Public()
+  @Roles()
   @Post('redeem')
   async redeem(@Body() dto: RedeemMembershipDto, @Req() req: Request) {
     const user = (req as any)?.user;

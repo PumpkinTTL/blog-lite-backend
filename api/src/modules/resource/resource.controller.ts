@@ -118,14 +118,6 @@ export class ResourceController {
     };
   }
 
-  /** 记录浏览（前台可主动调用） */
-  @Public()
-  @Post(':id/view')
-  async recordView(@Param('id', ParseIntPipe) id: number) {
-    await this.resourceService.incrementView(id);
-    return { success: true, message: 'ok' };
-  }
-
   /** 兑换码解锁资源（任意登录用户） */
   @Roles()
   @Post('redeem')

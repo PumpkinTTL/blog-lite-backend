@@ -179,6 +179,15 @@ export class MediaService {
   > {
     const { filename, contentType, size, hash, app, folder, note } = params;
 
+    // 0. 文件类型白名单校验：前台直传只允许图片类型，
+    // 防止上传 html/svg（存储型 XSS）/exe 等恶意文件。
+    // avatar/post/cover/article 等 folder 都应只接受图片。
+    if (!this.isAllowedContentType(contentType, folder)) {
+      throw new BadRequestException(
+        `不支持的文件类型：${contentType}（仅允许图片）`,
+      );
+    }
+
     // 1. 秒传检查：前端带 hash 时先查（必须 storageType=oss + ossPlatform=cloudflare）
     if (hash) {
       const qb = this.mediaRepo
@@ -256,6 +265,14 @@ export class MediaService {
         `文件大小不一致：声明 ${size} 字节，实际 ${head.size} 字节`,
       );
     }
+    // 类型二次校验：用 HEAD 返回的实际 contentType（不信任前端传的 mimeType），
+    // 防止 presign 时是图片但实际 PUT 了恶意文件
+    const actualType = head.contentType || mimeType;
+    if (!this.isAllowedContentType(actualType, params.folder)) {
+      throw new BadRequestException(
+        `检测到不允许的文件类型：${actualType}（仅允许图片）`,
+      );
+    }
 
     const decodedName = this.decodeFilename(originalName);
     const media = this.mediaRepo.create({
@@ -307,6 +324,26 @@ export class MediaService {
       ),
     );
     await this.mediaRepo.delete(ids);
+  }
+
+  /**
+   * 文件类型白名单：前台用户直传只允许图片。
+   * 排除 svg（可内嵌 JS 执行，存储型 XSS 风险）。
+   * admin 端走 multer fileFilter 有自己的白名单（含 svg，admin 可信）。
+   */
+  private static readonly ALLOWED_CONTENT_TYPES = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+    'image/x-icon', // .ico
+  ];
+
+  private isAllowedContentType(contentType: string, _folder?: string): boolean {
+    // 去掉 charset 等参数：image/png; charset=utf-8 → image/png
+    const base = (contentType || '').split(';')[0].trim().toLowerCase();
+    return MediaService.ALLOWED_CONTENT_TYPES.includes(base);
   }
 
   private decodeFilename(name: string): string {

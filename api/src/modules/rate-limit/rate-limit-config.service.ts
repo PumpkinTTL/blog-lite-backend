@@ -23,9 +23,16 @@ const SENSITIVE_DEFAULTS: RateRuleMeta[] = [
   { routeKey: 'UserController.login', label: '登录', limit: 5, ttl: 60000 },
   { routeKey: 'UserController.register', label: '注册', limit: 5, ttl: 60000 },
   { routeKey: 'UserController.clientLogin', label: '客户端登录', limit: 5, ttl: 60000 },
-  { routeKey: 'UserController.sendResetCode', label: '发送验证码', limit: 3, ttl: 3600000 },
+  { routeKey: 'UserController.sendLoginCode', label: '发送登录验证码', limit: 3, ttl: 60000 },
+  { routeKey: 'UserController.loginByCode', label: '验证码登录', limit: 5, ttl: 60000 },
+  { routeKey: 'UserController.sendResetCode', label: '发送重置密码验证码', limit: 3, ttl: 3600000 },
   { routeKey: 'UserController.resetPasswordByCode', label: '验证码重置密码', limit: 5, ttl: 3600000 },
+  { routeKey: 'UserController.sendChangeEmailCode', label: '发送换绑邮箱验证码', limit: 3, ttl: 60000 },
+  { routeKey: 'UserController.changeEmail', label: '邮箱换绑', limit: 5, ttl: 3600000 },
   { routeKey: 'CommentController.create', label: '发表评论', limit: 10, ttl: 60000 },
+  // 兑换码防刷：限制暴力试码
+  { routeKey: 'MembershipController.redeem', label: '会员码兑换', limit: 10, ttl: 60000 },
+  { routeKey: 'ResourceController.redeem', label: '资源码兑换', limit: 10, ttl: 60000 },
 ];
 
 /**
