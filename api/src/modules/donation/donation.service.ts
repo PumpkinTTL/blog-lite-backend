@@ -359,27 +359,48 @@ export class DonationService {
    * 前台展示用，按 sortOrder + createdAt 倒序。
    */
   async findPublicWall(page = 1, pageSize = 50) {
-    const [list, total] = await this.repo
-      .createQueryBuilder('e')
-      .select([
-        'e.id',
-        'e.donorName',
-        'e.donorAvatar',
-        'e.amount',
-        'e.currency',
-        'e.payMethod',
-        'e.message',
-        'e.createdAt',
-      ])
-      .where('e.isVisible = 1')
-      .andWhere('e.status = :status', { status: DONATION_STATUS.CONFIRMED })
-      .orderBy('e.sortOrder', 'ASC')
-      .addOrderBy('e.createdAt', 'DESC')
-      .skip((page - 1) * pageSize)
-      .take(pageSize)
-      .getManyAndCount();
+    // 列表（仅可见）+ 统计（全部已确认）并行，一次请求返回，避免前端再调 /public/stats
+    // 统计不过滤 isVisible（和原 getPublicStats 一致），列表过滤 isVisible
+    const [pageResult, statsRow] = await Promise.all([
+      this.repo
+        .createQueryBuilder('e')
+        .select([
+          'e.id',
+          'e.donorName',
+          'e.donorAvatar',
+          'e.amount',
+          'e.currency',
+          'e.payMethod',
+          'e.message',
+          'e.createdAt',
+        ])
+        .where('e.isVisible = 1')
+        .andWhere('e.status = :status', { status: DONATION_STATUS.CONFIRMED })
+        .orderBy('e.sortOrder', 'ASC')
+        .addOrderBy('e.createdAt', 'DESC')
+        .skip((page - 1) * pageSize)
+        .take(pageSize)
+        .getManyAndCount(),
+      this.repo
+        .createQueryBuilder('e')
+        .select('COUNT(*)', 'totalDonors')
+        .addSelect('COALESCE(SUM(e.amount), 0)', 'totalAmount')
+        .where('e.status = :status', { status: DONATION_STATUS.CONFIRMED })
+        .getRawOne(),
+    ]);
 
-    return { list, total, page, pageSize };
+    const [list, total] = pageResult;
+    return {
+      list,
+      total,
+      page,
+      pageSize,
+      // 聚合统计并入返回，消除前端单独的 /donation/public/stats 请求
+      stats: {
+        totalDonors: parseInt(statsRow?.totalDonors || '0'),
+        totalAmount: parseFloat(statsRow?.totalAmount || '0'),
+      },
+    };
   }
 
   /**
