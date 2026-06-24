@@ -34,6 +34,7 @@ import { BlacklistModule } from './modules/blacklist/blacklist.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AiProviderModule } from './modules/ai-provider/ai-provider.module';
 import { AiConversationModule } from './modules/ai-conversation/ai-conversation.module';
+import { AdModule } from './modules/ad/ad.module';
 
 @Module({
   providers: [
@@ -145,6 +146,7 @@ import { AiConversationModule } from './modules/ai-conversation/ai-conversation.
     AiModule,
     AiProviderModule,
     AiConversationModule,
+    AdModule,
   ],
 })
 export class AppModule implements NestModule {

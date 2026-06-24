@@ -64,6 +64,7 @@ const menuOptions: MenuOption[] = [
   { label: '友情链接', key: '/friend-links', icon: renderIcon(LinkOutline) },
   { label: '资源管理', key: '/resources', icon: renderIcon(GiftOutline) },
   { label: '捐赠管理', key: '/donations', icon: renderIcon(HeartOutline) },
+  { label: '推广管理', key: '/ads', icon: renderIcon(MegaphoneOutline) },
   { type: 'divider', key: 'd3' },
   { label: 'AI 提供商', key: '/ai-providers', icon: renderIcon(CubeOutline) },
   { label: 'AI 对话历史', key: '/ai-conversations', icon: renderIcon(ChatbubbleEllipsesOutline) },
@@ -137,9 +138,11 @@ const breadcrumbItems = computed(() => {
     '/blacklist': '黑名单管理',
     '/rate-limit': '限流配置',
     '/donations': '捐赠管理',
+    '/ads': '推广管理',
     '/ai-providers': 'AI 提供商',
     '/ai-conversations': 'AI 对话历史',
     '/settings': '系统设置',
+    '/audit-logs': '审计日志',
   }
   const path = route.path === '/' ? '/dashboard' : route.path
   const base = '/' + path.split('/')[1]

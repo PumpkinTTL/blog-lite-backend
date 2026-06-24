@@ -153,6 +153,12 @@ const router = createRouter({
           meta: { title: '捐赠管理' },
         },
         {
+          path: 'ads',
+          name: 'ads',
+          component: () => import('../views/ads/IndexView.vue'),
+          meta: { title: '推广管理' },
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('../views/setting/IndexView.vue'),
