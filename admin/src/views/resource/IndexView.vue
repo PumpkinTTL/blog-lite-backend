@@ -478,7 +478,9 @@ async function handleSave() {
         allowedRoleIds: fv.allowedRoleIds || [],
       })
     } catch (e: any) {
-      message.error(e?.message || '可见性配置失败')
+      // 可见性配置失败时阻止保存主体，避免「主体更新了但可见性没更新」的半成功状态
+      message.error(e?.message || '可见性配置失败，资源未保存')
+      return false
     }
   }
   const ret = await _handleSave()
@@ -601,16 +603,17 @@ const columns: DataTableColumns<Resource> = [
                   cover: r.cover || '',
                   categoryId: r.categoryId,
                   content: r.content || '',
+                  // 深拷贝数组：编辑表单的增删改不应污染列表行（取消编辑后列表显示脏数据）
                   panLinks:
                     r.panLinks && r.panLinks.length
-                      ? r.panLinks
+                      ? r.panLinks.map((p) => ({ ...p }))
                       : ([{ name: '', url: '', code: '' }] as PanLink[]),
                   priceYuan: r.priceCents ? r.priceCents / 100 : 0,
                   status: r.status,
                   minMemberLevel: r.minMemberLevel,
                   sortOrder: r.sortOrder,
-                  allowedUserIds: r.allowedUserIds || [],
-                  allowedRoleIds: r.allowedRoleIds || [],
+                  allowedUserIds: [...(r.allowedUserIds || [])],
+                  allowedRoleIds: [...(r.allowedRoleIds || [])],
                 })),
             },
             {

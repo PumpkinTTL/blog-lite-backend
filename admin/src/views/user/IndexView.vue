@@ -250,27 +250,34 @@ function handleToggleStatus(row: User) {
 
 /** 确认封禁弹窗 */
 async function confirmBan() {
-  if (!banningUser.value) return
+  if (!banningUser.value) return false
   if (banDuration.value === 'custom' && !banCustomTs.value) {
     message.warning('请选择封禁截止时间')
     return false
   }
   const bannedUntil = computeBannedUntil()
-  await doToggle(banningUser.value, { reason: banReason.value || undefined, bannedUntil })
+  // 提交期间禁用按钮 + 显示 loading，避免用户以为没响应重复点击
+  banning.value = true
+  // doToggle 失败时返回 false，不关弹窗（避免封禁失败却显示成功的假象）
+  const ok = await doToggle(banningUser.value, { reason: banReason.value || undefined, bannedUntil })
+  banning.value = false
+  if (!ok) return false
   banModalShow.value = false
   banningUser.value = null
 }
 
-/** 实际调用 toggleUserStatus */
-async function doToggle(row: User, data: { reason?: string; bannedUntil?: string | null } | undefined) {
-  if (togglingId.value !== null) return
+/** 实际调用 toggleUserStatus，返回是否成功 */
+async function doToggle(row: User, data: { reason?: string; bannedUntil?: string | null } | undefined): Promise<boolean> {
+  if (togglingId.value !== null) return false
   togglingId.value = row.id
   try {
     await toggleUserStatus(row.id, data)
     message.success(row.status === 'active' ? '已禁用用户' : '已启用用户')
     _handleSearch()
+    return true
   } catch (e: any) {
     message.error(e.message || '操作失败')
+    return false
   } finally {
     togglingId.value = null
   }
