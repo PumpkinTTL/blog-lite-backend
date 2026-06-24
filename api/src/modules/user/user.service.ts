@@ -463,7 +463,18 @@ export class UserService {
 
     if (willDisable) {
       // 封禁：设封禁截止时间（null=永久）
-      user.bannedUntil = opts?.bannedUntil ?? null;
+      // 校验：临时封禁的截止时间必须在未来，否则封禁一瞬即过期，AuthGuard 惰性解封会让封禁形同无效
+      const bannedUntil = opts?.bannedUntil ?? null;
+      if (bannedUntil) {
+        const banDate = new Date(bannedUntil);
+        if (isNaN(banDate.getTime())) {
+          throw new BadRequestException('封禁截止时间格式无效');
+        }
+        if (banDate.getTime() <= Date.now()) {
+          throw new BadRequestException('封禁截止时间必须晚于当前时间');
+        }
+      }
+      user.bannedUntil = bannedUntil;
     } else {
       // 解封：清空封禁截止时间
       user.bannedUntil = null;

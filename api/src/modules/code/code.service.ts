@@ -177,31 +177,37 @@ export class CodeService {
         createdAt: new Date(),
       });
 
-      // 原子更新 usedCount
-      await manager.increment(CodeEntity, { id: codeEntity.id }, 'usedCount', 1);
+      // 原子更新 usedCount —— 用条件 UPDATE 防超发。
+      // 关键：必须在同一条 UPDATE 里用「usedCount < maxUses」做条件，而不是先读后判定。
+      // 否则两个事务并发都读到 usedCount=0，都通过校验，各自 +1 导致超发。
+      // 这里参考 register() 里邀请码消费的正确写法：条件 UPDATE + 检查 affected。
+      const maxUses = codeEntity.maxUses;
+      const result = await manager
+        .createQueryBuilder(CodeEntity, 'c')
+        .update()
+        .set({
+          usedCount: () => 'usedCount + 1',
+          usedAt: new Date(),
+          // 用完即置 used（CASE 在 DB 层判定，不依赖应用层快照值）
+          status: () =>
+            maxUses > 0
+              ? `CASE WHEN usedCount + 1 >= ${Number(maxUses)} THEN 'used' ELSE status END`
+              : 'status',
+        })
+        .where('c.id = :id', { id: codeEntity.id })
+        // maxUses=0 表示无限次，不加次数条件；否则要求 usedCount < maxUses
+        .andWhere(
+          maxUses > 0
+            ? 'c.usedCount < :maxUses'
+            : '1 = 1',
+          { maxUses },
+        )
+        .execute();
 
-      // 检查是否用完，更新状态
-      if (
-        codeEntity.maxUses > 0 &&
-        codeEntity.usedCount + 1 >= codeEntity.maxUses
-      ) {
-        await manager.update(
-          CodeEntity,
-          { id: codeEntity.id },
-          {
-            status: 'used',
-            usedAt: new Date(),
-          },
-        );
-        this.logger.log(`码 ${codeValue} 已用完`);
-      } else {
-        await manager.update(
-          CodeEntity,
-          { id: codeEntity.id },
-          {
-            usedAt: new Date(),
-          },
-        );
+      if (result.affected === 0) {
+        // 并发竞争失败：另一个事务抢先消耗了最后一次名额。
+        // 抛错让事务回滚（包括刚插入的 CodeUsageLogEntity），保持数据一致。
+        throw new BadRequestException('该兑换码使用次数已用完');
       }
 
       this.logger.log(`用户 ${userId} 使用码 ${codeValue}`);

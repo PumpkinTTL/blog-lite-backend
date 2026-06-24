@@ -5,6 +5,7 @@ import {
   IsIn,
   IsEnum,
   Min,
+  Max,
   MaxLength,
   IsArray,
   IsInt,
@@ -34,6 +35,8 @@ export class CreateDonationDto {
 
   @IsNumber()
   @Min(0.01)
+  // 上限 1 亿，防止公开接口提交超大金额导致捐赠墙 SUM 精度溢出/前端 Infinity
+  @Max(100000000)
   amount: number;
 
   @IsString()
@@ -231,6 +234,8 @@ export class PublicSubmitDonationDto {
 
   @IsNumber()
   @Min(0.01)
+  // 上限 1 亿，防止公开接口提交超大金额导致捐赠墙 SUM 精度溢出/前端 Infinity
+  @Max(100000000)
   amount: number;
 
   @IsString()

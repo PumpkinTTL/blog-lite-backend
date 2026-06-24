@@ -13,6 +13,9 @@ import { CodeEntity } from './code.entity';
  * code_usage_logs 表索引：
  * - idx_codeusage_code(codeId)：findUsageLogs 热路径 WHERE codeId=? + 外键所需
  *   （MySQL InnoDB 外键需在被引用列上有索引，此索引同时满足）
+ * - idx_codeusage_user(userId)：删除用户时按 userId 清理兑换记录
+ *   （user.service.remove 里 manager.delete(CodeUsageLogEntity, { userId }) 的热路径，
+ *   无此索引会全表扫描，code_usage_logs 随时间累积可达数十万行）
  *
  * 历史背景：原代码三个 @Index 装饰器悬空（夹在 @Column 和 @ManyToOne 之间，未挂在任何列上），
  * TypeORM 错误地把名为 used_at 的索引建在了 code_id 列上，且被外键复用，无法直接 drop。
@@ -24,6 +27,7 @@ import { CodeEntity } from './code.entity';
  */
 @Entity('code_usage_logs')
 @Index('idx_codeusage_code', ['codeId'])
+@Index('idx_codeusage_user', ['userId'])
 export class CodeUsageLogEntity {
   @PrimaryGeneratedColumn({ comment: 'ID' })
   id: number;

@@ -29,6 +29,8 @@ export class CreatePostDto {
 
   @IsString()
   @IsOptional()
+  // 限制 1MB（约百万字），防止超大 body 撑爆连接池/内存
+  @MaxLength(1048576)
   content?: string;
 
   @IsString()
@@ -83,6 +85,8 @@ export class UpdatePostDto {
 
   @IsString()
   @IsOptional()
+  // 限制 1MB（约百万字），防止超大 body 撑爆连接池/内存
+  @MaxLength(1048576)
   content?: string;
 
   @IsString()

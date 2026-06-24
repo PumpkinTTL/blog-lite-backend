@@ -64,6 +64,9 @@ export function useCrudList<T extends { id: number }>(options: UseCrudListOption
             const payload = res.data
             return Array.isArray(payload) ? payload : (payload?.list || [])
           })()
+      // 数据刷新后清空选中项 —— 翻页/搜索/筛选后旧 checkedRowKeys 指向的行已不在当前页，
+      // 保留会导致批量删除误删新数据里同 ID 的行。
+      checkedRowKeys.value = []
     } catch (e: any) {
       message.error(e?.message || options.loadErrorMessage || '加载列表失败')
     } finally {

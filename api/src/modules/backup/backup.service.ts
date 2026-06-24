@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThan } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -324,11 +324,13 @@ export class BackupService {
   async cleanExpired(retainDays: number): Promise<number> {
     if (retainDays <= 0) return 0;
     const cutoff = new Date(Date.now() - retainDays * 86400 * 1000);
-    // 查过期且成功的记录
+    // 查过期且成功的记录 —— where 直接带 createdAt < cutoff，
+    // 避免 find({ status:'success' }) 全量加载到内存再 filter
+    // （backup_logs 累积上千条后全量拉回内存开销线性增长）
     const expired = await this.logRepo.find({
-      where: { status: 'success' as const },
+      where: { status: 'success' as const, createdAt: LessThan(cutoff) },
     });
-    const toDelete = expired.filter((l) => new Date(l.createdAt) < cutoff && l.r2Key);
+    const toDelete = expired.filter((l) => l.r2Key);
     if (toDelete.length === 0) return 0;
 
     const provider = this.createR2Provider();

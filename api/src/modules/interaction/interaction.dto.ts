@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, Min, IsArray } from 'class-validator';
+import { IsEnum, IsInt, Min, IsArray, ArrayMaxSize } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export type InteractionEntityType = 'post' | 'comment';
@@ -47,6 +47,9 @@ export class BatchCountDto {
   @IsArray()
   @IsInt({ each: true })
   @Min(1, { each: true })
+  // 限制数组长度，防止 @Public 接口传超大数组（如 10万个 id）
+  // 导致 IN (:...ids) 拼出超长 SQL + 内存峰值（轻量级 DoS）
+  @ArrayMaxSize(100)
   @Type(() => Number)
   entityIds: number[];
 }
