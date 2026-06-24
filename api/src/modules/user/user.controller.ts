@@ -11,6 +11,7 @@
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { getClientIp } from '../../common/utils/get-client-ip';
 import { UserService } from './user.service';
 import { LoginDto } from './login.dto';
 import { RefreshTokenDto } from './login.dto';
@@ -48,8 +49,7 @@ export class UserController {
   @Post('login')
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     const fingerprint = dto.fingerprint || '';
-    const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip = getClientIp(req);
     const tokenPayload = await this.userService.login(
       dto,
       dto.deviceId,
@@ -87,8 +87,7 @@ export class UserController {
   @Post('register')
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const fingerprint = dto.fingerprint || '';
-    const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip = getClientIp(req);
     const tokenPayload = await this.userService.register(
       dto,
       dto.deviceId,
@@ -112,8 +111,7 @@ export class UserController {
   @Post('client-login')
   async clientLogin(@Body() dto: ClientLoginDto, @Req() req: Request) {
     const fingerprint = dto.fingerprint || '';
-    const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip = getClientIp(req);
     const tokenPayload = await this.userService.clientLogin(
       dto,
       dto.deviceId,
@@ -159,8 +157,7 @@ export class UserController {
   @Post('login-by-code')
   async loginByCode(@Body() dto: LoginByCodeDto, @Req() req: Request) {
     const fingerprint = dto.fingerprint || '';
-    const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip = getClientIp(req);
     const tokenPayload = await this.userService.loginByCode(
       dto.email,
       dto.code,

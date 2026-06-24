@@ -16,6 +16,12 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 5100);
 
+  // 信任反向代理：nginx/CDN 后必须设置，否则 req.ip 恒为代理内网地址（如 127.0.0.1），
+  // 导致限流/黑名单的 IP 维度全员串号、审计 IP 失真。
+  // TRUST_PROXY 配置代理跳数（如 'loopback' / 数字 / 逗号分隔 IP 段），默认 loopback
+  // （信任本机 nginx）。生产环境多级代理应配成实际跳数或代理 IP。
+  app.set('trust proxy', configService.get<string>('TRUST_PROXY', 'loopback'));
+
   // 调高 JSON body 上限。Express 默认 100kb，AI 对话（长文 + 多轮历史）
   // 与富文本长文会轻松超过，触发 'request entity too large' (413)。
   // 用 NestExpressApplication.useBodyParser 覆盖默认 limit，

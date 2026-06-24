@@ -11,6 +11,7 @@
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { getClientIp } from '../../common/utils/get-client-ip';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { PostService } from './post.service';
@@ -131,8 +132,7 @@ export class PostController {
     // 文章确认可访问 → 顺便记录浏览量（同 IP 同文章 24h 去重）。
     // 合并进详情接口，避免前端再单独发一次 /post/:id/view（多一次往返且易丢）。
     // 失败不阻塞详情返回（浏览量统计不应影响阅读）。
-    const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip = getClientIp(req);
     const ua = req.headers['user-agent'] || '';
     this.postService.recordView(id, ip, ua, userId ?? undefined).catch(() => {});
 

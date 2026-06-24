@@ -11,6 +11,7 @@
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { getClientIp } from '../../common/utils/get-client-ip';
 import { MembershipService } from './membership.service';
 import {
   GrantMembershipDto,
@@ -117,8 +118,7 @@ export class MembershipController {
       return { success: false, message: '请先登录', data: null };
     }
 
-    const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip = getClientIp(req);
 
     // 1. 验证码（限定 type=membership）
     const verify = await this.codeService.verifyCode({

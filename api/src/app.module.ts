@@ -8,6 +8,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { AuthGuard } from './modules/auth/auth.guard';
 import { RolesGuard } from './modules/auth/roles.guard';
 import { RateLimitGuard } from './modules/rate-limit/rate-limit.guard';
+import { RateLimitUserGuard } from './modules/rate-limit/rate-limit-user.guard';
 import { BlacklistGuard } from './common/guards/blacklist.guard';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { RedisModule } from './modules/redis/redis.module';
@@ -41,10 +42,11 @@ import { ScheduleModule } from '@nestjs/schedule';
 @Module({
   providers: [
     // Guard 执行顺序（APP_GUARD 按声明顺序执行）：
-    // 1. 限流 → 先挡洪水流量，阈值从内存配置读（GUI 可热更新）
+    // 1. IP限流 → 鉴权前，挡匿名洪水，违规累计自动拉黑
     // 2. 鉴权 → 校验 token，挂 req.user
-    // 3. 黑名单 → 读 req.user.sub + IP，命中封禁抛 403
-    // 4. 角色 → 校验 @Roles('admin')
+    // 3. 用户限流 → 鉴权后，对已登录用户按 user id 限流（挡登录态刷接口）
+    // 4. 黑名单 → 读 IP，命中封禁抛 403
+    // 5. 角色 → 校验 @Roles('admin')
     {
       provide: APP_GUARD,
       useClass: RateLimitGuard,
@@ -52,6 +54,10 @@ import { ScheduleModule } from '@nestjs/schedule';
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RateLimitUserGuard,
     },
     {
       provide: APP_GUARD,

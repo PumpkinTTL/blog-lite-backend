@@ -12,6 +12,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { getClientIp } from '../../common/utils/get-client-ip';
 import { ResourceService } from './resource.service';
 import {
   CreateResourceDto,
@@ -130,8 +131,7 @@ export class ResourceController {
     if (!userId) {
       return { success: false, message: '请先登录', data: null };
     }
-    const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip = getClientIp(req);
     const { resource, message } = await this.resourceService.redeem(
       dto.code,
       userId,

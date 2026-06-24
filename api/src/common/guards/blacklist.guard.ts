@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { BlacklistService } from '../../modules/blacklist/blacklist.service';
+import { getClientIp } from '../utils/get-client-ip';
 
 /**
  * 黑名单 Guard：在 AuthGuard 之后执行，只拦截 IP 维度封禁。
@@ -19,11 +20,8 @@ export class BlacklistGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
 
-    // IP 维度（匿名也查）
-    const ip =
-      request.ip ||
-      request.headers?.['x-forwarded-for']?.toString() ||
-      'unknown';
+    // IP 维度（匿名也查）—— 用统一工具取真实 IP
+    const ip = getClientIp(request);
     if (ip && ip !== 'unknown') {
       const ipBlocked = await this.blacklistService.isBlocked('ip', ip);
       if (ipBlocked) {
