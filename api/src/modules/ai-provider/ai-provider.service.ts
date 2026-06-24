@@ -1,15 +1,19 @@
 import { Injectable, NotFoundException, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { AiProviderEntity, AiProviderModel } from './ai-provider.entity';
 import { CreateAiProviderDto, UpdateAiProviderDto } from './ai-provider.dto';
 
-/** 默认种子配置：9router + 常用模型（模型内嵌） */
+/** 默认种子配置：9router + 常用模型（模型内嵌）。
+ *  apiKey 从环境变量 AI_DEFAULT_API_KEY 读取，避免密钥硬编码进源码（安全）。
+ *  ⚠️ 历史仓库里曾明文泄露 sk-a519... 密钥，已上线则务必在 9router 后台轮换。
+ */
 const SEED: Partial<AiProviderEntity> & { models: AiProviderModel[] } = {
   name: '9router',
   baseUrl: 'https://9router.bitlesu.com/v1',
-  apiKey: 'sk-a5192932229f5be4-6wmwyq-13a3121c',
+  apiKey: process.env.AI_DEFAULT_API_KEY || '',
   protocol: 'openai',
   remark: '默认网关（OpenAI 兼容）',
   status: 1,

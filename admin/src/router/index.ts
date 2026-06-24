@@ -11,12 +11,15 @@ const router = createRouter({
       component: LoginView,
       meta: { title: '登录后台', requiresAuth: false },
     },
-    {
-      path: '/scroll-test',
-      name: 'scroll-test',
-      component: () => import('../views/ScrollTestView.vue'),
-      meta: { title: '滚动测试', requiresAuth: false },
-    },
+    // ScrollTestView 仅开发环境可访问（生产构建不应暴露测试页）
+    ...(import.meta.env.DEV
+      ? [{
+          path: '/scroll-test',
+          name: 'scroll-test',
+          component: () => import('../views/ScrollTestView.vue'),
+          meta: { title: '滚动测试', requiresAuth: false },
+        }]
+      : []),
     {
       path: '/',
       component: AdminLayout,

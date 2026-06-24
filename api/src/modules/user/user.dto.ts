@@ -142,6 +142,7 @@ export class BatchIdsDto {
 export class ResetPasswordDto {
   @IsString()
   @MinLength(6)
+  @MaxLength(100)
   newPassword: string;
 }
 
@@ -155,10 +156,12 @@ export class ResetPasswordByCodeDto {
   email: string;
 
   @IsString()
+  @MaxLength(32)
   code: string;
 
   @IsString()
   @MinLength(6)
+  @MaxLength(100)
   newPassword: string;
 }
 
@@ -201,6 +204,7 @@ export class LoginByCodeDto {
   email: string;
 
   @IsString()
+  @MaxLength(32)
   code: string;
 
   // 设备 ID：同 LoginDto，前端生成，续签凭证

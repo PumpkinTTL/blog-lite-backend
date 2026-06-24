@@ -64,14 +64,24 @@ function addRefreshSubscriber(
 function redirectToLogin() {
   if (isRedirecting) return
   isRedirecting = true
+  // 超时强跳兜底：若 naive-ui 动态加载失败，onAfterLeave 不触发，
+  // isRedirecting 会永久锁死后续 401 全静默。2.5s 后强制跳转并解锁。
+  const forceTimer = setTimeout(() => {
+    isRedirecting = false
+    window.location.href = '/login'
+  }, 2500)
   import('naive-ui').then(({ createDiscreteApi }) => {
+    clearTimeout(forceTimer)
     const { message } = createDiscreteApi(['message'])
     message.warning('登录已过期，请重新登录', {
       duration: 2000,
       onAfterLeave: () => {
+        isRedirecting = false
         window.location.href = '/login'
       },
     })
+  }).catch(() => {
+    // naive-ui 加载失败，forceTimer 会兜底跳转，这里不额外处理
   })
 }
 

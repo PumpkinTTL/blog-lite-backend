@@ -1,4 +1,4 @@
-import { Inject, Injectable, BadRequestException } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { MailerService } from '../mailer/mailer.service';
@@ -16,6 +16,7 @@ import { MailerService } from '../mailer/mailer.service';
  */
 @Injectable()
 export class EmailCodeService {
+  private readonly logger = new Logger(EmailCodeService.name);
   /** 验证码有效期 10 分钟 */
   private readonly CODE_TTL = 10 * 60 * 1000;
   /** 发送冷却 60 秒（同一邮箱） */
@@ -70,7 +71,7 @@ export class EmailCodeService {
       // 清除冷却让用户能重试，记日志（不暴露 SMTP 细节给用户）
       await this.redis.del(cooldownKey);
       if (err instanceof BadRequestException) throw err;
-      console.error('[EmailCodeService] 邮件发送失败', err);
+      this.logger.error(`邮件发送失败: ${(err as Error).message}`, (err as Error).stack);
       throw new BadRequestException('邮件发送失败，请稍后重试');
     }
 

@@ -89,15 +89,17 @@ export class AiProviderController {
     return { success: true, data: maskEntity(data), message: '更新成功' };
   }
 
-  @Delete(':id')
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    const data = await this.service.remove(id);
-    return { success: true, data: maskEntity(data), message: '删除成功' };
-  }
-
+  // batch 必须在 :id 之前声明，否则 DELETE /ai-provider/batch 会命中 :id，
+  // ParseIntPipe 把 "batch" 解析失败 → 批量删除 500
   @Delete('batch')
   async batchRemove(@Body() dto: BatchIdsDto) {
     const data = await this.service.batchRemove(dto.ids);
     return { success: true, data: maskList(data), message: '批量删除成功' };
+  }
+
+  @Delete(':id')
+  async remove(@Param('id', ParseIntPipe) id: number) {
+    const data = await this.service.remove(id);
+    return { success: true, data: maskEntity(data), message: '删除成功' };
   }
 }

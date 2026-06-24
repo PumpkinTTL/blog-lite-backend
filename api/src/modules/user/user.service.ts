@@ -786,8 +786,15 @@ export class UserService {
       this.membershipService.getActiveLevel(userId),
       this.membershipService.getUserActiveMemberships(userId),
     ]);
-    (user as any).membership = { level, memberships };
-    return user;
+    // 字段裁剪：不向终端用户暴露运营/审计字段（registerIp/registerCodeId/bannedUntil）
+    const {
+      password: _pw,
+      registerIp: _rip,
+      registerCodeId: _rci,
+      bannedUntil: _bt,
+      ...safeUser
+    } = user as any;
+    return { ...safeUser, membership: { level, memberships } };
   }
 
   /**
