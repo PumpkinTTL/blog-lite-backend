@@ -42,11 +42,16 @@ import { ScheduleModule } from '@nestjs/schedule';
 @Module({
   providers: [
     // Guard 执行顺序（APP_GUARD 按声明顺序执行）：
-    // 1. IP限流 → 鉴权前，挡匿名洪水，违规累计自动拉黑
-    // 2. 鉴权 → 校验 token，挂 req.user
-    // 3. 用户限流 → 鉴权后，对已登录用户按 user id 限流（挡登录态刷接口）
-    // 4. 黑名单 → 读 IP，命中封禁抛 403
+    // 1. 黑名单 → 最先查，已封禁 IP 直接 403，不消耗限流额度/鉴权资源
+    //    （应用层兜底；nginx 层未来做 deny 硬封禁更早拦截）
+    // 2. IP限流 → 鉴权前，挡匿名洪水，违规累计自动拉黑
+    // 3. 鉴权 → 校验 token，挂 req.user
+    // 4. 用户限流 → 鉴权后，对已登录用户按 user id 限流（挡登录态刷接口）
     // 5. 角色 → 校验 @Roles('admin')
+    {
+      provide: APP_GUARD,
+      useClass: BlacklistGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: RateLimitGuard,
@@ -58,10 +63,6 @@ import { ScheduleModule } from '@nestjs/schedule';
     {
       provide: APP_GUARD,
       useClass: RateLimitUserGuard,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: BlacklistGuard,
     },
     {
       provide: APP_GUARD,
