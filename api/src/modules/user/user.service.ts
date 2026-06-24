@@ -780,6 +780,13 @@ export class UserService {
       relations: ['roles'],
     });
     if (!user) throw new NotFoundException('用户不存在');
+    // 联查会员状态（level + memberships），避免前端再单独发 /membership/me/status。
+    // 与 me/status 接口同源（getActiveLevel + getUserActiveMemberships），数据一致。
+    const [level, memberships] = await Promise.all([
+      this.membershipService.getActiveLevel(userId),
+      this.membershipService.getUserActiveMemberships(userId),
+    ]);
+    (user as any).membership = { level, memberships };
     return user;
   }
 
