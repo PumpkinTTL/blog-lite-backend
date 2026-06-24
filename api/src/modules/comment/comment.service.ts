@@ -42,6 +42,8 @@ export class CommentService {
 
   /**
    * 列出某实体的一级评论（已审核通过的，分页）
+  /**
+   * 列出某文章的一级评论（已审核通过的）
    * @param includeUser 是否带作者信息
    */
   async listTopLevel(
@@ -57,18 +59,40 @@ export class CommentService {
       skip: (page - 1) * pageSize,
       take: pageSize,
     });
-    return { list, total };
+    // 公开接口：裁剪 user 为最小白名单，避免泄露 email/phone/registerIp 等 PII
+    return { list: list.map((c) => this.sanitizeUser(c)), total };
   }
 
   /**
    * 列出某一级评论下的二级回复（已审核通过的）
    */
   async listReplies(parentId: number): Promise<CommentEntity[]> {
-    return this.repo.find({
+    const list = await this.repo.find({
       where: { parentId, status: 'approved' },
       relations: ['user', 'replyToUser'],
       order: { createdAt: 'ASC' },
     });
+    // 公开接口：裁剪 user / replyToUser 为最小白名单
+    return list.map((c) => this.sanitizeUser(this.sanitizeUser(c, 'replyToUser'), 'user'));
+  }
+
+  /**
+   * 把评论里的 user 关联对象裁剪成公开安全字段。
+   * 公开接口（无需登录）绝不能返回完整 UserEntity——
+   * 其中 email/phone/registerIp/registerSource/bannedUntil/status 属于 PII/运营敏感字段，
+   * 匿名访客批量抓取评论即可采集所有评论者隐私。
+   */
+  private sanitizeUser<T extends CommentEntity>(comment: T, field: 'user' | 'replyToUser' = 'user'): T {
+    const u = (comment as any)[field];
+    if (u && typeof u === 'object') {
+      (comment as any)[field] = {
+        id: u.id,
+        username: u.username,
+        nickname: u.nickname,
+        avatar: u.avatar,
+      };
+    }
+    return comment;
   }
 
 

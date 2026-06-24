@@ -67,3 +67,18 @@ export class ModerateCommentDto {
   @IsEnum(['approved', 'rejected'])
   status: 'approved' | 'rejected';
 }
+
+/**
+ * 批量审核（ids + status 组合校验）
+ * 替代 controller 里 inline 的 { ids: number[]; status } —— 那个运行时无校验，
+ * status 可被传任意字符串直接写库污染审核状态机。
+ */
+export class BatchModerateDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsInt({ each: true })
+  ids: number[];
+
+  @IsEnum(['approved', 'rejected'])
+  status: 'approved' | 'rejected';
+}

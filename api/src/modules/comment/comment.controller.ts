@@ -19,6 +19,7 @@ import {
   UpdateCommentDto,
   ModerateCommentDto,
   BatchIdsDto,
+  BatchModerateDto,
 } from './comment.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -159,12 +160,7 @@ export class CommentController {
    */
   @Roles('admin')
   @Patch('admin/batch-moderate')
-  async batchModerate(
-    @Body() dto: { ids: number[]; status: 'approved' | 'rejected' },
-  ) {
-    if (!Array.isArray(dto?.ids) || dto.ids.length === 0) {
-      throw new BadRequestException('ids 必填');
-    }
+  async batchModerate(@Body() dto: BatchModerateDto) {
     await this.service.batchModerate(dto.ids, dto.status);
     return { success: true, message: `已批量${dto.status === 'approved' ? '通过' : '拒绝'} ${dto.ids.length} 条` };
   }

@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { ResourceEntity } from './resource.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { RESOURCE_STATUS } from '../../common/constants/status';
@@ -56,7 +56,10 @@ export class ResourceService {
     const qb = this.repo
       .createQueryBuilder('e')
       .leftJoinAndSelect('e.category', 'category')
-      .leftJoinAndSelect('e.uploader', 'uploader');
+      // 只 select uploader 的公开安全字段，避免泄露 email/phone/registerIp 等 PII。
+      // admin 需要看完整用户信息时走 user 管理模块，不在此处暴露。
+      .leftJoin('e.uploader', 'uploader')
+      .addSelect(['uploader.id', 'uploader.username', 'uploader.nickname', 'uploader.avatar']);
     applyFilters(qb, {
       exact: {
         'e.id': filters?.id,
@@ -115,13 +118,21 @@ export class ResourceService {
   }
 
   async findById(id: number, publicOnly = false) {
-    const where: any = { id };
+    // 用 queryBuilder 精确控制 uploader 字段，避免公开接口泄露 PII
+    const qb = this.repo
+      .createQueryBuilder('e')
+      .leftJoinAndSelect('e.category', 'category')
+      .leftJoin('e.uploader', 'uploader')
+      .addSelect(['uploader.id', 'uploader.username', 'uploader.nickname', 'uploader.avatar'])
+      .where('e.id = :id', { id });
     if (publicOnly) {
       // 非 admin 详情查询：允许 published/login/private，由上层 findByIdForUser 做细粒度判定
       // draft 对非 admin 完全不可见（当作不存在）
-      where.status = In([RESOURCE_STATUS.PUBLISHED, RESOURCE_STATUS.LOGIN, RESOURCE_STATUS.PRIVATE]);
+      qb.andWhere('e.status IN (:...statuses)', {
+        statuses: [RESOURCE_STATUS.PUBLISHED, RESOURCE_STATUS.LOGIN, RESOURCE_STATUS.PRIVATE],
+      });
     }
-    return this.repo.findOne({ where, relations: ['category', 'uploader'] });
+    return qb.getOne();
   }
 
   /**

@@ -59,6 +59,21 @@ export class UserService {
    * 不再由后端 IP 派生——IP 会变（切 WiFi/移动网络），导致续签时 deviceId 不一致
    * 被鉴权中心拒绝。clientIp 仅用于审计日志，不参与 deviceId 计算。
    */
+  /**
+   * 统一的登录失败消息。
+   * 账号不存在 / 账号禁用 / 密码错误 一律返回同一句话，
+   * 避免攻击者通过差异化提示枚举有效用户名。
+   */
+  private static readonly LOGIN_FAIL_MSG = '用户名或密码错误';
+
+  /**
+   * 一个真实的 bcrypt 占位哈希（cost=10），用于账号不存在时执行一次
+   * 假比较，使「用户不存在」与「密码错误」两个分支耗时一致，防时序攻击。
+   * （bcrypt.compare 对任意输入都会跑完整哈希流程）
+   */
+  private static readonly DUMMY_HASH =
+    '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+
   async login(
     dto: LoginDto,
     deviceId: string,
@@ -72,29 +87,35 @@ export class UserService {
       .where('u.username = :username', { username: dto.username })
       .getOne();
 
-    if (!user || user.status !== USER_STATUS.ACTIVE) {
-      // 临时封禁已过期 → 惰性自动解封（login 不走 AuthGuard，需在此处处理，
-      // 否则临时封禁过期的用户登录会死锁：登录被拒 → 拿不到 token → 无法触发 AuthGuard 解封）
-      if (
-        user &&
-        user.status === USER_STATUS.DISABLED &&
-        user.bannedUntil &&
-        user.bannedUntil < new Date()
-      ) {
-        await this.userRepo.update(user.id, {
-          status: USER_STATUS.ACTIVE,
-          bannedUntil: null,
-        });
-        user.status = USER_STATUS.ACTIVE;
-        user.bannedUntil = null;
-      } else {
-        throw new UnauthorizedException('账号不存在或已禁用');
-      }
+    // 临时封禁已过期 → 惰性自动解封（login 不走 AuthGuard，需在此处理，
+    // 否则临时封禁过期的用户登录会死锁：登录被拒 → 拿不到 token → 无法触发 AuthGuard 解封）
+    if (
+      user &&
+      user.status === USER_STATUS.DISABLED &&
+      user.bannedUntil &&
+      user.bannedUntil < new Date()
+    ) {
+      await this.userRepo.update(user.id, {
+        status: USER_STATUS.ACTIVE,
+        bannedUntil: null,
+      });
+      user.status = USER_STATUS.ACTIVE;
+      user.bannedUntil = null;
     }
 
-    const passwordValid = await bcrypt.compare(dto.password, user.password);
-    if (!passwordValid) {
-      throw new UnauthorizedException('密码错误');
+    // 恒定时间防时序攻击：无论用户存不存在/状态是否正常，都执行一次 bcrypt 比较，
+    // 让各分支耗时一致，攻击者无法通过响应快慢判断用户名是否存在。
+    // 只有「存在 + 状态正常」才用真实 hash，否则用 DUMMY_HASH（必 false 但耗时相当）。
+    const canLogin = user && user.status === USER_STATUS.ACTIVE;
+    const passwordValid = await bcrypt.compare(
+      dto.password,
+      canLogin ? user.password : UserService.DUMMY_HASH,
+    );
+
+    // 用户不存在 / 密码错误 / 账号被长期禁用，一律返回同一句模糊消息，
+    // 避免攻击者通过差异化提示枚举有效用户名。
+    if (!canLogin || !passwordValid) {
+      throw new UnauthorizedException(UserService.LOGIN_FAIL_MSG);
     }
 
     // 收集角色信息传给鉴权中心，后续 AT payload 里会带上
