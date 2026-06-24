@@ -176,6 +176,12 @@ const router = createRouter({
           component: () => import('../views/audit-log/IndexView.vue'),
           meta: { title: '审计日志' },
         },
+        {
+          path: 'request-logs',
+          name: 'request-logs',
+          component: () => import('../views/request-log/IndexView.vue'),
+          meta: { title: '请求日志' },
+        },
       ],
     },
   ],

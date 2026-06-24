@@ -37,6 +37,7 @@ import { AiProviderModule } from './modules/ai-provider/ai-provider.module';
 import { AiConversationModule } from './modules/ai-conversation/ai-conversation.module';
 import { AdModule } from './modules/ad/ad.module';
 import { BackupModule } from './modules/backup/backup.module';
+import { RequestLogModule } from './modules/request-log/request-log.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -159,6 +160,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     // ScheduleModule 必须在 imports 注册一次 forRoot（backup 模块动态 cron 依赖它）
     ScheduleModule.forRoot(),
     BackupModule,
+    RequestLogModule,
   ],
 })
 export class AppModule implements NestModule {

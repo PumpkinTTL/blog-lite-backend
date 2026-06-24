@@ -54,9 +54,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     // 统一响应格式，与业务接口一致；错误响应附 requestId 供前端上报追溯
+    // 同时把 message 塞到 res.locals，供 RequestLogMiddleware 在 res.on('finish') 时取用
+    // 记录到 request_logs 表的 errorMessage 字段（便于 admin 按 requestId 反查错误详情）
+    const finalMessage = Array.isArray(message) ? message.join(', ') : message;
+    (response.locals as any).errorMessage = finalMessage;
     response.status(status).json({
       success: false,
-      message: Array.isArray(message) ? message.join(', ') : message,
+      message: finalMessage,
       data: null,
       // requestId 让用户上报错误时，后端能用它在日志里精确定位完整行为链
       ...(requestId ? { requestId } : {}),

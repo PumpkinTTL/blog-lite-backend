@@ -30,6 +30,7 @@ import {
   CubeOutline,
   ChatbubbleEllipsesOutline,
   CloudDownloadOutline,
+  PulseOutline,
 } from '@vicons/ionicons5'
 import { useAuth } from '../stores/auth'
 import { isDark } from '../theme'
@@ -76,6 +77,7 @@ const menuOptions: MenuOption[] = [
   { label: '系统设置', key: '/settings', icon: renderIcon(SettingsOutline) },
   { label: '数据备份', key: '/backup', icon: renderIcon(CloudDownloadOutline) },
   { label: '审计日志', key: '/audit-logs', icon: renderIcon(ClipboardOutline) },
+  { label: '请求日志', key: '/request-logs', icon: renderIcon(PulseOutline) },
 ]
 
 const activeMenu = computed(() => {
@@ -146,6 +148,7 @@ const breadcrumbItems = computed(() => {
     '/settings': '系统设置',
     '/backup': '数据备份',
     '/audit-logs': '审计日志',
+    '/request-logs': '请求日志',
   }
   const path = route.path === '/' ? '/dashboard' : route.path
   const base = '/' + path.split('/')[1]
