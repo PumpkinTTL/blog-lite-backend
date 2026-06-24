@@ -165,6 +165,12 @@ const router = createRouter({
           meta: { title: '系统设置' },
         },
         {
+          path: 'backup',
+          name: 'backup',
+          component: () => import('../views/backup/IndexView.vue'),
+          meta: { title: '数据备份' },
+        },
+        {
           path: 'audit-logs',
           name: 'audit-logs',
           component: () => import('../views/audit-log/IndexView.vue'),

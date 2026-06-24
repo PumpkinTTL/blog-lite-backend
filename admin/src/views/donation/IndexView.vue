@@ -592,7 +592,7 @@ onMounted(() => { loadList(); loadStats() })
     <!-- 表格 -->
     <div class="table-section">
       <n-data-table :columns="columns" :data="donationList" :loading="loading" :bordered="false"
-        :row-key="(row: Donation) => row.id" :scroll-x="1270"
+        :row-key="(row: Donation) => row.id" :scroll-x="1467"
         @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 50]" :item-count="total"

@@ -268,7 +268,7 @@ const columns: DataTableColumns<Media> = [
     },
   },
   {
-    title: '文件名', key: 'originalName', minWidth: 150,
+    title: '文件名', key: 'originalName', width: 220,
     render: (row) => {
       const url = resolveFileUrl(row.url)
       const renderNameRow = (text: string, copyText: string, isUrl = false) => h('div', {
@@ -295,7 +295,7 @@ const columns: DataTableColumns<Media> = [
     },
   },
   {
-    title: '备注', key: 'note', minWidth: 100,
+    title: '备注', key: 'note', width: 120,
     render: (row) => {
       const isEditing = noteDrafts.has(row.id)
       const noteText = row.note || ''
@@ -436,7 +436,7 @@ onMounted(loadMedia)
 
     <div class="table-section">
       <n-data-table :columns="columns" :data="mediaList" :loading="loading" :bordered="false"
-        :scroll-x="1032"
+        :scroll-x="1171"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

@@ -518,7 +518,7 @@ const memberColumns: DataTableColumns<Membership> = [
     title: '来源', key: 'source', width: 90,
     render: (row) => memberSourceLabel[row.source],
   },
-  { title: '备注', key: 'note', minWidth: 120, ellipsis: { tooltip: true }, render: (row) => row.note || '-' },
+  { title: '备注', key: 'note', width: 120, ellipsis: { tooltip: true }, render: (row) => row.note || '-' },
   {
     title: '操作', key: 'actions', width: 170, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small', wrap: false }, {
@@ -574,7 +574,7 @@ onMounted(() => {
             :data="plans"
             :loading="planLoading"
             :bordered="false"
-            :scroll-x="1360"
+            :scroll-x="1400"
             :row-key="(row: Plan) => row.id"
             @update:checked-row-keys="(keys: any) => planCheckedRowKeys = keys"
           />

@@ -733,7 +733,7 @@ const catColumns: DataTableColumns<ResourceCategory> = [
   catSelectionColumn,
   { title: 'ID', key: 'id', width: 60 },
   { title: '分类名称', key: 'name', width: 200 },
-  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
+  { title: '描述', key: 'description', width: 200, ellipsis: { tooltip: true } },
   { title: '排序', key: 'sortOrder', width: 80 },
   {
     title: '创建时间',
@@ -909,7 +909,7 @@ const catColumns: DataTableColumns<ResourceCategory> = [
             :data="catList"
             :loading="catLoading"
             :bordered="false"
-            :scroll-x="660"
+            :scroll-x="820"
             :row-key="(row: any) => row.id"
             @update:checked-row-keys="(keys: any) => (catCheckedRowKeys = keys)"
           />

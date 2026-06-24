@@ -124,7 +124,7 @@ const columns: DataTableColumns<Blacklist> = [
   selectionColumn,
   { title: 'ID', key: 'id', width: 60 },
   { title: 'IP 地址', key: 'value', width: 180, ellipsis: { tooltip: true } },
-  { title: '原因', key: 'reason', ellipsis: { tooltip: true } },
+  { title: '原因', key: 'reason', width: 160, ellipsis: { tooltip: true } },
   {
     title: '状态', key: 'status', width: 90,
     render: (row) => h(NTag, { size: 'small', type: row.status === 'active' ? 'error' : 'default', bordered: false }, { default: () => (row.status === 'active' ? '生效中' : '已解除') }),
@@ -182,7 +182,7 @@ const columns: DataTableColumns<Blacklist> = [
       </n-button>
     </n-space>
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1000"
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="920"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

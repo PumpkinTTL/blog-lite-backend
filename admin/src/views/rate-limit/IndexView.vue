@@ -97,7 +97,7 @@ const columns: DataTableColumns<RateRule> = [
     }, { suffix: () => 'ms' }),
   },
   {
-    title: '当前规则', key: 'summary',
+    title: '当前规则', key: 'summary', width: 140,
     render: (row) => h(NTag, { size: 'small', type: 'warning', bordered: false }, { default: () => `${row.limit} 次 / ${formatTtl(row.ttl)}` }),
   },
 ]
@@ -142,7 +142,7 @@ onMounted(load)
             :columns="columns"
             :data="rules"
             :bordered="false"
-            :scroll-x="820"
+            :scroll-x="840"
             :row-key="(row: any) => row.routeKey"
           />
         </n-card>

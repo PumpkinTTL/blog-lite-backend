@@ -65,6 +65,7 @@
 import {
   S3Client,
   PutObjectCommand,
+  GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -189,6 +190,23 @@ export class StorageProvider {
     // ⚠️ 不要对返回的 URL 做任何字符串修改（包括删除 checksum query 参数）。
     // 签名是基于完整 query 字符串计算的，任何字符改动都会让签名失效。
     // checksum 等参数虽不参与 HMAC，但属于 URL 的一部分，必须原样保留。
+    return getSignedUrl(client, command, { expiresIn: expiresInSec });
+  }
+
+  /**
+   * 签发 presigned GET URL（供后台下载备份等私有文件）
+   * @param key          对象键
+   * @param expiresInSec URL 有效期（默认 5 分钟）
+   */
+  async presignGet(key: string, expiresInSec = 300): Promise<string> {
+    if (this.config.provider === 'local') {
+      throw new Error('[StorageProvider] presignGet 仅支持 S3 兼容云存储');
+    }
+    const client = this.getClient();
+    const command = new GetObjectCommand({
+      Bucket: this.config.bucket,
+      Key: key,
+    });
     return getSignedUrl(client, command, { expiresIn: expiresInSec });
   }
 

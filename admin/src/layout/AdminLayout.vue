@@ -29,6 +29,7 @@ import {
   SpeedometerOutline,
   CubeOutline,
   ChatbubbleEllipsesOutline,
+  CloudDownloadOutline,
 } from '@vicons/ionicons5'
 import { useAuth } from '../stores/auth'
 import { isDark } from '../theme'
@@ -73,6 +74,7 @@ const menuOptions: MenuOption[] = [
   { label: '限流配置', key: '/rate-limit', icon: renderIcon(SpeedometerOutline) },
   { type: 'divider', key: 'd4' },
   { label: '系统设置', key: '/settings', icon: renderIcon(SettingsOutline) },
+  { label: '数据备份', key: '/backup', icon: renderIcon(CloudDownloadOutline) },
   { label: '审计日志', key: '/audit-logs', icon: renderIcon(ClipboardOutline) },
 ]
 
@@ -142,6 +144,7 @@ const breadcrumbItems = computed(() => {
     '/ai-providers': 'AI 提供商',
     '/ai-conversations': 'AI 对话历史',
     '/settings': '系统设置',
+    '/backup': '数据备份',
     '/audit-logs': '审计日志',
   }
   const path = route.path === '/' ? '/dashboard' : route.path

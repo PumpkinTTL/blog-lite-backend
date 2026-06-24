@@ -601,7 +601,7 @@ onMounted(() => {
 
         <div class="table-section">
           <n-data-table :columns="codeColumns" :data="list" :loading="loading" :bordered="false"
-        :scroll-x="1360"
+        :scroll-x="1420"
             :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
           <div class="pagination-wrap" v-if="total > 0">
             <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

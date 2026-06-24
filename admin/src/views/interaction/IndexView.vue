@@ -165,7 +165,7 @@ const columns: DataTableColumns<AdminInteraction> = [
     }),
   },
   {
-    title: '文章标题', key: 'postTitle', minWidth: 200, ellipsis: { tooltip: true },
+    title: '文章标题', key: 'postTitle', width: 200, ellipsis: { tooltip: true },
     render: (row) => {
       if (row.post) {
         // 仅 post 类型显示标题，可点击跳前台（这里用 a 标签，新窗口打开）
