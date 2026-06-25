@@ -6,6 +6,7 @@ export interface FriendLink {
   url: string
   logo: string | null
   description: string | null
+  category: string
   sortOrder: number
   status: string
   postId: number | null
@@ -14,7 +15,7 @@ export interface FriendLink {
   updatedAt: string
 }
 
-export function getFriendLinks(params?: { id?: number; keyword?: string; status?: string; page?: number; pageSize?: number }) {
+export function getFriendLinks(params?: { id?: number; keyword?: string; status?: string; category?: string; page?: number; pageSize?: number }) {
   return request.get('/friend-link', { params })
 }
 

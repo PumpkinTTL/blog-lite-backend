@@ -22,6 +22,18 @@ const friendLinkStatusOptions = [
   { label: '隐藏', value: 'hidden' },
 ] as unknown as SelectOption[]
 
+const friendLinkCategoryOptions = [
+  { label: '博客', value: 'blog' },
+  { label: '工具', value: 'tool' },
+  { label: '学习资源', value: 'learn' },
+  { label: '友情站点', value: 'friend' },
+  { label: '其他', value: 'other' },
+] as unknown as SelectOption[]
+
+const categoryLabel: Record<string, string> = {
+  blog: '博客', tool: '工具', learn: '学习资源', friend: '友情站点', other: '其他',
+}
+
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
   handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit,
   handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn } =
@@ -37,7 +49,7 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     deleteApi: deleteFriendLink,
     batchDeleteApi: batchDeleteFriendLinks,
     deleteContent: (row) => `确定删除友链「${row.name}」？`,
-    defaultForm: () => ({ name: '', url: '', logo: '', description: '', status: 'visible', sortOrder: 0, postId: null }),
+    defaultForm: () => ({ name: '', url: '', logo: '', description: '', category: 'other', status: 'visible', sortOrder: 0, postId: null }),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) {
@@ -98,6 +110,10 @@ const columns: DataTableColumns<FriendLink> = [
   { title: 'URL', key: 'url', ellipsis: { tooltip: true }, width: 200 },
   { title: '描述', key: 'description', width: 200, ellipsis: { tooltip: true } },
   {
+    title: '分类', key: 'category', width: 110,
+    render: (row) => h(NTag, { size: 'small', bordered: false, type: 'info' }, { default: () => categoryLabel[row.category] || '其他' }),
+  },
+  {
     title: '绑定文章', key: 'postId', width: 140,
     render: (row) => row.postId ? h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => row.post?.title || `#${row.postId}` }) : h(NTag, { size: 'small', bordered: false }, { default: () => '全局' }),
   },
@@ -114,6 +130,7 @@ const columns: DataTableColumns<FriendLink> = [
           url: r.url,
           logo: r.logo,
           description: r.description,
+          category: r.category || 'other',
           status: r.status,
           sortOrder: r.sortOrder,
           postId: r.postId,
@@ -157,7 +174,7 @@ const columns: DataTableColumns<FriendLink> = [
     </n-space>
     <div class="table-section">
       <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1070"
-        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
+        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" :scroll-x="1180" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
@@ -169,6 +186,9 @@ const columns: DataTableColumns<FriendLink> = [
         <n-form-item label="站点 URL" path="url"><n-input v-model:value="formValue.url" placeholder="https://example.com" /></n-form-item>
         <n-form-item label="Logo URL"><n-input v-model:value="formValue.logo" placeholder="可选" /></n-form-item>
         <n-form-item label="描述"><n-input v-model:value="formValue.description" type="textarea" placeholder="可选" :rows="2" /></n-form-item>
+        <n-form-item label="分类" path="category">
+          <n-select v-model:value="formValue.category" :options="friendLinkCategoryOptions" placeholder="选择分类" />
+        </n-form-item>
         <n-form-item label="状态" path="status">
           <n-select v-model:value="formValue.status" :options="[
             { label: '显示', value: 'visible' },

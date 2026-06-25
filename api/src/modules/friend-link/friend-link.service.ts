@@ -15,13 +15,13 @@ export class FriendLinkService {
   async findAll(
     page = 1,
     pageSize = 20,
-    filters?: { id?: number; keyword?: string; status?: string },
+    filters?: { id?: number; keyword?: string; status?: string; category?: string },
   ) {
     const qb = this.repo
       .createQueryBuilder('e')
       .leftJoinAndSelect('e.post', 'post');
     applyFilters(qb, {
-      exact: { 'e.id': filters?.id, 'e.status': filters?.status },
+      exact: { 'e.id': filters?.id, 'e.status': filters?.status, 'e.category': filters?.category },
       like: { keyword: filters?.keyword, fields: ['e.name'] },
     });
     qb.orderBy('e.sortOrder', 'ASC')

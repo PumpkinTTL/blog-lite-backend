@@ -35,6 +35,7 @@ export class FriendLinkController {
     @Query('id') id?: string,
     @Query('keyword') keyword?: string,
     @Query('status') status?: string,
+    @Query('category') category?: string,
     @Req() req?: Request,
   ) {
     // 未登录或普通用户只返回已启用的友链；管理员看全部
@@ -48,6 +49,7 @@ export class FriendLinkController {
         id: id !== undefined ? parseInt(id) : undefined,
         keyword,
         status: finalStatus,
+        category,
       },
     );
     return { success: true, data, message: 'ok' };

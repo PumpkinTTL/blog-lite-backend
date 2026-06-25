@@ -26,6 +26,10 @@ export class CreateFriendLinkDto {
   @MaxLength(255)
   description?: string;
 
+  @IsIn(['blog', 'tool', 'learn', 'friend', 'other'])
+  @IsOptional()
+  category?: string;
+
   @IsIn(['hidden', 'visible'])
   @IsOptional()
   status?: string;
@@ -64,6 +68,10 @@ export class UpdateFriendLinkDto {
   @IsOptional()
   @MaxLength(255)
   description?: string;
+
+  @IsIn(['blog', 'tool', 'learn', 'friend', 'other'])
+  @IsOptional()
+  category?: string;
 
   @IsIn(['hidden', 'visible'])
   @IsOptional()

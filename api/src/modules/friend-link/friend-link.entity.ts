@@ -14,6 +14,7 @@ import { PostEntity } from '../post/post.entity';
 @Index('uq_friendlink_name', ['name'], { unique: true })
 @Index('idx_friendlink_status', ['status'])
 @Index('idx_friendlink_sort', ['sortOrder'])
+@Index('idx_friendlink_category', ['category'])
 export class FriendLinkEntity {
   @PrimaryGeneratedColumn({ comment: '友链 ID' })
   id: number;
@@ -29,6 +30,14 @@ export class FriendLinkEntity {
 
   @Column({ type: 'varchar', length: 255, nullable: true, comment: '描述' })
   description: string | null;
+
+  @Column({
+    type: 'varchar',
+    length: 50,
+    default: 'other',
+    comment: '分类 blog=博客 tool=工具 learn=学习资源 friend=友情 other=其他',
+  })
+  category: string;
 
   @Column({ type: 'int', default: 0, name: 'sort_order', comment: '排序权重' })
   sortOrder: number;
