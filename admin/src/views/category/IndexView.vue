@@ -12,7 +12,7 @@ const formRef = ref<FormInst | null>(null)
 // Pagination
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(5)
+const pageSize = ref(10)
 
 const { loading, list, searchId, searchKeyword, showModal, editingId, saving, formValue,
   handleSearch: _handleSearch, handleReset: _handleReset, openCreate, openEdit, handleSave: _handleSave, handleDelete, handleBatchDelete, checkedRowKeys, selectionColumn } =
@@ -136,7 +136,7 @@ const columns: DataTableColumns<Category> = [
         @update:checked-row-keys="(keys: any) => checkedRowKeys = keys"
       />
       <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
     </div>
 

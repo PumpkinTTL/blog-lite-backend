@@ -19,7 +19,7 @@ const activeTab = ref('codes')
 // ==================== Tab 1: 激活码列表 ====================
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(5)
+const pageSize = ref(10)
 const searchType = ref<string | null>(null)
 const searchStatusField = ref<string | null>(null)
 const checkedRowKeys = ref<number[]>([])
@@ -604,7 +604,7 @@ onMounted(() => {
         :scroll-x="1420"
             :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
           <div class="pagination-wrap" v-if="total > 0">
-            <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+            <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
           </div>
         </div>
       </n-tab-pane>
@@ -621,7 +621,7 @@ onMounted(() => {
         <div class="table-section">
           <n-data-table :columns="logColumns" :data="logList" :loading="logLoading" :bordered="false" :scroll-x="780" />
           <div class="pagination-wrap" v-if="logTotal > 0">
-            <n-pagination :page="logPage" :page-size="logPageSize" :page-sizes="[10, 20, 50]" :item-count="logTotal" show-size-picker @update:page="handleLogPageChange" @update:page-size="handleLogPageSizeChange" />
+            <n-pagination :page="logPage" :page-size="logPageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="logTotal" show-size-picker @update:page="handleLogPageChange" @update:page-size="handleLogPageSizeChange" />
           </div>
         </div>
       </n-tab-pane>

@@ -10,7 +10,7 @@ const loading = ref(false)
 const list = ref<AuditLog[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 
 const targetType = ref<string | null>(null)
 const targetId = ref<string | null>(null)
@@ -130,7 +130,7 @@ onMounted(() => { load() })
     <div class="table-section">
       <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1180" />
       <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination :page="page" :page-size="pageSize" :item-count="total" @update:page="handlePageChange" />
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="(s: number) => { pageSize = s; page = 1; load() }" />
       </div>
     </div>
   </div>

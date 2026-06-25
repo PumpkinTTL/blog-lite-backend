@@ -37,7 +37,7 @@ export class RequestLogController {
     @Query('startTime') startTime?: string,
     @Query('endTime') endTime?: string,
   ) {
-    return this.requestLogService.findAll({
+    const data = await this.requestLogService.findAll({
       page: parsePage(page),
       pageSize: parsePageSize(pageSize),
       requestId: requestId?.trim() || undefined,
@@ -48,6 +48,7 @@ export class RequestLogController {
       startTime: startTime ? new Date(startTime) : undefined,
       endTime: endTime ? new Date(endTime) : undefined,
     });
+    return { success: true, data, message: 'ok' };
   }
 
   /** 按 requestId 精确查（用户报错追溯主入口） */

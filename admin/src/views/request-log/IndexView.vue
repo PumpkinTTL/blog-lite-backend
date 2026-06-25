@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
+import { ref, computed, onMounted, h } from 'vue'
 import { NDataTable, NTag, NPagination, NInput, NButton, NIcon, NSelect, NSpace, useMessage, NPopconfirm } from 'naive-ui'
 import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { SearchOutline, RefreshOutline, TrashOutline } from '@vicons/ionicons5'
@@ -7,10 +7,18 @@ import { getRequestLogs, cleanRequestLogs, type RequestLog } from '../../api/req
 
 const message = useMessage()
 const loading = ref(false)
-const list = ref<RequestLog[]>([])
-const total = ref(0)
+// 全量数据（一次拉取，前端分页），pagedList 是当前页切片
+const allList = ref<RequestLog[]>([])
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
+const pageSizes = [5, 10, 20, 30, 50, 100]
+
+// 前端分页：根据 page/pageSize 切片当前页数据
+const pagedList = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return allList.value.slice(start, start + pageSize.value)
+})
+const total = computed(() => allList.value.length)
 
 // 筛选条件
 const searchRequestId = ref('')
@@ -94,34 +102,37 @@ const columns: DataTableColumns<RequestLog> = [
 async function load() {
   loading.value = true
   try {
+    // 前端分页：一次拉全量（pageSize 给大值），翻页/pageSize 切换不调接口
     const res = await getRequestLogs({
-      page: page.value,
-      pageSize: pageSize.value,
+      page: 1,
+      pageSize: 9999,
       requestId: searchRequestId.value.trim() || undefined,
       ip: searchIp.value.trim() || undefined,
       status: searchStatus.value ?? undefined,
       method: searchMethod.value ?? undefined,
     })
-    list.value = res.data?.list || []
-    total.value = res.data?.total || 0
+    allList.value = res.data?.list || []
+    // 数据刷新后回到第 1 页
+    page.value = 1
   } catch (e: any) {
     message.error(e?.message || '加载失败')
-    list.value = []; total.value = 0
+    allList.value = []
   } finally {
     loading.value = false
   }
 }
 
-function handleSearch() { page.value = 1; load() }
+function handleSearch() { load() }
 function handleReset() {
   searchRequestId.value = ''
   searchIp.value = ''
   searchStatus.value = null
   searchMethod.value = null
-  page.value = 1
   load()
 }
-function handlePageChange(p: number) { page.value = p; load() }
+// 前端分页：翻页/pageSize 切换纯本地计算，不调接口
+function handlePageChange(p: number) { page.value = p }
+function handlePageSizeChange(s: number) { pageSize.value = s; page.value = 1 }
 
 async function handleClean() {
   try {
@@ -163,11 +174,11 @@ onMounted(() => { load() })
       </n-button>
     </n-space>
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1330" :row-key="(row: any) => row.id" />
+      <n-data-table :columns="columns" :data="pagedList" :loading="loading" :bordered="false" :scroll-x="1330" :row-key="(row: any) => row.id" />
       <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination :page="page" :page-size="pageSize" :item-count="total"
+        <n-pagination :page="page" :page-size="pageSize" :item-count="total" :page-sizes="pageSizes" show-size-picker
           @update:page="handlePageChange"
-          @update:page-size="(s: number) => { pageSize = s; page = 1; load() }" />
+          @update:page-size="handlePageSizeChange" />
       </div>
     </div>
   </div>

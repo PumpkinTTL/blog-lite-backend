@@ -549,7 +549,7 @@ watch(activeTab, (tab) => {
           <n-data-table :columns="logColumns" :data="logs" :loading="logsLoading" :bordered="false"
             :scroll-x="1220" :row-key="(row: any) => row.id" />
           <div class="pagination-wrap" v-if="logsTotal > 0">
-            <n-pagination :page="logsPage" :page-size="logsPageSize" :page-sizes="[10, 20, 50]"
+            <n-pagination :page="logsPage" :page-size="logsPageSize" :page-sizes="[5, 10, 20, 30, 50, 100]"
               :item-count="logsTotal" show-size-picker
               @update:page="(p: number) => { logsPage = p; loadLogs() }"
               @update:page-size="(s: number) => { logsPageSize = s; logsPage = 1; loadLogs() }" />

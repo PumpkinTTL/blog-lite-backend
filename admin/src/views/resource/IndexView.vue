@@ -855,7 +855,7 @@ const catColumns: DataTableColumns<ResourceCategory> = [
             <n-pagination
               :page="page"
               :page-size="pageSize"
-              :page-sizes="[10, 20, 50]"
+              :page-sizes="[5, 10, 20, 30, 50, 100]"
               :item-count="total"
               show-size-picker
               @update:page="handlePageChange"
@@ -920,7 +920,7 @@ const catColumns: DataTableColumns<ResourceCategory> = [
             <n-pagination
               :page="catPage"
               :page-size="catPageSize"
-              :page-sizes="[10, 20, 50]"
+              :page-sizes="[5, 10, 20, 30, 50, 100]"
               :item-count="catTotal"
               show-size-picker
               @update:page="catHandlePageChange"

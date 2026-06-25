@@ -325,7 +325,7 @@ async function handleSaveFormatted() {
       <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1390"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[10, 20, 50]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
     </div>
     <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑推广' : '新建推广'"

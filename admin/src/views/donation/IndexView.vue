@@ -64,7 +64,7 @@ const loading = ref(false)
 const donationList = ref<Donation[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(5)
+const pageSize = ref(10)
 const searchId = ref('')
 const searchKeyword = ref('')
 const filterStatus = ref<string | null>(null)
@@ -595,7 +595,7 @@ onMounted(() => { loadList(); loadStats() })
         :row-key="(row: Donation) => row.id" :scroll-x="1467"
         @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 50]" :item-count="total"
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total"
           show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
     </div>

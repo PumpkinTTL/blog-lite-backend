@@ -13,7 +13,7 @@ const loading = ref(false)
 const list = ref<AdminInteraction[]>([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const checkedRowKeys = ref<number[]>([])
 
 const searchKeyword = ref('')
@@ -240,7 +240,7 @@ onMounted(() => {
       <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1100"
         :row-key="(row: AdminInteraction) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
-        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[20, 50, 100]" :item-count="total" show-size-picker
+        <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker
           @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>
     </div>

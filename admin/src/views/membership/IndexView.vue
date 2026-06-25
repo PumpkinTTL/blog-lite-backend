@@ -625,7 +625,7 @@ onMounted(() => {
             <n-pagination
               :page="memberPage"
               :page-size="memberPageSize"
-              :page-sizes="[10, 20, 50]"
+              :page-sizes="[5, 10, 20, 30, 50, 100]"
               :item-count="memberTotal"
               show-size-picker
               @update:page="handleMemberPageChange"
