@@ -173,7 +173,7 @@ const columns: DataTableColumns<FriendLink> = [
       </n-button>
     </n-space>
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1070"
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" :scroll-x="1180" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
