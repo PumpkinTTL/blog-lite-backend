@@ -445,11 +445,35 @@ export class MembershipService implements OnModuleInit {
       relations: ['plan'],
     });
     if (actives.length === 0) return null;
+
+    const now = new Date();
+    // 检测是否有刚过期的记录（sweep 还没跑到的窗口期）
+    const justExpired = actives.filter(
+      (m) => m.expiresAt && m.expiresAt < now,
+    );
+    if (justExpired.length > 0) {
+      // 懒过期：即时清理 + 撤角色，堵住"sweep 1小时窗口内角色残留"的漏洞。
+      // fire-and-forget 不阻塞当前请求，但用 await 保证角色在后续资源校验前被撤。
+      await this.sweepUser(userId, justExpired);
+      // 清理后重新过滤（justExpired 的已标 expired，从 actives 里剔除）
+      const remaining = actives.filter(
+        (m) => !(m.expiresAt && m.expiresAt < now),
+      );
+      return this.pickHighestLevel(remaining);
+    }
+
+    return this.pickHighestLevel(actives);
+  }
+
+  /**
+   * 从 active 订阅列表中挑出最高等级（已确保都未过期）
+   */
+  private pickHighestLevel(
+    memberships: MembershipEntity[],
+  ): PlanLevel | null {
     let highest: PlanLevel | null = null;
     let highestWeight = 0;
-    for (const m of actives) {
-      // 二次校验 expiresAt（防止 sweep 还没跑但已过期）
-      if (m.expiresAt && m.expiresAt < new Date()) continue;
+    for (const m of memberships) {
       const w = LEVEL_WEIGHT[m.plan.level];
       if (w > highestWeight) {
         highestWeight = w;
@@ -457,6 +481,50 @@ export class MembershipService implements OnModuleInit {
       }
     }
     return highest;
+  }
+
+  /**
+   * 单用户懒过期清理：把该用户刚过期的 active 订阅标 expired + 撤角色。
+   * 由 getActiveLevel 触发（用户查会员状态/资源校验时即时执行），
+   * 补 sweep 定时任务（每小时）的 1 小时窗口盲区。
+   *
+   * @param userId 目标用户
+   * @param expired 已确认过期的 active 记录（避免重复查询）
+   */
+  private async sweepUser(
+    userId: number,
+    expired: MembershipEntity[],
+  ): Promise<void> {
+    if (expired.length === 0) return;
+    try {
+      // 1. 标 expired
+      const ids = expired.map((m) => m.id);
+      await this.memberRepo
+        .createQueryBuilder()
+        .update()
+        .set({ status: 'expired' })
+        .where('id IN (:...ids)', { ids })
+        .execute();
+
+      // 2. 撤角色（按 roleId 去重，safeRevokeRole 自带双重订阅防误删）
+      const handled = new Set<string>();
+      for (const m of expired) {
+        const roleId = m.plan.roleId;
+        if (!roleId) continue;
+        const key = `${userId}:${roleId}`;
+        if (handled.has(key)) continue;
+        handled.add(key);
+        await this.safeRevokeRole(null, userId, roleId, m.id);
+      }
+      this.logger.log(
+        `懒过期：userId=${userId} 清理 ${expired.length} 条过期订阅`,
+      );
+    } catch (e) {
+      // 懒过期失败不应阻塞业务请求，记录日志即可（下次 sweep 会兜底）
+      this.logger.warn(
+        `懒过期清理失败 userId=${userId}: ${(e as Error).message}`,
+      );
+    }
   }
 
   /**
