@@ -239,6 +239,14 @@ const planColumns: DataTableColumns<Plan> = [
     render: (row) => h(NTag, { size: 'small', type: levelTagType[row.level], bordered: false }, { default: () => levelLabel[row.level] }),
   },
   {
+    title: '绑定角色', key: 'roleId', width: 120,
+    render: (row) => {
+      if (!row.roleId) return h('span', { style: 'color:#bbb' }, '未绑定')
+      const role = roles.value.find((r) => r.id === row.roleId)
+      return h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => role?.displayName ?? `#${row.roleId}` })
+    },
+  },
+  {
     title: '时长', key: 'durationDays', width: 90,
     render: (row) => (row.durationDays === 0 ? '终身' : `${row.durationDays} 天`),
   },
