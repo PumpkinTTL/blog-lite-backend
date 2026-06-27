@@ -194,11 +194,14 @@ export class CodeService {
               ? `CASE WHEN usedCount + 1 >= ${Number(maxUses)} THEN 'used' ELSE status END`
               : 'status',
         })
-        .where('c.id = :id', { id: codeEntity.id })
+        // 注意：UPDATE 语句的 WHERE 子句不能用表别名前缀（如 c.id），
+        // MySQL 不允许 UPDATE ... WHERE c.col，会报 Unknown column 'c.id'。
+        // 直接用裸列名。
+        .where('id = :id', { id: codeEntity.id })
         // maxUses=0 表示无限次，不加次数条件；否则要求 usedCount < maxUses
         .andWhere(
           maxUses > 0
-            ? 'c.usedCount < :maxUses'
+            ? 'usedCount < :maxUses'
             : '1 = 1',
           { maxUses },
         )

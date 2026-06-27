@@ -397,20 +397,42 @@ export class MembershipService implements OnModuleInit {
     dto: UpdateMembershipDto,
   ): Promise<MembershipEntity> {
     const m = await this.findById(id);
+    const wasActive = m.status === 'active';
     if (dto.status) m.status = dto.status;
     if (dto.expiresAt !== undefined)
       m.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     if (dto.note !== undefined) m.note = dto.note;
-    return this.memberRepo.save(m);
+    const saved = await this.memberRepo.save(m);
+    // 从 active 改为其他状态（如取消）→ 撤掉该套餐绑定的角色（防双重订阅误删）
+    if (wasActive && dto.status && dto.status !== 'active' && m.plan.roleId) {
+      await this.safeRevokeRole(null, m.userId, m.plan.roleId, m.id);
+    }
+    return saved;
   }
 
   async remove(id: number): Promise<void> {
     const m = await this.findById(id);
+    const wasActive = m.status === 'active';
     await this.memberRepo.remove(m);
+    // 删除一条 active 会员 → 撤角色（若该用户无其他订阅依赖此角色）
+    if (wasActive && m.plan.roleId) {
+      // remove 后记录已不存在，safeRevokeRole 内部查"其他订阅"时不会包含它
+      await this.safeRevokeRole(null, m.userId, m.plan.roleId, undefined);
+    }
   }
 
   async batchRemove(ids: number[]): Promise<void> {
+    // 先查出待删除记录（含 plan.roleId），删除后逐条撤角色
+    const toRemove = await this.memberRepo.find({
+      where: ids.map((id) => ({ id })),
+      relations: ['plan'],
+    });
     await this.memberRepo.delete(ids);
+    for (const m of toRemove) {
+      if (m.status === 'active' && m.plan.roleId) {
+        await this.safeRevokeRole(null, m.userId, m.plan.roleId, undefined);
+      }
+    }
   }
 
   /**
