@@ -51,6 +51,7 @@ export class PlanService {
       durationDays: dto.durationDays,
       priceCents: dto.priceCents ?? 0,
       benefits: dto.benefits ?? null,
+      roleId: dto.roleId ?? null,
       description: dto.description ?? null,
       isActive: dto.isActive ?? true,
       sort: dto.sort ?? 0,

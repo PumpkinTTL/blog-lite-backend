@@ -16,6 +16,8 @@ import {
 } from '../../api/membership'
 import type { Membership, MembershipStatus, MembershipSource } from '../../api/membership'
 import { getUsers } from '../../api/user'
+import { getRoles } from '../../api/role'
+import type { Role } from '../../api/role'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -39,10 +41,18 @@ const planForm = ref({
   priceCents: 0,  // 表单存元，保存时 ×100
   benefits: [] as string[],
   benefitsInput: '', // 输入框临时值
+  roleId: null as number | null,  // 兑换时自动授予的角色组
   description: '',
   isActive: true,
   sort: 0,
 })
+
+// 角色组列表（用于套餐绑定角色下拉）
+const roles = ref<Role[]>([])
+const roleOptions = computed(() => [
+  { label: '不绑定角色', value: null },
+  ...roles.value.map((r) => ({ label: `${r.displayName}（${r.name}）`, value: r.id })),
+])
 
 const levelOptions = [
   { label: 'Plus（基础）', value: 'plus' },
@@ -86,7 +96,7 @@ function openPlanCreate() {
   planEditingId.value = null
   planForm.value = {
     name: '', slug: '', level: 'plus', durationDays: 30, priceCents: 0,
-    benefits: [], benefitsInput: '', description: '', isActive: true, sort: 0,
+    benefits: [], benefitsInput: '', roleId: null, description: '', isActive: true, sort: 0,
   }
   planModalShow.value = true
 }
@@ -101,11 +111,22 @@ function openPlanEdit(plan: Plan) {
     priceCents: plan.priceCents / 100,  // DB存分 → 表单显示元
     benefits: plan.benefits ?? [],
     benefitsInput: '',
+    roleId: plan.roleId ?? null,
     description: plan.description ?? '',
     isActive: plan.isActive,
     sort: plan.sort,
   }
   planModalShow.value = true
+}
+
+// 加载角色组列表（套餐绑定角色下拉用）
+async function loadRoles() {
+  try {
+    const res = await getRoles({ pageSize: 200 })
+    roles.value = (res.data as Role[]) || []
+  } catch {
+    roles.value = []
+  }
 }
 
 // 添加权益项
@@ -139,6 +160,7 @@ async function handlePlanSave() {
       durationDays: planForm.value.durationDays,
       priceCents: Math.round(planForm.value.priceCents * 100),  // 元转分
       benefits: planForm.value.benefits.length ? planForm.value.benefits : undefined,
+      roleId: planForm.value.roleId,
       description: planForm.value.description || undefined,
       isActive: planForm.value.isActive,
       sort: planForm.value.sort,
@@ -547,6 +569,7 @@ onMounted(() => {
   loadPlans()
   loadMembers()
   loadUserOptions()
+  loadRoles()
 })
 </script>
 
@@ -656,6 +679,13 @@ onMounted(() => {
         </n-form-item>
         <n-form-item label="权益等级" path="level">
           <n-select v-model:value="planForm.level" :options="levelOptions" />
+        </n-form-item>
+        <n-form-item label="兑换授予角色组" path="roleId">
+          <n-select
+            v-model:value="planForm.roleId"
+            :options="roleOptions"
+            placeholder="兑换该套餐时自动把用户加入此角色组（权益由角色组定义）"
+          />
         </n-form-item>
         <n-space :size="12">
           <n-form-item label="有效期（天，0=终身）" path="durationDays">

@@ -66,7 +66,7 @@ async function seedDemoData(dataSource: DataSource) {
         cat: '开发工具',
         panLinks: [{ name: '夸克网盘', url: 'https://pan.quark.cn/example', code: 'abc1' }],
         status: 'published',
-        minMemberLevel: null,
+        requiredRoles: [] as string[], // 无门槛
       },
       {
         title: 'Tailwind UI Kit 设计模板',
@@ -75,7 +75,7 @@ async function seedDemoData(dataSource: DataSource) {
         cat: '设计模板',
         panLinks: [{ name: '百度网盘', url: 'https://pan.baidu.com/example', code: 'def2' }],
         status: 'published',
-        minMemberLevel: 'plus',
+        requiredRoles: ['plus', 'pro', 'max'], // 任意会员可解锁
       },
       {
         title: 'Vue 3 进阶实战教程合集',
@@ -84,7 +84,7 @@ async function seedDemoData(dataSource: DataSource) {
         cat: '学习资料',
         panLinks: [{ name: '蓝奏云', url: 'https://wwa.lanzoui.com/example', code: null }],
         status: 'published',
-        minMemberLevel: null,
+        requiredRoles: [] as string[],
       },
       {
         title: 'Chrome 前端调试插件精选',
@@ -93,7 +93,7 @@ async function seedDemoData(dataSource: DataSource) {
         cat: '插件扩展',
         panLinks: [{ name: '自定义', url: 'https://example.com/plugins', code: null }],
         status: 'published',
-        minMemberLevel: 'pro',
+        requiredRoles: ['pro', 'max'], // Pro 及以上
       },
       {
         title: 'Node.js 后端架构图解',
@@ -102,7 +102,7 @@ async function seedDemoData(dataSource: DataSource) {
         cat: '学习资料',
         panLinks: [{ name: '夸克网盘', url: 'https://pan.quark.cn/example2', code: 'ghi3' }],
         status: 'published',
-        minMemberLevel: null,
+        requiredRoles: [] as string[],
       },
       {
         title: 'Figma 图标库 2000+',
@@ -111,7 +111,7 @@ async function seedDemoData(dataSource: DataSource) {
         cat: '设计模板',
         panLinks: [{ name: '百度网盘', url: 'https://pan.baidu.com/example2', code: 'jkl4' }],
         status: 'published',
-        minMemberLevel: null,
+        requiredRoles: [] as string[],
       },
       {
         title: 'Git 工作流速查手册',
@@ -120,7 +120,7 @@ async function seedDemoData(dataSource: DataSource) {
         cat: '开发工具',
         panLinks: [{ name: '蓝奏云', url: 'https://wwa.lanzoui.com/example2', code: null }],
         status: 'published',
-        minMemberLevel: null,
+        requiredRoles: [] as string[],
       },
       {
         title: 'Docker 容器化部署实战',
@@ -129,16 +129,24 @@ async function seedDemoData(dataSource: DataSource) {
         cat: '学习资料',
         panLinks: [{ name: '夸克网盘', url: 'https://pan.quark.cn/example3', code: 'mno5' }],
         status: 'published',
-        minMemberLevel: 'plus',
+        requiredRoles: ['plus', 'pro', 'max'],
       },
     ];
 
+    // 查会员角色 ID（用于 requiredRoleIds 映射）
+    const roleRows: Array<{ id: number; name: string }> = await dataSource.query(
+      `SELECT id, name FROM roles WHERE name IN ('plus', 'pro', 'max')`,
+    );
+    const toRoleIds = (names: string[]) =>
+      names.map((n) => roleRows.find((r) => r.name === n)?.id).filter((id): id is number => !!id);
+
     for (let i = 0; i < resources.length; i++) {
       const r = resources[i];
+      const requiredRoleIds = toRoleIds(r.requiredRoles);
       await dataSource.query(
         `INSERT INTO resources
-          (title, description, cover, category_id, uploader_id, content, pan_links, price_cents, status, min_member_level, view_count, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NOW(), NOW())`,
+          (title, description, cover, category_id, uploader_id, content, pan_links, price_cents, status, min_member_level, required_role_ids, view_count, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?, ?, ?, NOW(), NOW())`,
         [
           r.title,
           r.description,
@@ -148,7 +156,7 @@ async function seedDemoData(dataSource: DataSource) {
           `## ${r.title}\n\n${r.description}`,
           JSON.stringify(r.panLinks),
           r.status,
-          r.minMemberLevel,
+          requiredRoleIds.length ? JSON.stringify(requiredRoleIds) : null,
           Math.floor(Math.random() * 2000) + 100,
           i,
         ],
@@ -209,6 +217,19 @@ async function seed() {
       ['admin', '管理员', '系统超级管理员，拥有所有权限'],
     );
 
+    // 1.5 插入会员等级对应的角色组（权益载体，套餐会绑定它们）
+    const memberRoles: Array<[string, string, string]> = [
+      ['plus', 'Plus 会员', 'Plus 基础会员权益组'],
+      ['pro', 'Pro 会员', 'Pro 专业版会员权益组'],
+      ['max', 'Max 会员', 'Max 旗舰版会员权益组'],
+    ];
+    for (const [name, displayName, desc] of memberRoles) {
+      await queryRunner.query(
+        `INSERT IGNORE INTO roles (name, display_name, description, created_at) VALUES (?, ?, ?, NOW())`,
+        [name, displayName, desc],
+      );
+    }
+
     // 2. 插入默认管理员用户（密码: admin123）
     const passwordHash = await bcrypt.hash('admin123', 10);
     await queryRunner.query(
@@ -256,9 +277,39 @@ async function seed() {
       );
     }
 
+    // 5. 会员套餐（仅当 plans 表为空时创建，避免覆盖已有配置）
+    //    每个套餐绑定对应等级的角色组（roleId），兑换后自动授予角色。
+    const planCount: Array<{ cnt: number }> = await queryRunner.query(
+      `SELECT COUNT(*) AS cnt FROM plans`,
+    );
+    if (Number(planCount[0].cnt) === 0) {
+      const levelRoles: Array<{ id: number; name: string }> = await queryRunner.query(
+        `SELECT id, name FROM roles WHERE name IN ('plus', 'pro', 'max')`,
+      );
+      const roleIdOf = (name: string) =>
+        levelRoles.find((r) => r.name === name)?.id ?? null;
+
+      const plans: Array<{
+        name: string; slug: string; level: string; days: number; roleId: number | null;
+      }> = [
+        { name: 'Plus 月度', slug: 'plus_monthly', level: 'plus', days: 30, roleId: roleIdOf('plus') },
+        { name: 'Pro 月度', slug: 'pro_monthly', level: 'pro', days: 30, roleId: roleIdOf('pro') },
+        { name: 'Max 月度', slug: 'max_monthly', level: 'max', days: 30, roleId: roleIdOf('max') },
+        { name: 'Pro 年度', slug: 'pro_yearly', level: 'pro', days: 365, roleId: roleIdOf('pro') },
+      ];
+      for (const p of plans) {
+        await queryRunner.query(
+          `INSERT INTO plans (name, slug, level, duration_days, price_cents, benefits, role_id, description, is_active, sort, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 0, NULL, ?, NULL, 1, 0, NOW(), NOW())`,
+          [p.name, p.slug, p.level, p.days, p.roleId],
+        );
+      }
+      console.log(`  套餐: 已创建 ${plans.length} 个（绑定会员角色组）`);
+    }
+
     await queryRunner.commitTransaction();
     console.log('种子数据初始化完成');
-    console.log('  角色: admin（管理员）');
+    console.log('  角色: admin（管理员）+ plus/pro/max（会员权益组）');
     console.log('  账号: admin / 密码: admin123');
   } catch (err) {
     await queryRunner.rollbackTransaction();

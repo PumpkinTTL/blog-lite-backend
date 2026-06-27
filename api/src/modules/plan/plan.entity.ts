@@ -50,6 +50,15 @@ export class PlanEntity {
   @Column({ type: 'json', nullable: true, comment: '权益列表' })
   benefits: string[] | null;
 
+  /**
+   * 兑换/开通该套餐时自动授予的角色组 ID（一对一）。
+   * grant() 成功后给用户加该角色；sweepExpired() 过期时移除。
+   * 资源等权益校验改为查角色组，角色组成为权益的真正载体。
+   * null = 不绑定角色（纯展示型套餐）。
+   */
+  @Column({ type: 'int', nullable: true, comment: '兑换时自动授予的角色组 ID' })
+  roleId: number | null;
+
   @Column({ type: 'text', nullable: true, comment: '套餐描述' })
   description: string | null;
 

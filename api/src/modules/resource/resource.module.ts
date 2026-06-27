@@ -6,14 +6,12 @@ import { ResourceService } from './resource.service';
 import { ResourceController } from './resource.controller';
 import { EntityVisibilityModule } from '../entity-visibility/entity-visibility.module';
 import { CodeModule } from '../code/code.module';
-import { MembershipModule } from '../membership/membership.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ResourceEntity, ResourceCategoryEntity]),
     EntityVisibilityModule,
     CodeModule,
-    MembershipModule,
   ],
   controllers: [ResourceController],
   providers: [ResourceService],

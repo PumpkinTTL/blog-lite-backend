@@ -36,6 +36,10 @@ export class CreatePlanDto {
   @IsOptional()
   benefits?: string[];
 
+  @IsInt()
+  @IsOptional()
+  roleId?: number | null;
+
   @IsString()
   @IsOptional()
   description?: string;
@@ -81,6 +85,10 @@ export class UpdatePlanDto {
   @IsArray()
   @IsOptional()
   benefits?: string[];
+
+  @IsInt()
+  @IsOptional()
+  roleId?: number | null;
 
   @IsString()
   @IsOptional()

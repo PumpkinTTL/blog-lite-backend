@@ -11,6 +11,8 @@ import { MembershipEntity } from './membership.entity';
 import { PlanLevel } from '../plan/plan.entity';
 import { PlanService } from '../plan/plan.service';
 import { GrantMembershipDto, UpdateMembershipDto } from './membership.dto';
+import { UserEntity } from '../user/user.entity';
+import { RoleEntity } from '../user/role.entity';
 
 // 等级权重：用于比较两个等级谁更高（数字越大级别越高）
 const LEVEL_WEIGHT: Record<PlanLevel, number> = {
@@ -33,6 +35,10 @@ export class MembershipService implements OnModuleInit {
   constructor(
     @InjectRepository(MembershipEntity)
     private readonly memberRepo: Repository<MembershipEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
+    @InjectRepository(RoleEntity)
+    private readonly roleRepo: Repository<RoleEntity>,
     private readonly planService: PlanService,
     private readonly dataSource: DataSource,
   ) {}
@@ -57,23 +63,54 @@ export class MembershipService implements OnModuleInit {
   }
 
   /**
-   * 把已过期的 active 订阅标记为 expired
-   * 注意：expiresAt IS NULL（终身）不处理
+   * 把已过期的 active 订阅标记为 expired，并移除其绑定的角色（无其他订阅依赖时）。
+   * 注意：expiresAt IS NULL（终身）不处理。
    */
   async sweepExpired(): Promise<number> {
-    const result = await this.memberRepo
+    const now = new Date();
+    // 1. 先查出待过期的记录（JOIN plan 取 roleId），原单条 UPDATE 无法带"移除角色"逻辑
+    const expiring = await this.memberRepo.find({
+      where: { status: 'active' },
+      relations: ['plan'],
+    });
+    const toExpire = expiring.filter(
+      (m) => m.expiresAt && m.expiresAt < now,
+    );
+    if (toExpire.length === 0) return 0;
+
+    // 2. 标记 expired（批量）
+    const ids = toExpire.map((m) => m.id);
+    await this.memberRepo
       .createQueryBuilder()
       .update()
       .set({ status: 'expired' })
-      .where('status = :active', { active: 'active' })
-      .andWhere('expiresAt IS NOT NULL')
-      .andWhere('expiresAt < :now', { now: new Date() })
+      .where('id IN (:...ids)', { ids })
       .execute();
-    const affected = result.affected ?? 0;
-    if (affected > 0) {
-      this.logger.log(`自动过期 ${affected} 条会员订阅`);
+
+    // 3. 移除每条过期订阅绑定的角色（safeRevokeRole 自带双重订阅防误删）
+    //    按 userId+roleId 去重，避免同一用户多条同时过期时重复处理
+    const handled = new Set<string>();
+    for (const m of toExpire) {
+      const roleId = m.plan.roleId;
+      if (!roleId) continue;
+      const key = `${m.userId}:${roleId}`;
+      if (handled.has(key)) continue;
+      handled.add(key);
+      try {
+        const revoked = await this.safeRevokeRole(null, m.userId, roleId, m.id);
+        if (revoked) {
+          this.logger.log(
+            `过期撤角色：userId=${m.userId} roleId=${roleId}（订阅 #${m.id} 过期）`,
+          );
+        }
+      } catch (e) {
+        // 单个撤角色失败不应阻塞批量过期；记录日志继续
+        this.logger.warn(`过期撤角色失败 userId=${m.userId} roleId=${roleId}: ${(e as Error).message}`);
+      }
     }
-    return affected;
+
+    this.logger.log(`自动过期 ${toExpire.length} 条会员订阅`);
+    return toExpire.length;
   }
 
   /**
@@ -155,6 +192,81 @@ export class MembershipService implements OnModuleInit {
     }
   }
 
+  /**
+   * 给用户授予角色（事务内，去重：已有则跳过）。
+   * 用于 grant() 成功后绑定 plan.roleId。
+   * @param manager 事务 EntityManager
+   * @param userId 目标用户
+   * @param roleId 要授予的角色 ID
+   * @returns 是否实际新增了角色（false=已有或参数无效）
+   */
+  private async grantRole(
+    manager: import('typeorm').EntityManager,
+    userId: number,
+    roleId: number | null,
+  ): Promise<boolean> {
+    if (!roleId) return false;
+    const user = await manager.findOne(UserEntity, {
+      where: { id: userId },
+      relations: ['roles'],
+    });
+    if (!user) return false;
+    if (user.roles.some((r) => r.id === roleId)) return false; // 已有
+    const role = await manager.findOne(RoleEntity, { where: { id: roleId } });
+    if (!role) return false;
+    user.roles = [...user.roles, role];
+    await manager.save(user);
+    return true;
+  }
+
+  /**
+   * 安全移除角色（事务内）：仅当用户没有其他 active 订阅仍依赖该角色时才移除。
+   * 用于升级作废低级 / 过期时，防止"双重订阅"误删。
+   * 例：用户有 pro_monthly 和 pro_yearly 两个订阅都绑 pro 角色，
+   *     其中 pro_monthly 被作废时，pro_yearly 仍 active → 不应删 pro 角色。
+   *
+   * @param manager 事务 EntityManager（可为 null，表示用普通 repo 查）
+   * @param userId 目标用户
+   * @param roleId 要移除的角色 ID
+   * @param excludeMembershipId 排除的订阅 ID（正在被作废/过期的那条，查"其他订阅"时跳过它）
+   */
+  private async safeRevokeRole(
+    manager: import('typeorm').EntityManager | null,
+    userId: number,
+    roleId: number | null,
+    excludeMembershipId?: number,
+  ): Promise<boolean> {
+    if (!roleId) return false;
+    const now = new Date();
+
+    // 查用户的其他 active 订阅（排除正在处理的那条），看是否仍依赖该 roleId
+    const otherMemberships = await (manager ?? this.memberRepo.manager).find(
+      MembershipEntity,
+      {
+        where: { userId, status: 'active' },
+        relations: ['plan'],
+      },
+    );
+    const stillNeeded = otherMemberships.some(
+      (m) =>
+        m.id !== excludeMembershipId &&
+        m.plan.roleId === roleId &&
+        (!m.expiresAt || m.expiresAt > now),
+    );
+    if (stillNeeded) return false; // 还有其他订阅要用这个角色，保留
+
+    // 确实不再需要 → 从用户角色里移除
+    const user = await (manager ?? this.userRepo.manager).findOne(UserEntity, {
+      where: { id: userId },
+      relations: ['roles'],
+    });
+    if (!user) return false;
+    if (!user.roles.some((r) => r.id === roleId)) return false; // 本来就没有
+    user.roles = user.roles.filter((r) => r.id !== roleId);
+    await (manager ?? this.userRepo.manager).save(user);
+    return true;
+  }
+
   async grant(dto: GrantMembershipDto): Promise<MembershipEntity> {
     const plan = await this.planService.findById(dto.planId);
     if (!plan.isActive) {
@@ -209,6 +321,18 @@ export class MembershipService implements OnModuleInit {
           const note = (lower.note || '').replace(/\s*\|.*$/, '');
           lower.note = `${note} | 因升级到「${plan.name}」于 ${now.toISOString()} 作废`.trimStart();
           await manager.save(lower);
+          // 同步撤掉低级 plan 绑定的角色（若用户无其他订阅依赖它）
+          const revoked = await this.safeRevokeRole(
+            manager,
+            dto.userId,
+            lower.plan.roleId,
+            lower.id,
+          );
+          if (revoked) {
+            this.logger.log(
+              `升级撤角色：userId=${dto.userId} 移除低级 plan「${lower.plan.slug}」的角色 roleId=${lower.plan.roleId}`,
+            );
+          }
         }
         this.logger.log(
           `升级：userId=${dto.userId} 作废 ${lowerLevels.length} 条低级会员，开通「${plan.name}」`,
@@ -254,6 +378,13 @@ export class MembershipService implements OnModuleInit {
         note: dto.note ?? null,
       });
       const saved = await manager.save(record);
+      // 授予 plan 绑定的角色（去重）
+      const granted = await this.grantRole(manager, dto.userId, plan.roleId);
+      if (granted) {
+        this.logger.log(
+          `授予角色：userId=${dto.userId} roleId=${plan.roleId}（开通「${plan.name}」）`,
+        );
+      }
       this.logger.log(
         `开通会员：userId=${dto.userId} plan=${plan.slug} days=${durationDays} source=${dto.source ?? 'admin'}`,
       );

@@ -180,6 +180,7 @@ const {
     priceYuan: 0,
     status: 'draft',
     minMemberLevel: null,
+    requiredRoleIds: [] as number[],
     sortOrder: 0,
     allowedUserIds: [] as number[],
     allowedRoleIds: [] as number[],
@@ -567,13 +568,17 @@ const columns: DataTableColumns<Resource> = [
     render: (row) => (row.priceCents > 0 ? `¥${(row.priceCents / 100).toFixed(2)}` : '免费'),
   },
   {
-    title: '最低会员',
-    key: 'minMemberLevel',
-    width: 84,
-    render: (row) =>
-      row.minMemberLevel
-        ? h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => row.minMemberLevel })
-        : h('span', { style: 'color:#bbb' }, '不限'),
+    title: '解锁角色',
+    key: 'requiredRoleIds',
+    width: 120,
+    render: (row) => {
+      const ids = row.requiredRoleIds
+      if (!ids || ids.length === 0) return h('span', { style: 'color:#bbb' }, '无门槛')
+      const names = ids
+        .map((id) => roleOptions.value.find((r) => r.value === id)?.label || `#${id}`)
+        .join('、')
+      return h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => names })
+    },
   },
   { title: '排序', key: 'sortOrder', width: 56 },
   {
@@ -611,6 +616,7 @@ const columns: DataTableColumns<Resource> = [
                   priceYuan: r.priceCents ? r.priceCents / 100 : 0,
                   status: r.status,
                   minMemberLevel: r.minMemberLevel,
+                  requiredRoleIds: [...(r.requiredRoleIds || [])],
                   sortOrder: r.sortOrder,
                   allowedUserIds: [...(r.allowedUserIds || [])],
                   allowedRoleIds: [...(r.allowedRoleIds || [])],
@@ -976,11 +982,14 @@ const catColumns: DataTableColumns<ResourceCategory> = [
               @update:value="handleStatusChange"
             />
           </n-form-item>
-          <n-form-item label="最低会员等级">
+          <n-form-item label="解锁所需角色">
             <n-select
-              v-model:value="formValue.minMemberLevel"
-              :options="memberLevelOptions"
-              placeholder="不限"
+              v-model:value="formValue.requiredRoleIds"
+              :options="roleOptions"
+              placeholder="拥有这些角色之一的用户可解锁（留空=无门槛）"
+              multiple
+              clearable
+              filterable
             />
           </n-form-item>
         </div>

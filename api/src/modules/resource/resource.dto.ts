@@ -68,6 +68,12 @@ export class CreateResourceDto {
   @IsOptional()
   minMemberLevel?: 'plus' | 'pro' | 'max' | null;
 
+  /** 解锁所需的角色组 ID 列表（空=无门槛），会员权益判定依据 */
+  @IsArray()
+  @IsInt({ each: true })
+  @IsOptional()
+  requiredRoleIds?: number[] | null;
+
   @IsInt()
   @Min(0)
   @IsOptional()
@@ -126,6 +132,12 @@ export class UpdateResourceDto {
   @IsEnum(['plus', 'pro', 'max'])
   @IsOptional()
   minMemberLevel?: 'plus' | 'pro' | 'max' | null;
+
+  /** 解锁所需的角色组 ID 列表（空=无门槛），会员权益判定依据 */
+  @IsArray()
+  @IsInt({ each: true })
+  @IsOptional()
+  requiredRoleIds?: number[] | null;
 
   @IsInt()
   @Min(0)

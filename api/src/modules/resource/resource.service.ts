@@ -15,9 +15,6 @@ import { CodeService } from '../code/code.service';
 /** resource 在 entity_visibility 多态表中的 entityType 标识 */
 export const RESOURCE_ENTITY_TYPE = 'resource';
 
-/** 会员等级权重（plus < pro < max） */
-const LEVEL_WEIGHT: Record<string, number> = { plus: 1, pro: 2, max: 3 };
-
 /** 详情访问状态：决定是否返回敏感字段（panLinks） */
 export type AccessStatus = 'full' | 'locked';
 
@@ -25,7 +22,7 @@ export interface ResourceAccessResult {
   resource: ResourceEntity;
   accessStatus: AccessStatus;
   /** locked 时的原因，供前端展示锁定提示 */
-  lockReason?: 'login_required' | 'no_access' | 'need_redeem' | 'insufficient_member';
+  lockReason?: 'login_required' | 'no_access' | 'need_redeem' | 'insufficient_role';
 }
 
 @Injectable()
@@ -138,12 +135,14 @@ export class ResourceService {
   /**
    * 详情访问判定（核心锁定逻辑）
    * 返回 accessStatus='full' 时 resource 含完整 panLinks；'locked' 时 panLinks 已置 null
+   *
+   * 权益校验已改为角色驱动：resource.allowedRoleIds 指定允许访问的角色组，
+   * 用户角色与之有任一交集即可解锁（取代旧的 minMemberLevel 等级判定）。
    */
   async findByIdForUser(
     id: number,
     userId: number | null,
     userRoleIds: number[] = [],
-    memberLevel: string | null,
     isAdmin: boolean,
   ): Promise<ResourceAccessResult | null> {
     // admin 查全部；匿名只查 published；登录用户查 published/login/private（上层再判定）
@@ -186,26 +185,23 @@ export class ResourceService {
       }
     }
 
-    // 会员等级校验（任意状态都可能配置，published/login/private 通过前置校验后仍要查等级）
-    if (
-      resource.minMemberLevel &&
-      !this.meetLevel(memberLevel, resource.minMemberLevel)
-    ) {
-      return {
-        resource: this.stripSensitive(resource),
-        accessStatus: 'locked',
-        lockReason: 'insufficient_member',
-      };
+    // 角色权益校验：resource.requiredRoleIds 指定解锁所需的角色组，
+    // 用户角色与之有任一交集即可解锁；匿名用户无角色，必锁。
+    if (resource.requiredRoleIds && resource.requiredRoleIds.length > 0) {
+      const hasAccess =
+        userId !== null &&
+        userRoleIds.some((rid) => resource.requiredRoleIds!.includes(rid));
+      if (!hasAccess) {
+        return {
+          resource: this.stripSensitive(resource),
+          accessStatus: 'locked',
+          lockReason: 'insufficient_role',
+        };
+      }
     }
 
     // 全部通过 → 返回完整内容
     return { resource, accessStatus: 'full' };
-  }
-
-  /** 判定用户等级是否达标（用户等级缺失时直接不达标） */
-  private meetLevel(userLevel: string | null, required: string): boolean {
-    if (!userLevel) return false;
-    return (LEVEL_WEIGHT[userLevel] ?? 0) >= (LEVEL_WEIGHT[required] ?? 0);
   }
 
   /** 抹除敏感字段（锁定时返回预览信息） */

@@ -25,7 +25,6 @@ import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import { RESOURCE_STATUS } from '../../common/constants/status';
-import { MembershipService } from '../membership/membership.service';
 
 @Controller('resource')
 @Roles('admin')
@@ -33,7 +32,6 @@ export class ResourceController {
   private readonly logger = new Logger(ResourceController.name);
   constructor(
     private readonly resourceService: ResourceService,
-    private readonly membershipService: MembershipService,
   ) {}
 
   /** 公开列表：admin 看全部；登录用户看 published+login；匿名看 published。列表永不返回 panLinks */
@@ -83,16 +81,10 @@ export class ResourceController {
     const userId = user?.sub ? Number(user.sub) : null;
     const userRoleIds: number[] = user?.roleIds ?? [];
 
-    // 查用户当前会员等级（匿名用户为 null）
-    const memberLevel = userId
-      ? await this.membershipService.getActiveLevel(userId)
-      : null;
-
     const result = await this.resourceService.findByIdForUser(
       id,
       userId,
       userRoleIds,
-      memberLevel,
       isAdmin,
     );
 

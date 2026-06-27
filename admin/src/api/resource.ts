@@ -17,7 +17,10 @@ export interface Resource {
   panLinks: PanLink[] | null
   priceCents: number
   status: 'draft' | 'published' | 'login' | 'private'
+  /** 【已废弃】最低会员等级，改用 requiredRoleIds */
   minMemberLevel: 'plus' | 'pro' | 'max' | null
+  /** 解锁所需的角色组 ID 列表（空=无门槛），会员权益判定依据 */
+  requiredRoleIds: number[] | null
   viewCount: number
   sortOrder: number
   // admin 列表注入（仅 private 资源）
