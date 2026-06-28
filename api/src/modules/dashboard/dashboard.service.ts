@@ -162,7 +162,7 @@ export class DashboardService {
   /** 最新注册 5 个用户 */
   private async getRecentUsers() {
     return this.userRepo.find({
-      select: ['id', 'username', 'nickname', 'avatar', 'createdAt'],
+      select: ['id', 'nickname', 'avatar', 'createdAt'],
       order: { createdAt: 'DESC' },
       take: 5,
     });

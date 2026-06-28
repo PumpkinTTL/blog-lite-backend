@@ -48,7 +48,7 @@ export class RequestLogEntity {
   @Column({ type: 'varchar', length: 64 }) ip: string;
 
   /** 发起请求的用户 ID（未登录为 null） */
-  @Column({ type: 'int', nullable: true, name: 'user_id' })
+  @Column({ type: 'bigint', nullable: true, name: 'user_id' })
   userId: number | null;
 
   /** 错误信息（仅 4xx/5xx 记录，成功请求为 null） */

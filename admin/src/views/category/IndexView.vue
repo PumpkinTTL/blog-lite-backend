@@ -80,7 +80,7 @@ const columns: DataTableColumns<Category> = [
   {
     title: '操作',
     key: 'actions',
-    width: 140,
+    width: 180,
     fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 'small', wrap: false }, {
@@ -131,7 +131,7 @@ const columns: DataTableColumns<Category> = [
         :data="list"
         :loading="loading"
         :bordered="false"
-        :scroll-x="990"
+        :scroll-x="1030"
         :row-key="(row: any) => row.id"
         @update:checked-row-keys="(keys: any) => checkedRowKeys = keys"
       />

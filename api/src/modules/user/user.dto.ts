@@ -14,9 +14,8 @@ import {
 } from 'class-validator';
 
 export class CreateUserDto {
-  @IsString()
-  @MaxLength(50)
-  username: string;
+  // username 概念已移除，管理员建号不再需要登录账号。
+  // 新建用户用 id（自增）作为唯一标识，登录用 id 或 email。
 
   @IsString()
   @MinLength(6)

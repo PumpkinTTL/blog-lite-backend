@@ -36,10 +36,10 @@ export class CodeUsageLogEntity {
   codeId: number;
 
   @Column({
-    type: 'int',
+    type: 'bigint',
     name: 'user_id',
     nullable: true,
-    comment: '使用用户ID（未登录可能为null）',
+    comment: '使用用户ID（9位随机，与 users.id 对齐；未登录可能为null）',
   })
   userId: number | null;
 

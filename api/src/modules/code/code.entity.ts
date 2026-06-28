@@ -83,7 +83,7 @@ export class CodeEntity {
   })
   expiresAt: Date | null;
 
-  @Column({ type: 'int', nullable: true, comment: '创建人用户ID' })
+  @Column({ type: 'bigint', nullable: true, comment: '创建人用户ID（9位随机，与 users.id 对齐）' })
   creatorId: number | null;
 
   @Column({ type: 'json', nullable: true, comment: '扩展字段' })

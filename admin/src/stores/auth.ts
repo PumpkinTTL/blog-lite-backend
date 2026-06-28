@@ -14,9 +14,9 @@ import {
 export function useAuth() {
   const router = useRouter()
   const isLoggedIn = computed(() => !!accessToken.value)
-  // 显示名优先昵称 → 用户名 → 兜底
+  // 显示名优先昵称 → 用户 ID → 兜底（username 概念已移除）
   const displayName = computed(
-    () => userInfo.value?.nickname || userInfo.value?.username || 'Admin',
+    () => userInfo.value?.nickname || (userInfo.value?.id ? `#${userInfo.value.id}` : 'Admin'),
   )
   const displayAvatar = computed(() => userInfo.value?.avatar || '')
 
@@ -40,7 +40,6 @@ export function useAuth() {
         persistUserInfo(
           {
             id: u.id,
-            username: u.username,
             nickname: u.nickname,
             avatar: u.avatar,
             email: u.email,

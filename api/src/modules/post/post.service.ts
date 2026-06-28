@@ -87,7 +87,9 @@ export class PostService implements OnModuleInit {
   ) {
     const qb = this.postRepo
       .createQueryBuilder('p')
-      .leftJoinAndSelect('p.author', 'author')
+      // 只取作者的非敏感字段（避免泄漏 email/password 等到公开接口）
+      .leftJoin('p.author', 'author')
+      .addSelect(['author.id', 'author.nickname', 'author.avatar'])
       .leftJoinAndSelect('p.category', 'category')
       .leftJoinAndSelect('p.tags', 'tags');
 
@@ -413,7 +415,8 @@ export class PostService implements OnModuleInit {
   async findTrashed(page = 1, pageSize = 20) {
     const qb = this.postRepo
       .createQueryBuilder('p')
-      .leftJoinAndSelect('p.author', 'author')
+      .leftJoin('p.author', 'author')
+      .addSelect(['author.id', 'author.nickname', 'author.avatar'])
       .leftJoinAndSelect('p.category', 'category')
       .leftJoinAndSelect('p.tags', 'tags')
       .andWhere('p.deletedAt IS NOT NULL')

@@ -95,13 +95,6 @@ const statusOptions = [
   { label: '指定可见', value: 'private' },
 ] as unknown as SelectOption[]
 
-const memberLevelOptions = [
-  { label: '不限', value: null },
-  { label: 'Plus', value: 'plus' },
-  { label: 'Pro', value: 'pro' },
-  { label: 'Max', value: 'max' },
-] as unknown as SelectOption[]
-
 const formStatusOptions = [
   { label: '草稿', value: 'draft' },
   { label: '公开', value: 'published' },
@@ -114,7 +107,7 @@ const userOptions = ref<{ label: string; value: number }[]>([])
 const roleOptions = ref<{ label: string; value: number }[]>([])
 
 async function loadVisibilityOptions() {
-  if (userOptions.value.length > 0) return
+  if (roleOptions.value.length > 0 && userOptions.value.length > 0) return
   try {
     const [userRes, roleRes] = await Promise.all([
       getUsers({ pageSize: 1000 }),
@@ -123,7 +116,7 @@ async function loadVisibilityOptions() {
     const up = userRes.data
     const users = Array.isArray(up) ? up : up?.list || []
     userOptions.value = users.map((u: any) => ({
-      label: `${u.nickname || u.username} (#${u.id})`,
+      label: `${u.nickname || '未命名'} (#${u.id})`,
       value: u.id,
     }))
     const rp = roleRes.data
@@ -136,6 +129,9 @@ async function loadVisibilityOptions() {
     /* ignore */
   }
 }
+// 页面初始化即加载角色列表：解锁角色列依赖 roleOptions 渲染角色名，
+// 否则首次加载列表时只显示 #id，点编辑后才变正常。
+loadVisibilityOptions()
 
 const {
   loading,
@@ -179,7 +175,6 @@ const {
     panLinks: [{ name: '', url: '', code: '' }] as PanLink[],
     priceYuan: 0,
     status: 'draft',
-    minMemberLevel: null,
     requiredRoleIds: [] as number[],
     sortOrder: 0,
     allowedUserIds: [] as number[],
@@ -570,7 +565,8 @@ const columns: DataTableColumns<Resource> = [
   {
     title: '解锁角色',
     key: 'requiredRoleIds',
-    width: 120,
+    width: 150,
+    ellipsis: { tooltip: true },
     render: (row) => {
       const ids = row.requiredRoleIds
       if (!ids || ids.length === 0) return h('span', { style: 'color:#bbb' }, '无门槛')
@@ -590,7 +586,7 @@ const columns: DataTableColumns<Resource> = [
   {
     title: '操作',
     key: 'actions',
-    width: 140,
+    width: 180,
     fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 'small', wrap: false }, {
@@ -615,7 +611,6 @@ const columns: DataTableColumns<Resource> = [
                       : ([{ name: '', url: '', code: '' }] as PanLink[]),
                   priceYuan: r.priceCents ? r.priceCents / 100 : 0,
                   status: r.status,
-                  minMemberLevel: r.minMemberLevel,
                   requiredRoleIds: [...(r.requiredRoleIds || [])],
                   sortOrder: r.sortOrder,
                   allowedUserIds: [...(r.allowedUserIds || [])],
@@ -753,7 +748,8 @@ const catColumns: DataTableColumns<ResourceCategory> = [
   {
     title: '操作',
     key: 'actions',
-    width: 120,
+    width: 180,
+    fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 'small', wrap: false }, {
         default: () => [
@@ -853,7 +849,7 @@ const catColumns: DataTableColumns<ResourceCategory> = [
             :data="list"
             :loading="loading"
             :bordered="false"
-            :scroll-x="1160"
+            :scroll-x="1200"
             :row-key="(row: any) => row.id"
             @update:checked-row-keys="(keys: any) => (checkedRowKeys = keys)"
           />
@@ -918,7 +914,7 @@ const catColumns: DataTableColumns<ResourceCategory> = [
             :data="catList"
             :loading="catLoading"
             :bordered="false"
-            :scroll-x="820"
+            :scroll-x="880"
             :row-key="(row: any) => row.id"
             @update:checked-row-keys="(keys: any) => (catCheckedRowKeys = keys)"
           />

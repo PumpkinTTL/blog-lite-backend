@@ -171,7 +171,7 @@ async function loadOptions() {
 
     const userPayload = userRes.data
     const users = Array.isArray(userPayload) ? userPayload : (userPayload?.list || [])
-    userOptions.value = users.map((u: any) => ({ label: `${u.nickname} (${u.username})`, value: u.id }))
+    userOptions.value = users.map((u: any) => ({ label: `${u.nickname} (#${u.id})`, value: u.id }))
 
     const rolePayload = roleRes.data
     const roles = Array.isArray(rolePayload) ? rolePayload : (rolePayload?.list || [])

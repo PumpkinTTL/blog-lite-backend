@@ -97,7 +97,7 @@ function handlePageSizeChange(s: number) {
 function handleDelete(row: AdminInteraction) {
   const d = dialog.warning({
     title: '确认删除',
-    content: `确定删除这条 ${typeLabelMap[row.type]} 记录？（用户 ${row.user?.nickname || row.user?.username || '#' + row.userId} → ${entityTypeLabelMap[row.entityType] || row.entityType} #${row.entityId}）删除后冗余计数会自动同步。`,
+    content: `确定删除这条 ${typeLabelMap[row.type]} 记录？（用户 ${row.user?.nickname || '#' + row.userId} → ${entityTypeLabelMap[row.entityType] || row.entityType} #${row.entityId}）删除后冗余计数会自动同步。`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -186,9 +186,9 @@ const columns: DataTableColumns<AdminInteraction> = [
       return h(NSpace, { size: 6, wrap: false, align: 'center' }, {
         default: () => [
           h(NAvatar, { size: 22, round: true, src: u.avatar || undefined }, {
-            default: () => u.avatar ? '' : (u.nickname || u.username).slice(0, 1).toUpperCase(),
+            default: () => u.avatar ? '' : (u.nickname || '匿名').slice(0, 1).toUpperCase(),
           }),
-          h('span', null, u.nickname || u.username),
+          h('span', null, u.nickname || '匿名'),
         ],
       })
     },

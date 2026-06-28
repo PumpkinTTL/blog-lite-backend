@@ -95,7 +95,7 @@ const columns: DataTableColumns<Announcement> = [
   { title: '排序', key: 'sortOrder', width: 80 },
   { title: '创建时间', key: 'createdAt', width: 170, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') },
   {
-    title: '操作', key: 'actions', width: 140, fixed: 'right',
+    title: '操作', key: 'actions', width: 180, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small', wrap: false }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ title: r.title, content: r.content, status: r.status, sortOrder: r.sortOrder })) }, {
@@ -137,7 +137,7 @@ const columns: DataTableColumns<Announcement> = [
       </n-button>
     </n-space>
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1090"
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1130"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

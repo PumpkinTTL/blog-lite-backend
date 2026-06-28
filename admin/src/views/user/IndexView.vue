@@ -122,7 +122,7 @@ async function handleAvatarChange(data: { file: any; fileList: any[] }) {
   avatarUploading.value = true
   avatarProgress.value = -1
   try {
-    const name = formValue.value.nickname || formValue.value.username || '未知'
+    const name = formValue.value.nickname || (editingId.value ? `user-${editingId.value}` : 'user')
     const uid = editingId.value ? `#${editingId.value} ` : ''
     // R2 走前端直传（带真实进度），绕过后端中转 + 10s 超时
     const { url } = await uploadToR2Direct(rawFile, {
@@ -155,13 +155,12 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     updateApi: (id, data) => {
       const payload = { ...data }
       if (!payload.password) delete payload.password
-      delete payload.username
       return updateUser(id, payload)
     },
     deleteApi: deleteUser,
     batchDeleteApi: batchDeleteUsers,
     deleteContent: (row) => `确定删除用户「${row.nickname}」？`,
-    defaultForm: () => ({ username: '', password: '', nickname: '', email: '', status: 'active', roleIds: [] }),
+    defaultForm: () => ({ password: '', nickname: '', email: '', status: 'active', roleIds: [] }),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) {
@@ -178,7 +177,6 @@ watch(showModal, (v) => { if (!v) avatarUrl.value = null })
 function openEdit(row: User) {
   avatarUrl.value = row.avatar || null
   _openEdit(row, (r) => ({
-    username: r.username,
     password: '',
     nickname: r.nickname,
     email: r.email || '',
@@ -299,7 +297,6 @@ onMounted(() => {
 })
 
 const rules: FormRules = {
-  username: [{ required: true, message: '请输入账号', trigger: ['input', 'blur'] }],
   nickname: [{ required: true, message: '请输入昵称', trigger: ['input', 'blur'] }],
   email: [{ type: 'email', message: '请输入正确的邮箱格式', trigger: ['input', 'blur'] }],
   password: [{ min: 6, message: '密码至少 6 位', trigger: ['input', 'blur'] }],
@@ -307,7 +304,8 @@ const rules: FormRules = {
 
 const columns: DataTableColumns<User> = [
   selectionColumn,
-  { title: 'ID', key: 'id', width: 70 },
+  // ID 列：9位随机数字（如 662662833），加宽防换行
+  { title: 'ID', key: 'id', width: 110 },
   {
     title: '头像',
     key: 'avatar',
@@ -318,18 +316,16 @@ const columns: DataTableColumns<User> = [
         src: row.avatar || undefined,
         color: '#2563EB',
         style: 'font-weight:600;font-size:14px',
-        // 图片加载失败时清掉 src，让 NAvatar 回退到 default slot 显示首字母
         onError: (e: Event) => {
           const img = e.target as HTMLImageElement
           if (img) img.style.display = 'none'
         },
       }, {
-        // 始终返回首字母兜底：图片加载成功会盖住文字，失败时显示文字（不再留空）
         default: () => row.nickname?.charAt(0)?.toUpperCase() || '?',
       }),
   },
-  { title: '账号', key: 'username', width: 140 },
-  { title: '昵称', key: 'nickname', width: 140 },
+  // 昵称：设 width，配合 scroll-x 精确求和，保证 fixed 操作列不错位
+  { title: '昵称', key: 'nickname', width: 140, ellipsis: { tooltip: true } },
   {
     title: '角色',
     key: 'roles',
@@ -367,7 +363,7 @@ const columns: DataTableColumns<User> = [
                 { default: () => `封禁至 ${new Date(bannedUntil).toLocaleDateString('zh-CN')}` })
             : isBanned && !bannedUntil
               ? h(NText, { depth: 3, type: 'error', style: 'font-size:11px;white-space:nowrap' },
-                  { default: () => '永久封禁' })
+                { default: () => '永久封禁' })
               : null,
         ],
       })
@@ -377,7 +373,7 @@ const columns: DataTableColumns<User> = [
   {
     title: '操作',
     key: 'actions',
-    width: 140,
+    width: 180,
     fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 'small', wrap: false }, {
@@ -424,7 +420,8 @@ const columns: DataTableColumns<User> = [
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1434"
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false"
+        :scroll-x="1274"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
@@ -442,9 +439,6 @@ const columns: DataTableColumns<User> = [
       style="width:560px"
     >
       <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="top">
-        <n-form-item label="登录账号" path="username">
-          <n-input v-model:value="formValue.username" placeholder="登录账号" :disabled="!!editingId" />
-        </n-form-item>
         <n-form-item :label="editingId ? '新密码（留空不修改）' : '密码'" path="password">
           <n-input v-model:value="formValue.password" type="password" :placeholder="editingId ? '留空不修改' : '至少6位'" show-password-on="click" />
         </n-form-item>
@@ -493,7 +487,7 @@ const columns: DataTableColumns<User> = [
     <n-modal
       v-model:show="banModalShow"
       preset="dialog"
-      :title="`封禁用户「${banningUser?.nickname || banningUser?.username || ''}」`"
+      :title="`封禁用户「${banningUser?.nickname || ''}」`"
       :positive-text="banning ? '提交中...' : '确认封禁'"
       :negative-text="banning ? undefined : '取消'"
       :loading="banning"

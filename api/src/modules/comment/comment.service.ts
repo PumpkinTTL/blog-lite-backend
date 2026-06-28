@@ -87,7 +87,6 @@ export class CommentService {
     if (u && typeof u === 'object') {
       (comment as any)[field] = {
         id: u.id,
-        username: u.username,
         nickname: u.nickname,
         avatar: u.avatar,
       };

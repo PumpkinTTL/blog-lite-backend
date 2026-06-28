@@ -8,7 +8,7 @@ export type MembershipSource = 'admin' | 'code' | 'payment'
 export interface Membership {
   id: number
   userId: number
-  user?: Pick<User, 'id' | 'username' | 'nickname'>
+  user?: Pick<User, 'id' | 'nickname'>
   planId: number
   plan?: Plan
   startedAt: string

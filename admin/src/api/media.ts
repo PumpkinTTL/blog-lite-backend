@@ -11,7 +11,7 @@ export interface Media {
   storageType: 'local' | 'oss'
   ossPlatform: 'aliyun' | 'tencent' | 'cloudflare' | 'backblaze' | null
   uploaderId: number
-  uploader?: { id: number; username: string; nickname: string }
+  uploader?: { id: number; nickname: string }
   note: string | null
   createdAt: string
 }

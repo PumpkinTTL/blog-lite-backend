@@ -19,7 +19,6 @@ export interface InteractionListResult {
 
 export interface AdminInteractionUser {
   id: number
-  username: string
   nickname: string | null
   avatar: string | null
 }

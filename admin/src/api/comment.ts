@@ -5,7 +5,6 @@ export type CommentEntityType = 'post'
 
 export interface CommentUser {
   id: number
-  username: string
   nickname: string | null
   avatar: string | null
 }

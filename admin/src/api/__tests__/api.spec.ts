@@ -103,7 +103,7 @@ describe('User API', () => {
       data: { accessToken: 'token', refreshToken: 'refresh', deviceId: 'device' },
     }
     ;(request.post as any).mockResolvedValue(mockResult)
-    const params = { username: 'admin', password: '123456', deviceId: 'test-device-id' }
+    const params = { account: 'admin@blog.local', password: '123456', deviceId: 'test-device-id' }
     const result = await userApi.loginApi(params)
     expect(request.post).toHaveBeenCalledWith('/user/login', params)
     expect(result).toEqual(mockResult)
@@ -123,8 +123,8 @@ describe('User API', () => {
 
   it('createUser 应该调用 POST /user', async () => {
     ;(request.post as any).mockResolvedValue({ data: { id: 1 } })
-    await userApi.createUser({ username: 'newuser', nickname: 'New' })
-    expect(request.post).toHaveBeenCalledWith('/user', { username: 'newuser', nickname: 'New' })
+    await userApi.createUser({ nickname: 'New', password: 'secret123' })
+    expect(request.post).toHaveBeenCalledWith('/user', { nickname: 'New', password: 'secret123' })
   })
 
   it('updateUser 应该调用 PUT /user/:id', async () => {

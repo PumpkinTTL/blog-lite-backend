@@ -19,6 +19,7 @@ import { MembershipEntity } from '../membership/membership.entity';
 import { InteractionEntity } from '../interaction/interaction.entity';
 import { PostEntity } from '../post/post.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
+import { generateUniqueUserId } from '../../common/utils/generate-user-id';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { MediaService } from '../media/media.service';
 import { EmailCodeService } from '../email-code/email-code.service';
@@ -80,11 +81,22 @@ export class UserService {
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
+    // 登录凭证：id 或 email。
+    // - 纯数字 → 同时尝试 id（优先）和 email（兼容把邮箱填成纯数字的极端情况）
+    // - 非数字 → 仅按 email 匹配
+    // username 概念已移除，不再作为登录凭证。
+    const account = (dto.account ?? '').trim();
+    const isNumeric = /^\d+$/.test(account);
     const user = await this.userRepo
       .createQueryBuilder('u')
       .leftJoinAndSelect('u.roles', 'r')
       .addSelect('u.password')
-      .where('u.username = :username', { username: dto.username })
+      .where(
+        isNumeric
+          ? 'u.id = :account OR u.email = :account'
+          : 'u.email = :account',
+        { account },
+      )
       .getOne();
 
     // 临时封禁已过期 → 惰性自动解封（login 不走 AuthGuard，需在此处理，
@@ -135,7 +147,7 @@ export class UserService {
     );
 
     this.logger.log(
-      `用户 ${user.username} 登录成功，角色: [${roles.join(', ')}]`,
+      `用户 #${user.id} 登录成功，角色: [${roles.join(', ')}]`,
     );
 
     return {
@@ -198,7 +210,7 @@ export class UserService {
       .leftJoinAndSelect('u.roles', 'roles');
     applyFilters(qb, {
       exact: { 'u.id': filters?.id, 'u.status': filters?.status },
-      like: { keyword: filters?.keyword, fields: ['u.username', 'u.nickname'] },
+      like: { keyword: filters?.keyword, fields: ['u.nickname'] },
     });
     qb.orderBy('u.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
@@ -229,6 +241,10 @@ export class UserService {
 
   async create(data: Partial<UserEntity> & { roleIds?: number[] }) {
     const { roleIds, password, ...userData } = data;
+    // 生成 9 位随机 id（非自增主键，防推算/防遍历）
+    userData.id = await generateUniqueUserId((id) =>
+      this.userRepo.exists({ where: { id } }),
+    );
     const user = this.userRepo.create(userData);
 
     if (password) {
@@ -256,7 +272,7 @@ export class UserService {
     if (!user) throw new NotFoundException('用户不存在');
 
     // 变更审计
-    const targetName = `${user.nickname || user.username}(#${id})`;
+    const targetName = `${user.nickname || '未命名'}(#${id})`;
     const oldRoleIds =
       user.roles
         ?.map((r) => r.id)
@@ -350,7 +366,7 @@ export class UserService {
     const hasAdmin = user.roles?.some((r) => r.name === 'admin');
     if (hasAdmin) {
       throw new BadRequestException(
-        `用户「${user.nickname || user.username}」是管理员，不能删除`,
+        `用户「${user.nickname || `用户#${user.id}`}」是管理员，不能删除`,
       );
     }
 
@@ -415,7 +431,7 @@ export class UserService {
       const hasAdmin = user.roles?.some((r) => r.name === 'admin');
       if (hasAdmin) {
         throw new BadRequestException(
-          `用户「${user.nickname || user.username}」是管理员，不能删除`,
+          `用户「${user.nickname || `用户#${user.id}`}」是管理员，不能删除`,
         );
       }
     }
@@ -480,7 +496,7 @@ export class UserService {
       user.bannedUntil = null;
     }
 
-    const targetName = `${user.nickname || user.username}(#${id})`;
+    const targetName = `${user.nickname || `用户#${user.id}`}(#${id})`;
 
     // 封禁时调鉴权中心吊销该用户所有 Token（堵死 refresh 续命）
     if (willDisable) {
@@ -525,15 +541,8 @@ export class UserService {
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
-    // 1. 检查用户名是否已存在
-    const existingUser = await this.userRepo.findOne({
-      where: { username: dto.username },
-    });
-    if (existingUser) {
-      throw new BadRequestException('用户名已存在');
-    }
-
-    // 1.1 检查邮箱是否已被注册（友好提示，避免触发数据库 unique 约束的原生报错）
+    // 1. 检查邮箱是否已被注册（友好提示，避免触发数据库 unique 约束的原生报错）
+    // username 概念已移除，不再做唯一性校验。用户唯一标识是 id（自增主键）。
     if (dto.email) {
       const existingEmail = await this.findByEmail(dto.email);
       if (existingEmail) {
@@ -591,9 +600,13 @@ export class UserService {
           throw new BadRequestException('邀请码已被使用完毕');
         }
 
-        // 创建用户
+        // 创建用户（不再写入 username，已移除该字段）
+        // id 为 9 位随机数字（非自增），用事务内的 manager 查重保证一致性
+        const userId = await generateUniqueUserId((id) =>
+          manager.exists(UserEntity, { where: { id } }),
+        );
         const user = manager.create(UserEntity, {
-          username: dto.username,
+          id: userId,
           nickname: dto.nickname,
           password: await bcrypt.hash(dto.password, 10),
           email: dto.email || null,
@@ -644,14 +657,14 @@ export class UserService {
       );
     } catch (e) {
       this.logger.error(
-        `用户 ${dto.username}(#${userId}) 注册成功但签发 Token 失败: ${e instanceof Error ? e.message : e}`,
+        `用户 #${userId} 注册成功但签发 Token 失败: ${e instanceof Error ? e.message : e}`,
       );
       throw new BadRequestException(
         '注册成功，但登录凭证签发失败，请使用刚注册的账号登录',
       );
     }
 
-    this.logger.log(`用户 ${dto.username} 注册成功`);
+    this.logger.log(`用户 #${userId}(${nickname}) 注册成功`);
 
     return {
       accessToken: tokenData.accessToken,
@@ -672,7 +685,7 @@ export class UserService {
   ): Promise<TokenPayload> {
     // 复用现有的 login 方法（deviceId 作为独立参数传，login 内部用它调鉴权中心）
     return this.login(
-      { username: dto.username, password: dto.password, deviceId },
+      { account: dto.account, password: dto.password, deviceId },
       deviceId,
       dto.fingerprint || clientFingerprint,
       clientIp,
@@ -743,7 +756,7 @@ export class UserService {
     await this.userRepo.update(user.id, { lastLoginAt: new Date() });
 
     this.logger.log(
-      `用户 ${user.username}(#${user.id}) 验证码登录成功`,
+      `用户 #${user.id} 验证码登录成功`,
     );
 
     return {
@@ -844,7 +857,7 @@ export class UserService {
     if (!user) throw new NotFoundException('用户不存在');
 
     // 变更审计：对比允许修改的字段，diff 出实际变更项
-    const targetName = `${user.nickname || user.username}(#${userId})`;
+    const targetName = `${user.nickname || `用户#${user.id}`}(#${userId})`;
     const entries = AuditLogService.diff(
       'user',
       userId,
@@ -868,7 +881,7 @@ export class UserService {
       {
         // 自助修改：operator 就是用户自己
         operatorId: userId,
-        operatorName: user.nickname || user.username,
+        operatorName: user.nickname || `用户#${user.id}`,
         targetName,
         note: '用户自助修改资料',
       },
@@ -921,7 +934,7 @@ export class UserService {
     if (oldEmail === newEmail) return user;
 
     // 审计
-    const targetName = `${user.nickname || user.username}(#${userId})`;
+    const targetName = `${user.nickname || `用户#${user.id}`}(#${userId})`;
     this.auditLog
       .log({
         targetType: 'user',
@@ -930,7 +943,7 @@ export class UserService {
         oldValue: oldEmail,
         newValue: newEmail,
         operatorId: userId,
-        operatorName: user.nickname || user.username,
+        operatorName: user.nickname || `用户#${user.id}`,
         targetName,
         note: '用户自助换绑邮箱',
       })

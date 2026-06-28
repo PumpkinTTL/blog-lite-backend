@@ -378,7 +378,7 @@ const columns: DataTableColumns<Media> = [
   {
     title: '上传者', key: 'uploader', width: 85,
     render: (row) => {
-      const name = row.uploader?.nickname || row.uploader?.username || '-'
+      const name = row.uploader?.nickname || '-'
       if (name === '-') return '-'
       return h(NEllipsis, { lineClamp: 1, tooltip: true }, { default: () => name })
     },

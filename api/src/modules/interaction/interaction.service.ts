@@ -235,7 +235,6 @@ export class InteractionService {
         'i.entityId AS entityId',
         'i.type AS type',
         'i.createdAt AS createdAt',
-        'u.username AS username',
         'u.nickname AS nickname',
         'u.avatar AS avatar',
         'p.title AS postTitle',
@@ -250,7 +249,7 @@ export class InteractionService {
     if (userId) qb.andWhere('i.userId = :uid', { uid: userId });
     if (entityId) qb.andWhere('i.entityId = :eid', { eid: entityId });
     if (keyword) {
-      qb.andWhere('(u.username LIKE :kw ESCAPE \'\\\\\' OR u.nickname LIKE :kw ESCAPE \'\\\\\')', {
+      qb.andWhere('u.nickname LIKE :kw ESCAPE \'\\\\\'', {
         kw: `%${escapeLike(keyword)}%`,
       });
     }
@@ -266,7 +265,7 @@ export class InteractionService {
     if (userId) countQb.andWhere('i.userId = :uid', { uid: userId });
     if (entityId) countQb.andWhere('i.entityId = :eid', { eid: entityId });
     if (keyword) {
-      countQb.andWhere('(u.username LIKE :kw ESCAPE \'\\\\\' OR u.nickname LIKE :kw ESCAPE \'\\\\\')', {
+      countQb.andWhere('u.nickname LIKE :kw ESCAPE \'\\\\\'', {
         kw: `%${escapeLike(keyword)}%`,
       });
     }
@@ -279,10 +278,9 @@ export class InteractionService {
       entityId: Number(r.entityId),
       type: r.type,
       createdAt: r.createdAt,
-      user: r.username
+      user: r.userId
         ? {
             id: Number(r.userId),
-            username: r.username,
             nickname: r.nickname,
             avatar: r.avatar,
           }

@@ -24,11 +24,11 @@ export type AuditTargetType =
 export class AuditLogEntity {
   @PrimaryGeneratedColumn() id: number;
   @Column({ type: 'varchar', length: 32 }) targetType: AuditTargetType;
-  @Column({ type: 'int' }) targetId: number;
+  @Column({ type: 'bigint' }) targetId: number;
   @Column({ type: 'varchar', length: 64 }) field: string;
   @Column({ type: 'text', nullable: true }) oldValue: string | null;
   @Column({ type: 'text', nullable: true }) newValue: string | null;
-  @Column({ type: 'int', nullable: true }) operatorId: number | null;
+  @Column({ type: 'bigint', nullable: true }) operatorId: number | null;
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'target_name' })
   targetName: string | null;
   @Column({

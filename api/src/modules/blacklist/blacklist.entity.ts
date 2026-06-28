@@ -47,7 +47,7 @@ export class BlacklistEntity {
   })
   expiresAt: Date | null;
 
-  @Column({ type: 'int', nullable: true, comment: '操作人用户ID' })
+  @Column({ type: 'bigint', nullable: true, comment: '操作人用户ID（9位随机，与 users.id 对齐）' })
   creatorId: number | null;
 
   @CreateDateColumn({ name: 'created_at', comment: '创建时间' })

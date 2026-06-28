@@ -17,11 +17,13 @@ export class RefreshTokenDto {
 }
 
 export class LoginDto {
+  // 登录凭证：id（纯数字）或 email。username 概念已移除。
+  // 字段名 account 对应前端的"账号"输入框语义。
   @IsString()
   @IsNotEmpty({ message: '请输入账号' })
-  @MinLength(3)
-  @MaxLength(50)
-  username: string;
+  @MinLength(1)
+  @MaxLength(100)
+  account: string;
 
   @IsString()
   @IsNotEmpty({ message: '请输入密码' })

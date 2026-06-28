@@ -269,7 +269,7 @@ const planColumns: DataTableColumns<Plan> = [
   { title: '排序', key: 'sort', width: 60 },
   { title: '创建时间', key: 'createdAt', width: 180, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') },
   {
-    title: '操作', key: 'actions', width: 160, fixed: 'right',
+    title: '操作', key: 'actions', width: 180, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small', wrap: false }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openPlanEdit(row) }, {
@@ -382,7 +382,7 @@ async function loadUserOptions() {
     const res = await getUsers({ pageSize: 100 })
     const payload = res.data
     const list = Array.isArray(payload) ? payload : (payload?.list || [])
-    userOptions.value = list.map((u: any) => ({ label: `${u.nickname}（${u.username}）`, value: u.id }))
+    userOptions.value = list.map((u: any) => ({ label: `${u.nickname}（#${u.id}）`, value: u.id }))
   } catch (e: any) {
     message.error(e?.message || '加载用户选项失败')
   }
@@ -515,7 +515,7 @@ const memberColumns: DataTableColumns<Membership> = [
   { title: 'ID', key: 'id', width: 60 },
   {
     title: '用户', key: 'userId', width: 140,
-    render: (row) => row.user?.nickname || row.user?.username || `#${row.userId}`,
+    render: (row) => row.user?.nickname || `#${row.userId}`,
   },
   {
     title: '套餐', key: 'planId', width: 140, ellipsis: { tooltip: true },
@@ -550,7 +550,7 @@ const memberColumns: DataTableColumns<Membership> = [
   },
   { title: '备注', key: 'note', width: 120, ellipsis: { tooltip: true }, render: (row) => row.note || '-' },
   {
-    title: '操作', key: 'actions', width: 170, fixed: 'right',
+    title: '操作', key: 'actions', width: 180, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small', wrap: false }, {
       default: () => [
         row.status === 'active'
@@ -605,7 +605,7 @@ onMounted(() => {
             :data="plans"
             :loading="planLoading"
             :bordered="false"
-            :scroll-x="1400"
+            :scroll-x="1420"
             :row-key="(row: Plan) => row.id"
             @update:checked-row-keys="(keys: any) => planCheckedRowKeys = keys"
           />
@@ -648,7 +648,7 @@ onMounted(() => {
             :data="members"
             :loading="memberLoading"
             :bordered="false"
-            :scroll-x="1380"
+            :scroll-x="1390"
             :row-key="(row: Membership) => row.id"
             @update:checked-row-keys="(keys: any) => memberCheckedRowKeys = keys"
           />

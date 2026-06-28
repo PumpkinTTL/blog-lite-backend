@@ -80,7 +80,7 @@ const columns: DataTableColumns<Tag> = [
   {
     title: '操作',
     key: 'actions',
-    width: 140,
+    width: 180,
     fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 'small', wrap: false }, {
@@ -126,7 +126,7 @@ const columns: DataTableColumns<Tag> = [
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1040"
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1080"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

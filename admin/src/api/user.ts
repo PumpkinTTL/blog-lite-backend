@@ -3,7 +3,8 @@ import type { Role } from './role'
 import type { PlanLevel } from './plan'
 
 export interface LoginParams {
-  username: string
+  // 登录凭证：id（纯数字）或 email。username 概念已移除。
+  account: string
   password: string
   // 设备 ID：前端生成（crypto.randomUUID），续签凭证，登录与续签须用同一个
   deviceId: string
@@ -52,7 +53,6 @@ export interface UserMembership {
 
 export interface User {
   id: number
-  username: string
   nickname: string
   email: string | null
   avatar: string | null

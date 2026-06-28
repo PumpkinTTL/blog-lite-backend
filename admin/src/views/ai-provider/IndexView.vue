@@ -91,7 +91,7 @@ const columns: DataTableColumns<AiProvider> = [
   },
   { title: '创建时间', key: 'createdAt', width: 160, render: (r) => new Date(r.createdAt).toLocaleDateString('zh-CN') },
   {
-    title: '操作', key: 'actions', width: 100, fixed: 'right',
+    title: '操作', key: 'actions', width: 180, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small' }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({ name: r.name, baseUrl: r.baseUrl, apiKey: r.apiKey, protocol: r.protocol, models: (r.models ?? []).map((m: any) => ({ ...m, supportsTools: !!m.supportsTools, supportsThinking: !!m.supportsThinking })), remark: r.remark ?? '', status: r.status } as any)) }, {
@@ -134,7 +134,7 @@ const columns: DataTableColumns<AiProvider> = [
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1250" :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
+      <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false" :scroll-x="1330" :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

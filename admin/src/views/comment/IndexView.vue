@@ -192,14 +192,14 @@ const columns: DataTableColumns<Comment> = [
     title: '内容', key: 'content', width: 400, ellipsis: { tooltip: true },
     render: (row) => {
       // 一级评论：直接显示；二级回复：显示 @ 提示
-      const replyTo = row.replyToUser?.nickname || row.replyToUser?.username
+      const replyTo = row.replyToUser?.nickname
       const prefix = row.parentId ? (replyTo ? `回复 @${replyTo}: ` : '') : ''
       return h('span', null, prefix + row.content)
     },
   },
   {
     title: '作者', key: 'user', width: 120, ellipsis: { tooltip: true },
-    render: (row) => row.user?.nickname || row.user?.username || `#${row.userId}`,
+    render: (row) => row.user?.nickname || `#${row.userId}`,
   },
   {
     title: '层级', key: 'level', width: 80,

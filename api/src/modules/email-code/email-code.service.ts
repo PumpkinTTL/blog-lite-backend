@@ -76,8 +76,9 @@ export class EmailCodeService {
     }
 
     // 存验证码：hash 含 code + attempts，整体 TTL 10 分钟
+    // 用 hmset 兼容所有 Redis 版本（hset 多字段写法需 4.0+，hmset 全版本支持）
     const key = this.PREFIX + email;
-    await this.redis.hset(key, 'code', code, 'attempts', '0');
+    await this.redis.hmset(key, 'code', code, 'attempts', '0');
     await this.redis.pexpire(key, this.CODE_TTL);
   }
 

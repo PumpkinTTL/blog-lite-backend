@@ -27,7 +27,7 @@ export class InteractionEntity {
   @PrimaryGeneratedColumn({ comment: 'ID' })
   id: number;
 
-  @Column({ name: 'user_id', comment: '用户 ID' })
+  @Column({ name: 'user_id', type: 'bigint', comment: '用户 ID（9位随机，与 users.id 对齐）' })
   userId: number;
 
   @Column({

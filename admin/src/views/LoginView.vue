@@ -13,14 +13,14 @@ const { setTokens, fetchUserInfo } = useAuth()
 const formRef = ref<FormInst | null>(null)
 const loading = ref(false)
 const formValue = ref({
-  username: '',
+  account: '',
   password: '',
   remember: true,
 })
 
 const rules: FormRules = {
-  username: [
-    { required: true, message: '请输入管理员账号', trigger: ['input', 'blur'] },
+  account: [
+    { required: true, message: '请输入管理员账号（邮箱或用户 ID）', trigger: ['input', 'blur'] },
   ],
   password: [
     { required: true, message: '请输入登录密码', trigger: ['input', 'blur'] },
@@ -36,7 +36,7 @@ async function handleLogin() {
     const { deviceId, fingerprint } = await getDeviceIdentity()
 
     const res = await loginApi({
-      username: formValue.value.username,
+      account: formValue.value.account,
       password: formValue.value.password,
       deviceId,
       fingerprint,
@@ -173,10 +173,10 @@ function handleKeydown(e: KeyboardEvent) {
           class="login-form"
           @keydown="handleKeydown"
         >
-          <n-form-item label="管理员账号" path="username">
+          <n-form-item label="管理员账号" path="account">
             <n-input
-              v-model:value="formValue.username"
-              placeholder="请输入账号"
+              v-model:value="formValue.account"
+              placeholder="邮箱或用户 ID"
               autocomplete="username"
               clearable
             />

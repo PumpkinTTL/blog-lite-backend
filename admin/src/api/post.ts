@@ -4,7 +4,6 @@ import type { Category } from './category'
 
 export interface PostAuthor {
   id: number
-  username: string
   nickname: string | null
   avatar: string | null
 }

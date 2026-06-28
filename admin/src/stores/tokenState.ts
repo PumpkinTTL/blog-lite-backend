@@ -26,7 +26,6 @@ export const deviceId = ref(readToken('deviceId'))
 
 export interface UserInfo {
   id: number
-  username: string
   nickname: string | null
   avatar: string | null
   email: string | null

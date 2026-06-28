@@ -122,7 +122,7 @@ const columns: DataTableColumns<FriendLink> = [
     render: (row) => h(NTag, { size: 'small', type: row.status === 'visible' ? 'success' : 'default' }, { default: () => (row.status === 'visible' ? '显示' : '隐藏') }),
   },
   {
-    title: '操作', key: 'actions', width: 140, fixed: 'right',
+    title: '操作', key: 'actions', width: 180, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small', wrap: false }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row, (r) => ({
@@ -174,7 +174,7 @@ const columns: DataTableColumns<FriendLink> = [
     </n-space>
     <div class="table-section">
       <n-data-table :columns="columns" :data="list" :loading="loading" :bordered="false"
-        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" :scroll-x="1180" />
+        :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" :scroll-x="1220" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />
       </div>

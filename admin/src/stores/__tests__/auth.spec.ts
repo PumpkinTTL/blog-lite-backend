@@ -130,7 +130,6 @@ describe('useAuth', () => {
       success: true,
       data: {
         id: 1,
-        username: 'admin',
         nickname: '管理员',
         avatar: 'https://example.com/a.png',
         email: 'a@b.com',
@@ -158,7 +157,7 @@ describe('useAuth', () => {
     expect(auth.userInfo.value).toBeNull()
   })
 
-  it('displayName 优先昵称，无昵称兜底用户名，再兜底 Admin', async () => {
+  it('displayName 优先昵称，无昵称兜底用户 ID，再兜底 Admin', async () => {
     const auth = useAuth()
 
     // 无 userInfo → Admin
@@ -169,9 +168,16 @@ describe('useAuth', () => {
     // 直接通过 tokenState 写入 userInfo
     const { persistUserInfo } = await import('../tokenState')
     persistUserInfo(
-      { id: 1, username: 'admin', nickname: '管理员', avatar: null, email: null, roles: [] },
+      { id: 1, nickname: '管理员', avatar: null, email: null, roles: [] },
       true,
     )
     expect(auth.displayName.value).toBe('管理员')
+
+    // 无昵称但有 id → #1（username 概念已移除）
+    persistUserInfo(
+      { id: 2, nickname: null, avatar: null, email: null, roles: [] },
+      true,
+    )
+    expect(auth.displayName.value).toBe('#2')
   })
 })

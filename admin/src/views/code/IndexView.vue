@@ -482,7 +482,7 @@ const codeColumns: DataTableColumns<Code> = [
     render: (row) => row.expiresAt ? new Date(row.expiresAt).toLocaleString('zh-CN') : '永久',
   },
   {
-    title: '操作', key: 'actions', width: 160, fixed: 'right',
+    title: '操作', key: 'actions', width: 180, fixed: 'right',
     render: (row) => h(NSpace, { size: 'small', wrap: false }, {
       default: () => [
         h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, {
@@ -601,7 +601,7 @@ onMounted(() => {
 
         <div class="table-section">
           <n-data-table :columns="codeColumns" :data="list" :loading="loading" :bordered="false"
-        :scroll-x="1420"
+        :scroll-x="1440"
             :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
           <div class="pagination-wrap" v-if="total > 0">
             <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

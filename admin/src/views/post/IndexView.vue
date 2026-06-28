@@ -66,7 +66,15 @@ const columns: DataTableColumns<Post> = [
   { title: '标题', key: 'title', ellipsis: { tooltip: true }, width: 200 },
   { title: '内容预览', key: 'content', ellipsis: { tooltip: true }, width: 200, render: (row) => row.content?.replace(/[#*`\n]/g, '').slice(0, 80) || '-' },
   { title: '作者', key: 'author', width: 100, render: (row) => row.author?.nickname || '-' },
-  { title: '分类', key: 'category', width: 100, render: (row) => row.category?.name || '-' },
+  {
+    title: '分类',
+    key: 'category',
+    width: 110,
+    render: (row) =>
+      row.category?.name
+        ? h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => row.category.name })
+        : h('span', { style: 'color:#bbb' }, '-'),
+  },
   {
     title: '标签',
     key: 'tags',
@@ -107,7 +115,7 @@ const columns: DataTableColumns<Post> = [
   {
     title: '操作',
     key: 'actions',
-    width: 140,
+    width: 180,
     fixed: 'right',
     render: (row) =>
       h(NSpace, { size: 'small', wrap: false }, {
@@ -270,7 +278,7 @@ onMounted(() => { loadPosts(); loadCategoryOptions() })
     </n-space>
 
     <div class="table-section">
-      <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" :scroll-x="1600"
+      <n-data-table :columns="columns" :data="posts" :loading="loading" :bordered="false" :scroll-x="1640"
         :row-key="(row: any) => row.id" @update:checked-row-keys="(keys: any) => checkedRowKeys = keys" />
       <div class="pagination-wrap" v-if="total > 0">
         <n-pagination :page="page" :page-size="pageSize" :page-sizes="[5, 10, 20, 30, 50, 100]" :item-count="total" show-size-picker @update:page="handlePageChange" @update:page-size="handlePageSizeChange" />

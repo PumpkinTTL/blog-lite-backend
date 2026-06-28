@@ -10,7 +10,6 @@ export interface TopPost {
 
 export interface RecentUser {
   id: number
-  username: string
   nickname: string | null
   avatar: string | null
   createdAt: string

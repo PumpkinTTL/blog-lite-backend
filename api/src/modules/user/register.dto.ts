@@ -1,10 +1,8 @@
 import { IsString, IsNotEmpty, MinLength, IsEmail, IsOptional, IsEnum } from 'class-validator';
 
 export class RegisterDto {
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(3)
-  username: string;
+  // username 概念已移除：注册不再要求登录账号。
+  // 用户用 nickname（显示名）+ email（登录凭证）+ password 注册，登录用 id 或 email。
 
   @IsString()
   @IsNotEmpty()
@@ -13,6 +11,7 @@ export class RegisterDto {
 
   @IsString()
   @IsNotEmpty()
+  @MinLength(2)
   nickname: string;
 
   @IsEmail()
@@ -43,9 +42,10 @@ export class RegisterDto {
 }
 
 export class ClientLoginDto {
+  // 登录凭证：id（纯数字）或 email。username 概念已移除。
   @IsString()
   @IsNotEmpty()
-  username: string;
+  account: string;
 
   @IsString()
   @IsNotEmpty()

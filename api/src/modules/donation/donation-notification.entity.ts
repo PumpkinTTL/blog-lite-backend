@@ -52,8 +52,8 @@ export class DonationNotificationEntity {
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'error_message' })
   errorMessage: string | null;
 
-  /** 操作管理员 ID */
-  @Column({ type: 'int', nullable: true, name: 'operator_id' })
+  /** 操作管理员 ID（9位随机，与 users.id 对齐） */
+  @Column({ type: 'bigint', nullable: true, name: 'operator_id' })
   operatorId: number | null;
 
   @CreateDateColumn({ name: 'created_at', comment: '发送时间' })

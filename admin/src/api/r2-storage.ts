@@ -18,7 +18,7 @@ export interface R2Media {
   storageType: 'oss'
   ossPlatform: 'cloudflare'
   uploaderId: number
-  uploader?: { id: number; username: string; nickname: string }
+  uploader?: { id: number; nickname: string }
   note: string | null
   createdAt: string
 }

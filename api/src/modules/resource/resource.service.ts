@@ -56,7 +56,7 @@ export class ResourceService {
       // 只 select uploader 的公开安全字段，避免泄露 email/phone/registerIp 等 PII。
       // admin 需要看完整用户信息时走 user 管理模块，不在此处暴露。
       .leftJoin('e.uploader', 'uploader')
-      .addSelect(['uploader.id', 'uploader.username', 'uploader.nickname', 'uploader.avatar']);
+      .addSelect(['uploader.id', 'uploader.nickname', 'uploader.avatar']);
     applyFilters(qb, {
       exact: {
         'e.id': filters?.id,
@@ -120,7 +120,7 @@ export class ResourceService {
       .createQueryBuilder('e')
       .leftJoinAndSelect('e.category', 'category')
       .leftJoin('e.uploader', 'uploader')
-      .addSelect(['uploader.id', 'uploader.username', 'uploader.nickname', 'uploader.avatar'])
+      .addSelect(['uploader.id', 'uploader.nickname', 'uploader.avatar'])
       .where('e.id = :id', { id });
     if (publicOnly) {
       // 非 admin 详情查询：允许 published/login/private，由上层 findByIdForUser 做细粒度判定

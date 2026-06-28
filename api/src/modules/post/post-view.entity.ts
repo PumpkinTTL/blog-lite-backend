@@ -38,10 +38,10 @@ export class PostViewEntity {
   userAgent: string | null;
 
   @Column({
-    type: 'int',
+    type: 'bigint',
     nullable: true,
     name: 'user_id',
-    comment: '登录用户 ID',
+    comment: '登录用户 ID（9位随机，与 users.id 对齐）',
   })
   userId: number | null;
 

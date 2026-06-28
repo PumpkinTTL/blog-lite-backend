@@ -1,6 +1,6 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
+  PrimaryColumn,
   Column,
   CreateDateColumn,
   UpdateDateColumn,
@@ -15,19 +15,22 @@ import { CodeEntity } from '../code/code.entity';
 
 /**
  * users 表索引：
- * - username/email 已是 unique（隐式索引）
+ * - email 是 unique（隐式索引）
  * - status：管理端过滤（findAll 的 exact filter + 临时封禁检查）
  * - createdAt：管理端列表排序（orderBy createdAt DESC）
+ *
+ * 设计说明：已移除 username 列。对外展示用 nickname（昵称，可中文/重名），
+ * 唯一标识/查询用 id（JWT 凭证即 id），登录凭证用 id 或 email。
+ * 登录账号的概念不再存在——用户记 id 或邮箱即可。
  */
 @Entity('users')
 @Index('idx_user_status', ['status'])
 @Index('idx_user_created', ['createdAt'])
 export class UserEntity {
-  @PrimaryGeneratedColumn({ comment: '用户 ID' })
+  // 非自增主键：注册时由 generateUniqueUserId() 生成 9 位随机数字赋值。
+  // 目的：防推算注册顺序/用户总量、防爬虫遍历。详见 common/utils/generate-user-id.ts。
+  @PrimaryColumn({ type: 'bigint', comment: '用户 ID（9位随机数字）' })
   id: number;
-
-  @Column({ length: 50, unique: true, comment: '登录账号' })
-  username: string;
 
   @Column({ length: 255, select: false, comment: '密码哈希' })
   password: string;
