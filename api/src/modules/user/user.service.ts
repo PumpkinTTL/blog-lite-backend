@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource } from 'typeorm';
+import { Repository, In, DataSource, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { UserEntity } from './user.entity';
@@ -18,6 +18,7 @@ import { MembershipService } from '../membership/membership.service';
 import { MembershipEntity } from '../membership/membership.entity';
 import { InteractionEntity } from '../interaction/interaction.entity';
 import { PostEntity } from '../post/post.entity';
+import { CommentEntity } from '../comment/comment.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { generateUniqueUserId } from '../../common/utils/generate-user-id';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -374,38 +375,9 @@ export class UserService {
     // 但 interactions / memberships / code_usage_logs 是裸列无 FK，需手动清。
     // interactions 清理后还要回算受影响文章的 likeCount/favoriteCount，否则计数虚高。
     await this.dataSource.transaction(async (manager) => {
-      // 1. 收集该用户所有 post 互动（点赞/收藏），用于删除后回算文章计数
-      const userInteractions = await manager.find(InteractionEntity, {
-        where: { userId: id, entityType: 'post' },
-      });
-      const affectedPostIds = new Set(
-        userInteractions.map((i) => i.entityId),
-      );
-      const affectedTypes = new Set(userInteractions.map((i) => i.type));
+      await this.cleanupUserBeforeDelete(manager, id);
 
-      // 2. 删 interactions（孤儿数据）
-      await manager.delete(InteractionEntity, { userId: id });
-
-      // 3. 删 memberships（避免已删用户在会员列表残留）
-      await manager.delete(MembershipEntity, { userId: id });
-
-      // 4. 删 code_usage_logs（兑换记录，避免引用已删用户）
-      await manager.delete(CodeUsageLogEntity, { userId: id });
-
-      // 5. 回算受影响文章的 likeCount/favoriteCount（用户删了，计数要扣掉）
-      for (const postId of affectedPostIds) {
-        for (const type of affectedTypes) {
-          const count = await manager.count(InteractionEntity, {
-            where: { entityType: 'post', entityId: postId, type },
-          });
-          const patch =
-            type === 'like' ? { likeCount: count } : { favoriteCount: count };
-          await manager.update(PostEntity, { id: postId }, patch as any);
-        }
-      }
-
-      // 6. 清理用户头像文件（事务外删文件不安全，放事务内先记 URL）
-      // 7. 删用户（comments/user_roles 因 FK CASCADE 自动删）
+      // 删用户（comments/user_roles 因 FK CASCADE 自动删）
       await manager.delete(UserEntity, { id });
     });
 
@@ -413,6 +385,61 @@ export class UserService {
     if (user.avatar) {
       await this.deleteMediaByUrl(user.avatar).catch((e) =>
         this.logger.warn(`删除用户 ${id} 头像文件失败: ${e.message}`),
+      );
+    }
+  }
+
+  /**
+   * 删除用户前的关联数据清理（事务内执行）。
+   * remove 和 batchRemove 共用，保证单删/批删逻辑一致。
+   * 清理项：interactions（孤儿数据）、memberships、code_usage_logs，
+   * 以及回算受影响文章的 likeCount/favoriteCount/commentCount。
+   */
+  private async cleanupUserBeforeDelete(
+    manager: EntityManager,
+    id: number,
+  ): Promise<void> {
+    // 1. 收集该用户所有 post 互动（点赞/收藏），用于删除后回算文章计数
+    const userInteractions = await manager.find(InteractionEntity, {
+      where: { userId: id, entityType: 'post' },
+    });
+    const affectedPostIds = new Set(userInteractions.map((i) => i.entityId));
+    const affectedTypes = new Set(userInteractions.map((i) => i.type));
+
+    // 2. 收集该用户所有评论涉及的 post（comments 因 FK CASCADE 会被自动删，
+    //    需提前收集以便删完后回算 commentCount，否则计数永久虚高）
+    const userComments = await manager.find(CommentEntity, {
+      where: { userId: id, entityType: 'post' },
+    });
+    for (const c of userComments) affectedPostIds.add(c.entityId);
+
+    // 3. 删 interactions（裸列无 FK，需手动清，否则变孤儿）
+    await manager.delete(InteractionEntity, { userId: id });
+
+    // 4. 删 memberships（避免已删用户在会员列表残留）
+    await manager.delete(MembershipEntity, { userId: id });
+
+    // 5. 删 code_usage_logs（裸列无 FK，避免引用已删用户）
+    await manager.delete(CodeUsageLogEntity, { userId: id });
+
+    // 6. 回算受影响文章的 likeCount/favoriteCount
+    for (const postId of affectedPostIds) {
+      for (const type of affectedTypes) {
+        const count = await manager.count(InteractionEntity, {
+          where: { entityType: 'post', entityId: postId, type },
+        });
+        const patch =
+          type === 'like' ? { likeCount: count } : { favoriteCount: count };
+        await manager.update(PostEntity, { id: postId }, patch as any);
+      }
+      // 回算 commentCount（用户删除后其评论已被 CASCADE 删，这里重算准确值）
+      const commentCount = await manager.count(CommentEntity, {
+        where: { entityType: 'post', entityId: postId, status: 'approved' },
+      });
+      await manager.update(
+        PostEntity,
+        { id: postId },
+        { commentCount } as any,
       );
     }
   }
@@ -436,7 +463,7 @@ export class UserService {
       }
     }
 
-    // 清理所有头像文件
+    // 清理所有头像文件（事务外，OSS 调用）
     for (const user of users) {
       if (user.avatar) {
         await this.deleteMediaByUrl(user.avatar).catch(e =>
@@ -445,7 +472,13 @@ export class UserService {
       }
     }
 
-    await this.userRepo.delete(ids);
+    // 事务内逐个清理关联数据 + 回算计数 + 删用户（与单删逻辑一致）
+    await this.dataSource.transaction(async (manager) => {
+      for (const id of ids) {
+        await this.cleanupUserBeforeDelete(manager, id);
+        await manager.delete(UserEntity, { id });
+      }
+    });
   }
 
   /** 根据 URL 删除对应的 media 记录及 R2 文件 */

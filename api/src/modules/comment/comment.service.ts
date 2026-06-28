@@ -105,8 +105,9 @@ export class CommentService {
   async create(userId: number, dto: CreateCommentDto): Promise<CommentEntity> {
     // 校验目标实体存在（目前只支持 post）
     if (dto.entityType === 'post') {
+      // deletedAt 非自动过滤（非 @DeleteDateColumn），需手动校验未软删
       const post = await this.postRepo.findOne({
-        where: { id: dto.entityId },
+        where: { id: dto.entityId, deletedAt: IsNull() },
         select: ['id', 'status'],
       });
       if (!post) throw new NotFoundException('评论目标不存在');

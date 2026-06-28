@@ -55,6 +55,27 @@ async function bootstrap() {
     exposedHeaders: ['X-Request-Id'],
   });
 
+  // 安全 HTTP 响应头（等价 helmet 核心功能，无需额外依赖）。
+  // 防止 MIME 嗅探、点击劫持（iframe 嵌套）、降级协议攻击等常见 Web 风险。
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // HSTS：仅 HTTPS 生效，强制浏览器后续走加密通道（生产 https 部署后启用）
+    if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+  });
+
+  // 健康检查端点（Express 原生路由，不走 NestJS 守卫链，无需 @Public）。
+  // 供 LB/K8s/容器编排探针使用；进程能响应即视为存活。
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.get('/health', (_req: any, res: any) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
   await app.listen(port);
 
   const url = await app.getUrl();

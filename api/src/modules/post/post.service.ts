@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource } from 'typeorm';
+import { Repository, In, DataSource, IsNull } from 'typeorm';
 import { PostEntity } from './post.entity';
 import { PostViewEntity } from './post-view.entity';
 import { TagEntity } from '../tag/tag.entity';
@@ -180,6 +180,17 @@ export class PostService implements OnModuleInit {
     }
 
     return { list, total, page, pageSize };
+  }
+
+  /**
+   * 轻量查询：仅判断文章是否存在且未软删（不加载关联，不加权限校验）。
+   * 用于点赞/评论等操作前的目标校验。
+   */
+  async findByIdRaw(id: number): Promise<boolean> {
+    const exists = await this.postRepo.exist({
+      where: { id, deletedAt: IsNull() },
+    });
+    return exists;
   }
 
   async findById(id: number, publicOnly = false, userId?: number) {

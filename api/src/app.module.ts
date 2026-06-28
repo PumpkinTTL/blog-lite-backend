@@ -121,12 +121,21 @@ import { ScheduleModule } from '@nestjs/schedule';
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_DATABASE'),
         charset: 'utf8mb4',
+        // 统一时区为 +08:00，确保 Node 端 new Date() 与 MySQL CURDATE()/DATETIME 一致，
+        // 避免会员到期时间偏移、dashboard 趋势图日期分组错位。
+        timezone: '+08:00',
         autoLoadEntities: true,
         synchronize:
           configService.get('DB_SYNCHRONIZE') === 'true' &&
           configService.get('NODE_ENV') !== 'production',
         retryAttempts: 3,
         retryDelay: 1000,
+        // 连接池配置（mysql2 默认 connectionLimit:10，显式调优避免突发并发排队超时）
+        extra: {
+          connectionLimit: 20,
+          waitForConnections: true,
+          connectTimeout: 10000,
+        },
       }),
     }),
     // Redis（限流计数，全局共享 ioredis 实例）

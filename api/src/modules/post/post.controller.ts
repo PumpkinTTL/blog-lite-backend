@@ -222,6 +222,11 @@ export class PostController {
       return { success: false, message: '请先登录', data: null };
     }
     const type = dto.type;
+    // 校验文章存在且未软删（deletedAt 非自动过滤）
+    const exists = await this.postService.findByIdRaw(id);
+    if (!exists) {
+      return { success: false, message: '文章不存在', data: null };
+    }
     const result = await this.interactionService.toggle(
       userId,
       'post',
@@ -229,13 +234,13 @@ export class PostController {
       type,
     );
     // 原子计数：toggle 返回 active（新增=+1，取消=-1），直接原子增减，
-    // 无需 count 重算（避免并发 toggle 计数反复横跳 + 省 1 次查询）。
+    // 用 GREATEST(0,...) 防负数（历史计数漂移或并发竞态可能造成负数）。
     const delta = result.active ? 1 : -1;
     const field = type === 'like' ? 'likeCount' : 'favoriteCount';
     await this.dataSource
       .createQueryBuilder()
       .update(PostEntity)
-      .set({ [field]: () => `${field} + ${delta}` })
+      .set({ [field]: () => `GREATEST(0, ${field} + ${delta})` })
       .where('id = :id', { id })
       .execute();
     return {
