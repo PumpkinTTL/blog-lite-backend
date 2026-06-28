@@ -7,6 +7,11 @@ import {
   MaxLength,
 } from 'class-validator';
 
+export class ToggleInteractDto {
+  @IsIn(['like', 'favorite'], { message: 'type 只能是 like 或 favorite' })
+  type: 'like' | 'favorite';
+}
+
 export class BatchIdsDto {
   @IsArray()
   @IsInt({ each: true })

@@ -16,7 +16,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { PostService } from './post.service';
 import { PostEntity } from './post.entity';
-import { CreatePostDto, UpdatePostDto, BatchIdsDto } from './post.dto';
+import { CreatePostDto, UpdatePostDto, BatchIdsDto, ToggleInteractDto } from './post.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
@@ -214,21 +214,14 @@ export class PostController {
   @Post(':id/interact')
   async toggleInteract(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { type: 'like' | 'favorite' },
+    @Body() dto: ToggleInteractDto,
     @Req() req: Request,
   ) {
     const userId = Number((req as any)?.user?.sub);
     if (!userId) {
       return { success: false, message: '请先登录', data: null };
     }
-    const type = body?.type;
-    if (type !== 'like' && type !== 'favorite') {
-      return {
-        success: false,
-        message: 'type 只能是 like 或 favorite',
-        data: null,
-      };
-    }
+    const type = dto.type;
     const result = await this.interactionService.toggle(
       userId,
       'post',
