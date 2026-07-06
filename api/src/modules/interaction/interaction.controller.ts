@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { InteractionService } from './interaction.service';
-import { ToggleInteractionDto, BatchCountDto } from './interaction.dto';
+import { ToggleInteractionDto, BatchCountDto, BatchDeleteDto } from './interaction.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
@@ -188,10 +188,7 @@ export class InteractionController {
    */
   @Roles('admin')
   @Delete('admin/batch')
-  async adminBatchDelete(@Body() dto: { ids: number[] }) {
-    if (!Array.isArray(dto?.ids) || dto.ids.length === 0) {
-      throw new BadRequestException('ids 必填');
-    }
+  async adminBatchDelete(@Body() dto: BatchDeleteDto) {
     await this.service.adminBatchDelete(dto.ids);
     return { success: true, message: `已批量删除 ${dto.ids.length} 条` };
   }

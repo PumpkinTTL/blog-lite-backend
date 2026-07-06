@@ -12,12 +12,29 @@ export interface SettingOperator {
 
 @Injectable()
 export class SettingService {
+  // 进程内缓存：setting 是低频写、高频读，加内存缓存减少 DB 压力。
+  // 写操作（create/update/remove）时调用 invalidate() 清空，下次读重新加载。
+  private cache: Map<string, SettingEntity> | null = null;
+
   constructor(
     @InjectRepository(SettingEntity)
     private readonly repo: Repository<SettingEntity>,
     // AuditLogModule 是 @Global，可直接注入；@Optional 兼容测试环境
     @Optional() private readonly auditLog?: AuditLogService,
   ) {}
+
+  /** 清空缓存（写操作后调用） */
+  private invalidate() {
+    this.cache = null;
+  }
+
+  /** 加载全部配置到缓存（懒加载） */
+  private async loadCache(): Promise<Map<string, SettingEntity>> {
+    if (this.cache) return this.cache;
+    const list = await this.repo.find();
+    this.cache = new Map(list.map((s) => [s.key, s]));
+    return this.cache;
+  }
 
   /** 记录配置变更审计（value 变化时） */
   private logChange(
@@ -55,12 +72,14 @@ export class SettingService {
   }
 
   async findByKey(key: string) {
-    return this.repo.findOne({ where: { key } });
+    const cache = await this.loadCache();
+    return cache.get(key) ?? null;
   }
 
   async create(data: Partial<SettingEntity>, operator?: SettingOperator) {
     const entity = this.repo.create(data);
     const saved = await this.repo.save(entity);
+    this.invalidate();
     // 新建配置记录审计
     if (this.auditLog && operator) {
       this.auditLog
@@ -88,6 +107,7 @@ export class SettingService {
     if (!existing) throw new NotFoundException('配置项不存在');
     const oldValue = existing.value;
     await this.repo.update(id, data);
+    this.invalidate();
     const updated = await this.repo.findOne({ where: { id } });
     // value 变化时记录审计
     if (updated && data.value !== undefined) {
@@ -100,6 +120,7 @@ export class SettingService {
     const existing = await this.repo.findOne({ where: { id } });
     if (!existing) return;
     await this.repo.delete(id);
+    this.invalidate();
     // 删除配置记录审计
     if (this.auditLog && operator) {
       this.auditLog
@@ -118,7 +139,10 @@ export class SettingService {
   }
 
   async findByGroup(group: string) {
-    return this.repo.find({ where: { group }, order: { key: 'ASC' } });
+    const cache = await this.loadCache();
+    return Array.from(cache.values())
+      .filter((s) => s.group === group)
+      .sort((a, b) => a.key.localeCompare(b.key));
   }
 
   async batchUpdateByGroup(
@@ -139,6 +163,7 @@ export class SettingService {
         results.push(await this.repo.save(created));
       }
     }
+    this.invalidate();
     return results;
   }
 
@@ -156,6 +181,7 @@ export class SettingService {
         results.push(await this.repo.save(existing));
       }
     }
+    this.invalidate();
     return results;
   }
 }

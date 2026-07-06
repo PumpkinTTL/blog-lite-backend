@@ -6,7 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, LessThan } from 'typeorm';
 import { MembershipEntity } from './membership.entity';
 import { PlanLevel } from '../plan/plan.entity';
 import { PlanService } from '../plan/plan.service';
@@ -68,14 +68,13 @@ export class MembershipService implements OnModuleInit {
    */
   async sweepExpired(): Promise<number> {
     const now = new Date();
-    // 1. 先查出待过期的记录（JOIN plan 取 roleId），原单条 UPDATE 无法带"移除角色"逻辑
-    const expiring = await this.memberRepo.find({
-      where: { status: 'active' },
+    // 1. 只查真正待过期的记录（status=active AND expiresAt < now），
+    //    下推 SQL 过滤避免全表加载（终身会员 expiresAt IS NULL 天然排除）。
+    //    JOIN plan 取 roleId，用于后续撤角色。
+    const toExpire = await this.memberRepo.find({
+      where: { status: 'active' as any, expiresAt: LessThan(now) } as any,
       relations: ['plan'],
     });
-    const toExpire = expiring.filter(
-      (m) => m.expiresAt && m.expiresAt < now,
-    );
     if (toExpire.length === 0) return 0;
 
     // 2. 标记 expired（批量）

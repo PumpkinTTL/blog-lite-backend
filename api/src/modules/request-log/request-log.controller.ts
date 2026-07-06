@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { RequestLogService } from './request-log.service';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
+import { parseDateParam, parseOptionalInt } from '../../common/utils/parse-date';
 import { Roles } from '../../common/decorators/roles.decorator';
 
 /**
@@ -42,11 +43,11 @@ export class RequestLogController {
       pageSize: parsePageSize(pageSize),
       requestId: requestId?.trim() || undefined,
       ip: ip?.trim() || undefined,
-      status: status ? Number(status) : undefined,
+      status: parseOptionalInt(status),
       method: method?.trim().toUpperCase() || undefined,
-      userId: userId ? Number(userId) : undefined,
-      startTime: startTime ? new Date(startTime) : undefined,
-      endTime: endTime ? new Date(endTime) : undefined,
+      userId: parseOptionalInt(userId),
+      startTime: parseDateParam(startTime),
+      endTime: parseDateParam(endTime),
     });
     return { success: true, data, message: 'ok' };
   }

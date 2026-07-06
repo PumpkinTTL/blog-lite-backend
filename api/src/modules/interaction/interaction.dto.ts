@@ -53,3 +53,15 @@ export class BatchCountDto {
   @Type(() => Number)
   entityIds: number[];
 }
+
+/**
+ * 批量删除（admin）
+ */
+export class BatchDeleteDto {
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @ArrayMaxSize(500)
+  @Type(() => Number)
+  ids: number[];
+}

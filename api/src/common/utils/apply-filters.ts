@@ -44,7 +44,8 @@ export function applyFilters<T extends ObjectLiteral>(
 
   if (filters.like?.keyword && filters.like.fields.length > 0) {
     // 转义 % / _ / \，加 ESCAPE '\\' 让反斜杠作为转义符生效
-    const keyword = escapeLike(filters.like.keyword);
+    // 截断到 100 字符，防公开接口传超长 keyword 放大 LIKE 扫描成本（轻量级 DoS 防护）
+    const keyword = escapeLike(filters.like.keyword.slice(0, 100));
     const conditions = filters.like.fields
       .map((f) => `${f} LIKE :kw ESCAPE '\\\\'`)
       .join(' OR ');

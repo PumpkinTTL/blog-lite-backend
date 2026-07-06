@@ -29,6 +29,16 @@ export class AiConversationController {
         compactionMessages = null;
       }
     }
+    // messages 同样需要 try/catch 兜底（脏数据/部分写入会导致 parse 失败崩溃）
+    let messages: unknown[] = [];
+    if (item.messages) {
+      try {
+        const arr = JSON.parse(item.messages);
+        if (Array.isArray(arr)) messages = arr;
+      } catch {
+        messages = [];
+      }
+    }
     return {
       id: item.id,
       postId: item.postId,
@@ -45,7 +55,7 @@ export class AiConversationController {
       hasCompaction: item.compactionSummary != null,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
-      messages: JSON.parse(item.messages),
+      messages,
     };
   }
 

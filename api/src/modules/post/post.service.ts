@@ -494,17 +494,18 @@ export class PostService implements OnModuleInit {
     userAgent?: string,
     userId?: number,
   ) {
-    const post = await this.postRepo.findOne({ where: { id: postId } });
-    if (!post) return;
+    // 轻量校验文章存在且未软删（避免完整 findOne 加载，调用方 findById 已确认存在）
+    const exists = await this.findByIdRaw(postId);
+    if (!exists) return;
 
     // 24h 内同 IP 同文章去重
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const exists = await this.postViewRepo.findOne({
+    const recent = await this.postViewRepo.findOne({
       where: { postId, ip },
       order: { viewedAt: 'DESC' },
     });
 
-    if (!exists || exists.viewedAt < since) {
+    if (!recent || recent.viewedAt < since) {
       await this.postViewRepo.save(
         this.postViewRepo.create({
           postId,

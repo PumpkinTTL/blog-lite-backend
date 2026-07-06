@@ -30,6 +30,27 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import type { Request } from 'express';
 
+/**
+ * 文件上传过滤器：同时校验扩展名 + MIME 类型（防 shell.php.jpg 等伪装）。
+ * 扩展名白名单保持与 R2 直传路径一致，MIME 白名单校验 base type。
+ */
+const ALLOWED_EXT = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
+const ALLOWED_MIME_BASE = ['image', 'video', 'audio', 'application', 'text'];
+function uploadFileFilter(_req: any, file: Express.Multer.File, cb: any) {
+  const ext = extname(file.originalname).toLowerCase();
+  if (!ALLOWED_EXT.test(ext)) {
+    cb(new BadRequestException('不支持的文件类型'), false);
+    return;
+  }
+  // MIME 校验：取主类型（image/jpeg → image），防止扩展名白名单但实际是脚本
+  const mimeBase = (file.mimetype || '').split('/')[0];
+  if (!ALLOWED_MIME_BASE.includes(mimeBase)) {
+    cb(new BadRequestException('文件 MIME 类型不被允许'), false);
+    return;
+  }
+  cb(null, true);
+}
+
 @Controller('media')
 @Roles('admin')
 export class MediaController {
@@ -60,15 +81,7 @@ export class MediaController {
     FilesInterceptor('files', 20, {
       storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-      fileFilter: (_req, file, cb) => {
-        const allowed =
-          /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
-        if (!allowed.test(extname(file.originalname).toLowerCase())) {
-          cb(new BadRequestException('不支持的文件类型'), false);
-          return;
-        }
-        cb(null, true);
-      },
+      fileFilter: uploadFileFilter,
     }),
   )
   async uploadMany(
@@ -102,15 +115,7 @@ export class MediaController {
     FileInterceptor('file', {
       storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-      fileFilter: (_req, file, cb) => {
-        const allowed =
-          /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|mp4|mp3|pdf|doc|docx|xls|xlsx|zip|rar)$/;
-        if (!allowed.test(extname(file.originalname).toLowerCase())) {
-          cb(new BadRequestException('不支持的文件类型'), false);
-          return;
-        }
-        cb(null, true);
-      },
+      fileFilter: uploadFileFilter,
     }),
   )
   async upload(

@@ -101,9 +101,11 @@ export class TagService {
   }
 
   async findPopular(limit = 10) {
+    // 防御 NaN/负数/超大值导致 LIMIT 语法错误（公开接口可触发）
+    const safeLimit = Math.max(1, Math.min(Number.isFinite(limit) ? limit : 10, 100));
     const rows = await this.dataSource.query(
       'SELECT t.*, COUNT(pt.post_id) as postCount FROM tags t LEFT JOIN post_tags pt ON pt.tag_id = t.id GROUP BY t.id ORDER BY postCount DESC LIMIT ?',
-      [limit],
+      [safeLimit],
     );
     return rows;
   }

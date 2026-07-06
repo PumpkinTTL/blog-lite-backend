@@ -65,17 +65,22 @@ export class AuthGuard implements CanActivate {
   private async getUserRoles(
     userId: number,
   ): Promise<{ roleNames: string[]; roleIds: number[] }> {
-    // 先独立查用户 status（不能用 INNER JOIN roles，否则无角色的用户 rows 为空会绕过校验）
-    const userRows = await this.dataSource.query(
-      `SELECT status, banned_until FROM users WHERE id = ?`,
+    // 一次查询拿到 status + 所有角色（LEFT JOIN 保证无角色用户也能返回 status）
+    const rows = await this.dataSource.query(
+      `SELECT u.status, u.banned_until, r.id AS roleId, r.name AS roleName
+       FROM users u
+       LEFT JOIN user_roles ur ON ur.user_id = u.id
+       LEFT JOIN roles r ON r.id = ur.role_id
+       WHERE u.id = ?`,
       [userId],
     );
-    if (userRows.length === 0) {
+    if (rows.length === 0) {
       throw new UnauthorizedException('用户不存在');
     }
-    if (userRows[0].status !== 'active') {
+    const status = rows[0].status;
+    if (status !== 'active') {
       // 临时封禁已过期 → 惰性自动解封（无需 cron）
-      const bannedUntil = userRows[0].banned_until;
+      const bannedUntil = rows[0].banned_until;
       if (bannedUntil && new Date(bannedUntil) < new Date()) {
         await this.dataSource.query(
           `UPDATE users SET status = 'active', banned_until = NULL WHERE id = ?`,
@@ -85,16 +90,11 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('账号已被禁用');
       }
     }
-    // 再查角色（LEFT JOIN 保证无角色用户也能通过 status 校验）
-    const rows = await this.dataSource.query(
-      `SELECT r.id, r.name FROM roles r
-       INNER JOIN user_roles ur ON r.id = ur.role_id
-       WHERE ur.user_id = ?`,
-      [userId],
-    );
+    // 过滤掉无角色行（LEFT JOIN 无角色时 roleId 为 null）
+    const roles = rows.filter((r: any) => r.roleId != null);
     return {
-      roleNames: rows.map((r: any) => r.name),
-      roleIds: rows.map((r: any) => r.id),
+      roleNames: roles.map((r: any) => r.roleName),
+      roleIds: roles.map((r: any) => r.roleId),
     };
   }
 }

@@ -45,9 +45,13 @@ export class CommentController {
     if (!entityType || !entityId) {
       throw new BadRequestException('entityType/entityId 必填');
     }
+    const eid = Number(entityId);
+    if (!Number.isFinite(eid) || eid <= 0) {
+      throw new BadRequestException('entityId 必须是正整数');
+    }
     const { list, total } = await this.service.listTopLevel(
       entityType,
-      Number(entityId),
+      eid,
       parsePage(page),
       parsePageSize(pageSize),
     );
