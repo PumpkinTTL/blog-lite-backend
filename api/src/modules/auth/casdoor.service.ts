@@ -111,10 +111,10 @@ export class CasdoorService implements OnModuleInit {
     localUserId: number,
     password: string,
   ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
-    // TODO(部署后确认): 部分 Casdoor 版本 password grant 的 username 需要去掉 org 前缀。
-    // 若登录报 "user not found"，将 username 改为 this.casdoorName(localUserId) 重试。
-    const username = `${this.orgName}/${this.casdoorName(localUserId)}`;
-    // 实测该部署对 body 内 client_id/secret 解析有误（报 invalid_client），
+    // 实测（auth.bitlesu.com）：username 用裸用户名（u<id>），不带 org 前缀；
+    // Casdoor 在应用上下文中按应用所属组织查找用户。
+    const username = this.casdoorName(localUserId);
+    // 实测：该部署对 body 内 client_id/secret 解析有误（报 invalid_client），
     // 必须用 Basic 头携带凭证
     const { data } = await firstValueFrom(
       this.httpService.post(
@@ -188,15 +188,24 @@ export class CasdoorService implements OnModuleInit {
     const { payload } = await jwtVerify(accessToken, this.jwks, {
       // issuer = Casdoor 站点地址（Casdoor 的 iss 即 endpoint）
       issuer: this.endpoint,
+      // aud = 本应用的 client_id：其他应用（以后商城等）签发的 token 到这里直接被拒
+      audience: this.clientId,
       // Casdoor 证书系统支持 RSA(RS256)/ECDSA(ES256)，无 Ed25519。
       // 白名单三种非对称算法：部署方换证书类型无需改代码；JWKS 按 kid
       // 匹配公钥，实际可用算法受 JWKS 里的 key 类型约束。
       algorithms: ['RS256', 'ES256', 'EdDSA'],
     });
-    const localUserId = this.parseLocalUserId(payload.sub);
+    // 实测（auth.bitlesu.com）：Casdoor JWT 的 sub 是其内部 UUID（不是用户 name），
+    // 用户名在 payload.name 字段（Casdoor 会把整个用户对象放进 JWT claims）。
+    // 映射链：payload.name = "u<本地userId>" → 本地用户；sub 仅作兜底。
+    const localUserId = this.parseLocalUserId(
+      (payload as { name?: unknown }).name ?? payload.sub,
+    );
     if (!localUserId) {
       // token 有效但不是本应用同步的用户（如管理员手动在 Casdoor 建的账号）
-      throw new Error(`Casdoor token 的 sub 无法映射本地用户: ${String(payload.sub)}`);
+      throw new Error(
+        `Casdoor token 无法映射本地用户: name=${String((payload as { name?: unknown }).name)}`,
+      );
     }
     return { ...payload, sub: String(localUserId) };
   }
@@ -224,6 +233,9 @@ export class CasdoorService implements OnModuleInit {
     email?: string | null;
   }): Promise<void> {
     const body = {
+      // 实测（auth.bitlesu.com）：该版本要求同时传 owner + organization，
+      // 只传 organization 会报 "The organization: does not exist"
+      owner: this.orgName,
       name: this.casdoorName(params.localUserId),
       organization: this.orgName,
       displayName: params.nickname,
