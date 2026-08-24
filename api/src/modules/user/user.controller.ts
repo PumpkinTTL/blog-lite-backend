@@ -30,11 +30,13 @@ import {
   ChangeEmailDto,
 } from './user.dto';
 import { RegisterDto, ClientLoginDto } from './register.dto';
+import { BadRequestException } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RequireTurnstile } from '../../common/decorators/require-turnstile.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import { EmailCodeService } from '../email-code/email-code.service';
+import { SettingService } from '../setting/setting.service';
 import { USER_STATUS } from '../../common/constants/status';
 
 @Controller('user')
@@ -42,6 +44,7 @@ export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly emailCodeService: EmailCodeService,
+    private readonly settingService: SettingService,
   ) {}
 
   // ===== 管理端登录 =====
@@ -153,6 +156,30 @@ export class UserController {
     }
     await this.emailCodeService.sendCode(dto.email);
     return { success: true, message: '验证码已发送' };
+  }
+
+  /**
+   * 发送注册验证码（证明邮箱所有权）。
+   * 与 send-login-code 语义相反：注册要求邮箱【未】被注册，已注册明确告知去登录。
+   * 注册开关关闭时不发码（前端也会隐藏注册入口，此为服务端兜底）。
+   */
+  @Public()
+  @RequireTurnstile()
+  @Post('send-register-code')
+  async sendRegisterCode(@Body() dto: SendLoginCodeDto) {
+    const regEnabled = await this.settingService.findByKey('registration.enabled');
+    if (regEnabled?.value === 'false' || regEnabled?.value === '0') {
+      throw new BadRequestException('注册功能暂未开放');
+    }
+    const existing = await this.userService.findByEmail(dto.email);
+    if (existing) {
+      return {
+        success: false,
+        message: '该邮箱已被注册，请直接登录',
+      };
+    }
+    await this.emailCodeService.sendCode(dto.email);
+    return { success: true, message: '验证码已发送，请查收邮箱' };
   }
 
   /**

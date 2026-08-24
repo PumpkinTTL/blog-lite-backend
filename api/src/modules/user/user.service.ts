@@ -687,6 +687,16 @@ export class UserService {
       if (existingEmail) {
         throw new BadRequestException('该邮箱已被注册，若忘记密码请重置');
       }
+      // 邮箱验证码：提供 email 必须带有效验证码（证明邮箱所有权，防垃圾注册）。
+      // 不提供 email 的注册（历史渠道）不校验。
+      const code = (dto.emailCode || '').trim();
+      if (!code) {
+        throw new BadRequestException('请先获取邮箱验证码');
+      }
+      const codeValid = await this.emailCodeService.verifyCode(dto.email, code);
+      if (!codeValid) {
+        throw new BadRequestException('邮箱验证码错误或已过期');
+      }
     }
 
     // 2. 邀请码开关：registration.require_invitation 关闭时开放自由注册（默认开启）

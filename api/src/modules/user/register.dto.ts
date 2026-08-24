@@ -25,6 +25,11 @@ export class RegisterDto {
 
   @IsString()
   @IsOptional()
+  /** 邮箱验证码：email 提供时必填（服务端校验），证明邮箱所有权 */
+  emailCode?: string;
+
+  @IsString()
+  @IsOptional()
   avatar?: string;
 
   @IsString()
