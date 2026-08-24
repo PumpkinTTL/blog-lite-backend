@@ -37,6 +37,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "cron": "^4.4.0",
+    "dompurify": "^3.4.14",
     "ioredis": "^5.11.1",
     "jose": "^6.2.3",
     "multer": "^2.1.1",

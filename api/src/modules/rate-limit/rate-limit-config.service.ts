@@ -25,6 +25,7 @@ const SENSITIVE_DEFAULTS: RateRuleMeta[] = [
   { routeKey: 'UserController.clientLogin', label: '客户端登录', limit: 5, ttl: 60000 },
   { routeKey: 'UserController.sendLoginCode', label: '发送登录验证码', limit: 3, ttl: 60000 },
   { routeKey: 'UserController.loginByCode', label: '验证码登录', limit: 5, ttl: 60000 },
+  { routeKey: 'CodeController.verify', label: '兑换码校验', limit: 10, ttl: 60000 },
   { routeKey: 'UserController.sendResetCode', label: '发送重置密码验证码', limit: 3, ttl: 3600000 },
   { routeKey: 'UserController.resetPasswordByCode', label: '验证码重置密码', limit: 5, ttl: 3600000 },
   { routeKey: 'UserController.sendChangeEmailCode', label: '发送换绑邮箱验证码', limit: 3, ttl: 60000 },
@@ -134,7 +135,14 @@ export class RateLimitConfigService implements OnModuleInit {
 
   /** Guard 调用：取某路由的阈值，找不到回退全局默认 */
   getRule(routeKey: string): RateRule {
-    return this.rules.get(routeKey) ?? this.defaultRule;
+    // 优先级：settings 表值 > SENSITIVE_DEFAULTS 内置默认 > 全局默认。
+    // 兜底 meta：老库 seed 时没有新加的 routeKey 行，没有这层会直接落到
+    // 全局默认（100/min），等于敏感接口限流失效。
+    return (
+      this.rules.get(routeKey) ??
+      SENSITIVE_DEFAULTS.find((m) => m.routeKey === routeKey) ??
+      this.defaultRule
+    );
   }
 
   /** GUI 读取：返回完整配置（全局默认 + 敏感接口列表） */

@@ -100,10 +100,11 @@ function uploadDirect(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', presignedUrl, true)
-    // 注意：不主动 setRequestHeader('Content-Type', ...)。
-    // presign 签名只包含 content-length + host（SDK 默认），
-    // 若前端额外加 Content-Type 会让签名头集合不一致 → R2 返回 403。
-    // MIME 类型由 confirm 阶段写入 media 记录，不依赖 R2 元数据。
+    // Content-Type 已签入 presign 签名：PUT 必须携带与 presign 声明（file.type）相同的值，
+    // 否则 R2 返回 403 SignatureDoesNotMatch。空 type 时不设头（与 presign 的 undefined 一致）。
+    if (file.type) {
+      xhr.setRequestHeader('Content-Type', file.type)
+    }
 
     // 真实进度回调
     xhr.upload.onprogress = (e) => {

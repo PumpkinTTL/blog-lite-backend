@@ -256,6 +256,9 @@ export class MediaService {
    * 2. 幂等：同 key+hash 已有记录则直接返回（防止前端重复 confirm）
    * 3. 不存在/大小不符 → 抛 400
    */
+  /** 用户直传单文件上限（与 media-user.controller 的 presign 前置检查一致） */
+  private static readonly USER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
   async confirmR2Upload(params: {
     key: string;
     originalName: string;
@@ -277,9 +280,21 @@ export class MediaService {
       uploaderId,
     } = params;
 
-    // 幂等：同 hash + cloudflare 已有记录直接返回
+    // 上限强制校验：presign 阶段的前置检查可被绕过（声明小尺寸实际传大文件），
+    // confirm 必须对声明值与 R2 实际值双重把关
+    if (size > MediaService.USER_UPLOAD_MAX_BYTES) {
+      throw new BadRequestException('文件大小超过 10MB 限制');
+    }
+
+    // 幂等：同 hash + cloudflare + 同一上传者已有记录直接返回。
+    // 限定同 uploader：避免按已知 hash 枚举出他人 media 记录（含 uploaderId）。
     const existing = await this.mediaRepo.findOne({
-      where: { hash, storageType: 'oss', ossPlatform: 'cloudflare' },
+      where: {
+        hash,
+        storageType: 'oss',
+        ossPlatform: 'cloudflare',
+        uploaderId,
+      },
     });
     if (existing) return existing;
 
@@ -291,16 +306,24 @@ export class MediaService {
         '文件未上传成功（R2 中找不到该对象），请重试上传',
       );
     }
-    // 大小校验：若 HEAD 拿到大小，必须与声明一致（防伪造）
+    // 大小校验：若 HEAD 拿到大小，必须与声明一致（防伪造）且不超上限
     if (head.size != null && head.size !== size) {
+      // 实际对象与声明不符（绕过 presign 声明的典型痕迹），删除防止占用公开桶
+      await provider.delete(key).catch(() => {});
       throw new BadRequestException(
         `文件大小不一致：声明 ${size} 字节，实际 ${head.size} 字节`,
       );
     }
+    if (head.size != null && head.size > MediaService.USER_UPLOAD_MAX_BYTES) {
+      await provider.delete(key).catch(() => {});
+      throw new BadRequestException('文件大小超过 10MB 限制');
+    }
     // 类型二次校验：用 HEAD 返回的实际 contentType（不信任前端传的 mimeType），
-    // 防止 presign 时是图片但实际 PUT 了恶意文件
+    // 防止 presign 时是图片但实际 PUT 了恶意文件。
+    // presign 已把 ContentType 签入签名，正常流程不会不一致；此处为纵深防御。
     const actualType = head.contentType || mimeType;
     if (!this.isAllowedContentType(actualType, params.folder)) {
+      await provider.delete(key).catch(() => {});
       throw new BadRequestException(
         `检测到不允许的文件类型：${actualType}（仅允许图片）`,
       );
@@ -470,7 +493,11 @@ export class MediaService {
   /**
    * 创建 Cloudflare R2 存储实例。
    * 优先用系统设置面板的多账号配置；无账号时回落 .env（R2_* 环境变量）。
+   * 按配置签名缓存实例：StorageProvider 构造即建 S3Client（TLS 握手池），
+   * presign/confirm 是头像上传热路径，不能每次请求都重建（参照 mailer 的 transporter 缓存）。
    */
+  private r2ProviderCache = new Map<string, StorageProvider>();
+
   private async createR2Provider(): Promise<StorageProvider> {
     const account = await this.getActiveR2Account();
     if (account) {
@@ -482,15 +509,25 @@ export class MediaService {
           `R2 账号「${account.name || account.id}」配置不完整，缺少：${missing.join('、')}（系统设置 → 存储配置）`,
         );
       }
-      return new StorageProvider({
-        provider: 'cloudflare',
+      const config = {
+        provider: 'cloudflare' as const,
         endpoint: this.resolveR2Endpoint(account.accountId),
         region: 'auto',
         bucket: account.bucket,
         accessKeyId: account.accessKeyId,
         secretAccessKey: account.secretAccessKey,
         publicDomain: account.publicDomain || undefined,
-      });
+      };
+      const sig = JSON.stringify(config);
+      const cached = this.r2ProviderCache.get(sig);
+      if (cached) return cached;
+      const created = new StorageProvider(config);
+      this.r2ProviderCache.set(sig, created);
+      // 面板可多账号轮换，缓存按签名隔离；上限防极端情况（账号反复改配）无限增长
+      if (this.r2ProviderCache.size > 8) {
+        this.r2ProviderCache.delete(this.r2ProviderCache.keys().next().value);
+      }
+      return created;
     }
 
     // .env 兜底（未在面板配置任何账号时的旧行为）
@@ -508,7 +545,10 @@ export class MediaService {
       );
     }
 
-    return new StorageProvider({
+    const envSig = JSON.stringify([accountId, accessKeyId, bucket, publicDomain]);
+    const envCached = this.r2ProviderCache.get(envSig);
+    if (envCached) return envCached;
+    const envProvider = new StorageProvider({
       provider: 'cloudflare',
       endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
       region: 'auto',
@@ -517,6 +557,8 @@ export class MediaService {
       secretAccessKey,
       publicDomain: publicDomain || undefined,
     });
+    this.r2ProviderCache.set(envSig, envProvider);
+    return envProvider;
   }
 
   /**

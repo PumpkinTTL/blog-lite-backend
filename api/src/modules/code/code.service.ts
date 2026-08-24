@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
+import { randomBytes } from 'crypto';
 import { CodeEntity, CodeType, CodeStatus } from './code.entity';
 import { CodeUsageLogEntity } from './code-usage-log.entity';
 import { CreateCodeDto, UpdateCodeDto, VerifyCodeDto, BatchCreateCodeDto } from './code.dto';
@@ -52,13 +53,11 @@ export class CodeService {
     // 校验 discount
     this.validateDiscount(dto.type, dto.discount);
 
-    // 生成 AAAA-BBBB-CCCC-DDDD 格式码（4 组各 4 个大写字母）
+    // 生成 AAAA-BBBB-CCCC-DDDD 格式码（4 组各 4 个大写字母/数字）。
+    // CSPRNG：兑换码可换会员权益，Math.random 可预测，必须用 crypto 随机。
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     const generateSegment = () =>
-      Array.from(
-        { length: 4 },
-        () => chars[Math.floor(Math.random() * chars.length)],
-      ).join('');
+      Array.from(randomBytes(4), (b) => chars[b % chars.length]).join('');
     const code = `${generateSegment()}-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
     const codeWithPrefix = dto.type === 'invitation' ? `INV-${code}` : code;
 

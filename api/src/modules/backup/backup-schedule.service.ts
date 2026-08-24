@@ -23,6 +23,8 @@ export class BackupScheduleService implements OnModuleInit {
   private readonly logger = new Logger(BackupScheduleService.name);
   /** 内存缓存：id → 配置（避免每次都查库） */
   private configs = new Map<string, BackupScheduleConfig>();
+  /** 定时备份执行中标记（跨所有定时器互斥，防重叠） */
+  private running = false;
 
   constructor(
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -186,13 +188,26 @@ export class BackupScheduleService implements OnModuleInit {
     if (!cfg.enabled) return;
     const cron = this.toCronExpression(cfg);
     const job = new CronJob(cron, async () => {
-      this.logger.log(`定时器「${cfg.name}」触发备份`);
-      const log = await this.backupService.runBackup('schedule', cfg.name);
-      // 备份成功后清理该定时器的过期备份
-      if (log.status === 'success' && cfg.retainDays > 0) {
-        await this.backupService.cleanExpired(cfg.retainDays).catch((e) => {
-          this.logger.warn(`清理过期备份失败: ${(e as Error).message}`);
-        });
+      // 重叠保护：上一次备份还没跑完（如整库 dump 慢于 interval 周期）时跳过本轮，
+      // 否则多个 mysqldump 并发叠加会打爆内存（备份在内存里聚合）。
+      if (this.running) {
+        this.logger.warn(
+          `定时器「${cfg.name}」触发时上一轮备份仍在执行，本轮跳过`,
+        );
+        return;
+      }
+      this.running = true;
+      try {
+        this.logger.log(`定时器「${cfg.name}」触发备份`);
+        const log = await this.backupService.runBackup('schedule', cfg.name);
+        // 备份成功后清理该定时器的过期备份
+        if (log.status === 'success' && cfg.retainDays > 0) {
+          await this.backupService.cleanExpired(cfg.retainDays).catch((e) => {
+            this.logger.warn(`清理过期备份失败: ${(e as Error).message}`);
+          });
+        }
+      } finally {
+        this.running = false;
       }
     });
     this.schedulerRegistry.addCronJob(this.jobName(cfg.id), job as any);

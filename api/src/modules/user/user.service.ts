@@ -11,6 +11,7 @@ import { USER_STATUS } from '../../common/constants/status';
 import { UpdateProfileDto } from './user.dto';
 import { AuthService } from '../auth/auth.service';
 import type { AuthTokenResponse } from '../auth/auth.service';
+import { CasdoorService } from '../auth/casdoor.service';
 import { CodeService } from '../code/code.service';
 import { CodeEntity } from '../code/code.entity';
 import { CodeUsageLogEntity } from '../code/code-usage-log.entity';
@@ -43,6 +44,7 @@ export class UserService {
     @InjectRepository(RoleEntity)
     private readonly roleRepo: Repository<RoleEntity>,
     private readonly authService: AuthService,
+    private readonly casdoor: CasdoorService,
     private readonly configService: ConfigService,
     private readonly codeService: CodeService,
     private readonly membershipService: MembershipService,
@@ -122,6 +124,35 @@ export class UserService {
     // 让各分支耗时一致，攻击者无法通过响应快慢判断用户名是否存在。
     // 只有「存在 + 状态正常」才用真实 hash，否则用 DUMMY_HASH（必 false 但耗时相当）。
     const canLogin = user && user.status === USER_STATUS.ACTIVE;
+
+    // ── casdoor 模式：密码校验 + Token 签发统一走 Casdoor password grant ──
+    // 本地保留存在性/封禁检查；密码对错由 Casdoor 裁决（本地哈希仅存档不再比对）。
+    // Casdoor 拒绝的任何原因（密码错/用户未同步）都返回同一句模糊消息，防枚举。
+    if (this.casdoor.enabled) {
+      if (!this.casdoor.ready) {
+        throw new BadRequestException('统一认证服务未配置完整，请联系管理员');
+      }
+      if (!canLogin) {
+        throw new UnauthorizedException(UserService.LOGIN_FAIL_MSG);
+      }
+      let casdoorToken;
+      try {
+        casdoorToken = await this.casdoor.passwordGrant(user.id, dto.password);
+      } catch {
+        throw new UnauthorizedException(UserService.LOGIN_FAIL_MSG);
+      }
+      const roleNames = (user.roles || []).map((r) => r.name);
+      this.logger.log(
+        `用户 #${user.id} 登录成功（casdoor），角色: [${roleNames.join(', ')}]`,
+      );
+      return {
+        accessToken: casdoorToken.accessToken,
+        refreshToken: casdoorToken.refreshToken,
+        expiresIn: casdoorToken.expiresIn,
+        deviceId,
+      };
+    }
+
     const passwordValid = await bcrypt.compare(
       dto.password,
       canLogin ? user.password : UserService.DUMMY_HASH,
@@ -722,6 +753,47 @@ export class UserService {
       604800,
     );
 
+    // ── casdoor 模式：先同步用户到 Casdoor（凭证落 Casdoor），再用注册密码
+    // 走 password grant 完成"注册即登录"。任一步失败用户已落库（事务已提交），
+    // 提示用户用刚注册的账号登录，不静默吞错。 ──
+    if (this.casdoor.enabled) {
+      if (!this.casdoor.ready) {
+        throw new BadRequestException('统一认证服务未配置完整，请联系管理员');
+      }
+      try {
+        await this.casdoor.createCasdoorUser({
+          localUserId: userId,
+          nickname,
+          password: dto.password,
+          email: dto.email,
+        });
+      } catch (e) {
+        this.logger.error(
+          `用户 #${userId} 注册成功但同步 Casdoor 失败: ${e instanceof Error ? e.message : e}`,
+        );
+        throw new BadRequestException(
+          '注册成功，但统一认证同步失败，请联系管理员处理',
+        );
+      }
+      try {
+        const t = await this.casdoor.passwordGrant(userId, dto.password);
+        this.logger.log(`用户 #${userId}(${nickname}) 注册成功（casdoor）`);
+        return {
+          accessToken: t.accessToken,
+          refreshToken: t.refreshToken,
+          expiresIn: t.expiresIn,
+          deviceId,
+        };
+      } catch (e) {
+        this.logger.error(
+          `用户 #${userId} 注册成功但 Casdoor 登录失败: ${e instanceof Error ? e.message : e}`,
+        );
+        throw new BadRequestException(
+          '注册成功，但登录凭证签发失败，请使用刚注册的账号登录',
+        );
+      }
+    }
+
     // issueToken 失败时用户已落库（事务已提交），不能让用户以为注册失败。
     // 捕获后返回明确提示：账号已创建，需重新登录获取 Token。
     let tokenData;
@@ -784,6 +856,10 @@ export class UserService {
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
+    // casdoor 模式：密码/凭证都在 Casdoor 侧，本服务无法凭验证码签发 Casdoor Token
+    if (this.casdoor.enabled) {
+      throw new BadRequestException('当前认证模式暂不支持验证码登录，请使用密码登录');
+    }
     // 1. 校验验证码（verifyCode 失败会抛 BadRequestException）
     await this.emailCodeService.verifyCode(email, code);
 
@@ -1041,6 +1117,11 @@ export class UserService {
     const user = await this.userRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('用户不存在');
     user.password = await bcrypt.hash(newPassword, 10);
-    return this.userRepo.save(user);
+    await this.userRepo.save(user);
+    // casdoor 模式：登录密码实际存在 Casdoor，本地改密后必须同步过去才生效。
+    // updateCasdoorPassword 是 best-effort（失败仅记日志），避免 Casdoor 抖动阻塞本地改密。
+    if (this.casdoor.enabled) {
+      await this.casdoor.updateCasdoorPassword(id, newPassword);
+    }
   }
 }

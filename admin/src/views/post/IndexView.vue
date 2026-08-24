@@ -64,7 +64,7 @@ const columns: DataTableColumns<Post> = [
     },
   },
   { title: '标题', key: 'title', ellipsis: { tooltip: true }, width: 200 },
-  { title: '内容预览', key: 'content', ellipsis: { tooltip: true }, width: 200, render: (row) => row.content?.replace(/[#*`\n]/g, '').slice(0, 80) || '-' },
+  { title: '内容预览', key: 'content', ellipsis: { tooltip: true }, width: 200, render: (row) => row.summary?.replace(/[#*`\n]/g, '').slice(0, 80) || '-' },
   { title: '作者', key: 'author', width: 100, render: (row) => row.author?.nickname || '-' },
   {
     title: '分类',

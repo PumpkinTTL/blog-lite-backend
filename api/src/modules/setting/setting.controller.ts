@@ -16,6 +16,7 @@ import {
   UpdateSettingDto,
   BatchUpdateSettingDto,
 } from './setting.dto';
+import { maskSettingItem, restoreSecretsBeforeSave } from './setting.mask';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MailerService } from '../mailer/mailer.service';
 
@@ -126,7 +127,14 @@ export class SettingController {
 
   @Get()
   async list() {
-    const data = await this.service.findAll();
+    const grouped = await this.service.findAll();
+    // 敏感值出口掩码（smtp.pass / tavily key / turnstile secret / R2 secretAccessKey）
+    const data = Object.fromEntries(
+      Object.entries(grouped).map(([g, list]) => [
+        g,
+        list.map(maskSettingItem),
+      ]),
+    );
     return { success: true, data, message: 'ok' };
   }
 
@@ -185,7 +193,8 @@ export class SettingController {
 
   @Get('group/:group')
   async getByGroup(@Param('group') group: string) {
-    const data = await this.service.findByGroup(group);
+    const list = await this.service.findByGroup(group);
+    const data = list.map(maskSettingItem);
     return { success: true, data, message: 'ok' };
   }
 
@@ -195,17 +204,23 @@ export class SettingController {
     @Body() dto: BatchUpdateSettingDto,
     @Req() req: Request,
   ) {
+    // 掩码回显后未修改的空敏感值 → 还原 DB 原值（防止空串覆盖现有配置）
+    const items = await restoreSecretsBeforeSave(dto.items, async (k) => {
+      const entity = await this.service.findByKey(k);
+      return entity?.value ?? null;
+    });
     const data = await this.service.batchUpdateByGroup(
       group,
-      dto.items,
+      items,
       getOperator(req),
     );
-    return { success: true, data, message: '更新成功' };
+    return { success: true, data: (data as any[]).map(maskSettingItem), message: '更新成功' };
   }
 
   @Get(':key')
   async getByKey(@Param('key') key: string) {
-    const data = await this.service.findByKey(key);
+    const entity = await this.service.findByKey(key);
+    const data = entity ? maskSettingItem(entity) : entity;
     return { success: true, data, message: 'ok' };
   }
 

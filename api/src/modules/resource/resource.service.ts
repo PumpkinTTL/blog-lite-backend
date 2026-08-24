@@ -50,8 +50,19 @@ export class ResourceService {
     isLoggedIn = false,
     withAdminVisibility = false,
   ) {
+    // 列表不取 content（正文 TEXT 大字段，详情接口单独取）。
+    // panLinks（JSON）公开列表一并裁掉（列表本就不返回）；admin 列表保留
+    // （表格有"网盘链接数"徽章依赖 panLinks.length，且低频使用）。
+    const excluded = publicOnly
+      ? ['content', 'panLinks']
+      : ['content'];
     const qb = this.repo
       .createQueryBuilder('e')
+      .select(
+        this.repo.metadata.columns
+          .filter((c) => !excluded.includes(c.propertyName))
+          .map((c) => `e.${c.propertyName}`),
+      )
       .leftJoinAndSelect('e.category', 'category')
       // 只 select uploader 的公开安全字段，避免泄露 email/phone/registerIp 等 PII。
       // admin 需要看完整用户信息时走 user 管理模块，不在此处暴露。

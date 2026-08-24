@@ -6,6 +6,7 @@ import type { FormInst, FormRules, UploadFileInfo } from 'naive-ui'
 import type { ExposeParam, UploadImgCallBack } from 'md-editor-v3'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
+import DOMPurify from 'dompurify'
 import { ArrowBackOutline, SaveOutline, CloudUploadOutline, TrashOutline, SparklesOutline, SettingsOutline } from '@vicons/ionicons5'
 import { getPost, createPost, updatePost } from '../../api/post'
 import { generateByAi } from '../../api/ai'
@@ -26,6 +27,9 @@ import { isDark } from '../../theme'
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+
+/** MdEditor 预览 HTML 过滤（默认实现是恒等函数，恶意/失误内容会直通注入） */
+const sanitizeHtml = (html: string) => DOMPurify.sanitize(html)
 
 const formRef = ref<FormInst | null>(null)
 const editorRef = ref<ExposeParam | null>(null)
@@ -477,6 +481,7 @@ onMounted(async () => {
               placeholder="开始编写 Markdown 内容...（支持拖拽 / 粘贴图片）"
               :on-upload-img="onEditorUploadImg"
               :on-drop="onEditorDrop"
+              :sanitize="sanitizeHtml"
             />
           </n-card>
 

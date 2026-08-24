@@ -3,6 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { RolesGuard } from './roles.guard';
+import { CasdoorService } from './casdoor.service';
 
 @Global()
 @Module({
@@ -11,7 +12,7 @@ import { RolesGuard } from './roles.guard';
       timeout: 10000,
     }),
   ],
-  providers: [AuthService, AuthGuard, RolesGuard],
-  exports: [AuthService, AuthGuard, RolesGuard],
+  providers: [AuthService, CasdoorService, AuthGuard, RolesGuard],
+  exports: [AuthService, CasdoorService, AuthGuard, RolesGuard],
 })
 export class AuthModule {}

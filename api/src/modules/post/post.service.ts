@@ -87,6 +87,14 @@ export class PostService implements OnModuleInit {
   ) {
     const qb = this.postRepo
       .createQueryBuilder('p')
+      // 列表不取 content 大字段（详情接口单独取）：20 篇/页的列表若带全文，
+      // 响应可达数 MB，DB 传输 + JSON 序列化双倍放大。列清单从 entity
+      // metadata 动态生成（新增字段自动带上，只排除 content）。
+      .select(
+        this.postRepo.metadata.columns
+          .filter((c) => c.propertyName !== 'content')
+          .map((c) => `p.${c.propertyName}`),
+      )
       // 只取作者的非敏感字段（避免泄漏 email/password 等到公开接口）
       .leftJoin('p.author', 'author')
       .addSelect(['author.id', 'author.nickname', 'author.avatar'])

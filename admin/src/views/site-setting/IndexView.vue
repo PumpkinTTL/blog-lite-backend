@@ -158,6 +158,9 @@ const smtpTestTo = ref('')
 const smtpTesting = ref(false)
 const smtpTestResult = ref<{ ok: boolean; text: string } | null>(null)
 
+/** 加载时已存在于 DB 的 R2 账号 id（这些账号的 secret 后端存原值，编辑可留空） */
+let loadedAccountIds = new Set<string>()
+
 async function handleTestSmtp() {
   // 收件人留空时后端自动兜底（SMTP 用户名 → 站点联系邮箱），默认发给自己
   smtpTesting.value = true
@@ -237,6 +240,10 @@ function applyItems(items: { key: string; value: string }[]) {
           }
         })
     : []
+  // 记录"已存在于 DB"的账号 id：后端对敏感值只回显空串（secretAccessKey），
+  // 保存时空 secret 按 id 回填原值，因此已有账号编辑时 secret 可留空；
+  // 只有新建账号才强制填写 secret。
+  loadedAccountIds = new Set(form.r2Accounts.map((a) => a.id))
   form.r2ActiveId = get('storage.r2.active_id')
 
   // SMTP（空 = 用 .env）
@@ -289,14 +296,17 @@ function buildItems(): Record<string, string> | null {
     'ai.tavily_url': form.tavilyUrl.trim(),
   }
 
-  // R2 账号：启用状态的账号必填字段校验（禁用账号原样保存不校验）
+  // R2 账号：启用状态的账号必填字段校验（禁用账号原样保存不校验）。
+  // secretAccessKey 例外：已有账号（loadedAccountIds）后端回填原值，可留空；
+  // 新建账号必须填写。
   for (const acc of form.r2Accounts) {
     if (!acc.enabled) continue
     const label = acc.name || acc.id
     const missing: string[] = []
     if (!acc.accountId.trim()) missing.push('Endpoint/账户ID')
     if (!acc.accessKeyId.trim()) missing.push('Access Key ID')
-    if (!acc.secretAccessKey.trim()) missing.push('Secret Access Key')
+    if (!acc.secretAccessKey.trim() && !loadedAccountIds.has(acc.id))
+      missing.push('Secret Access Key')
     if (!acc.bucket.trim()) missing.push('存储桶')
     if (missing.length > 0) {
       message.error(`R2 账号「${label}」缺少：${missing.join('、')}`)

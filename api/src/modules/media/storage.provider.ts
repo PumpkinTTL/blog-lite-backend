@@ -153,12 +153,16 @@ export class StorageProvider {
    * 签发 presigned PUT URL（供前端直传 R2 使用）
    *
    * 浏览器拿到这个 URL 后，可直接用 XHR PUT 上传文件，绕过后端中转。
-   * R2/S3 兼容协议下，Content-Type/Content-Length 会被纳入签名校验，
-   * 前端 PUT 时必须带上相同的头，否则会 403 SignatureDoesNotMatch。
+   * ContentType 签入签名：前端 PUT 时必须带相同的 Content-Type 头，
+   * 否则 R2 返回 403 SignatureDoesNotMatch。这样即使 URL 被劫持，
+   * 也无法向对象写入白名单之外的内容类型（如 text/html）。
+   *
+   * ContentLength 仍不签（浏览器发送的实际长度难以与签名精确匹配），
+   * 文件大小上限由 confirm 阶段的 HEAD 双校验（声明值 + 实际值 ≤ 上限）兜底。
    *
    * @param key         对象键
-   * @param contentType MIME 类型（可选，签入签名）
-   * @param size        文件大小（可选，签入签名，前端 PUT 时必须带 Content-Length）
+   * @param contentType MIME 类型（签入签名，PUT 时必须同值携带）
+   * @param size        文件大小（仅用于调用方自校验，不参与签名）
    * @param expiresInSec URL 有效期（默认 5 分钟）
    */
   async presignPut(
@@ -171,21 +175,12 @@ export class StorageProvider {
       throw new Error('[StorageProvider] presign 仅支持 S3 兼容云存储，不支持本地');
     }
     const client = this.getClient();
+    void size; // 不签入签名（见上注释），保留参数以兼容调用方
 
-    // ⚠️ 不签 ContentLength / ContentType 到签名头里。
-    // 原因：presigned URL 一旦把 content-length 签进去，浏览器 PUT 时
-    // Content-Length 必须与签名时严格相等，否则 R2 返回 403
-    // SignatureDoesNotMatch。但浏览器实际发送的 Content-Length 由
-    // 浏览器内部根据请求体决定，难以保证精确匹配（特别是经过任何
-    // transformation 时）。所以 presigned URL 只签 host，让 R2 只校验
-    // 签名本身 + 过期时间。文件大小完整性由 confirm 阶段的 HEAD
-    // + size 比对覆盖（更可靠）。
-    void size; // 显式忽略，保留参数签名以兼容调用方
-    void contentType;
     const command = new PutObjectCommand({
       Bucket: this.config.bucket,
       Key: key,
-      // 故意不传 ContentType / ContentLength
+      ContentType: contentType,
     });
 
     // ⚠️ 不要对返回的 URL 做任何字符串修改（包括删除 checksum query 参数）。
