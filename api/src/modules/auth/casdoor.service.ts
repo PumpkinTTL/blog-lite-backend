@@ -330,6 +330,49 @@ export class CasdoorService implements OnModuleInit {
   }
 
   /**
+   * 资料同步（展示类字段：显示名/头像/邮箱/手机号）。
+   * 本地 updateProfile / admin 改用户资料时 best-effort 同步，失败仅记日志——
+   * Casdoor 侧资料只是快照（业务展示全读本地库），滞后无害。
+   * 结构字段（组织/应用/名称）与权限字段（禁用/删除/管理员）不在此同步，
+   * 各有专门通道或建号时定死。
+   */
+  async syncCasdoorProfile(
+    localUserId: number,
+    patch: { displayName?: string | null; avatar?: string | null; email?: string | null; phone?: string | null },
+  ): Promise<void> {
+    try {
+      const { data: existing } = await firstValueFrom(
+        this.httpService.get(
+          `${this.endpoint}/api/get-user?id=${this.orgName}/${this.casdoorName(localUserId)}`,
+          { headers: this.adminAuthHeaders() },
+        ),
+      );
+      if (!existing || existing.status === 'error' || !existing.data?.name) {
+        return; // Casdoor 无此号（未同步/已删），静默跳过
+      }
+      const body = { ...existing.data };
+      if (patch.displayName !== undefined) body.displayName = patch.displayName ?? '';
+      if (patch.avatar !== undefined) body.avatar = patch.avatar ?? '';
+      if (patch.email !== undefined) body.email = patch.email ?? '';
+      if (patch.phone !== undefined) body.phone = patch.phone ?? '';
+      const { data } = await firstValueFrom(
+        this.httpService.post(
+          `${this.endpoint}/api/update-user?id=${this.orgName}/${this.casdoorName(localUserId)}`,
+          body,
+          { headers: this.adminAuthHeaders() },
+        ),
+      );
+      if (data?.status !== 'ok') {
+        this.logger.warn(`Casdoor 资料同步失败: ${data?.msg || '未知原因'}`);
+      }
+    } catch (e) {
+      this.logger.warn(
+        `Casdoor 资料同步异常（不阻塞）: ${e instanceof Error ? e.message : e}`,
+      );
+    }
+  }
+
+  /**
    * 封禁/解封同步（Casdoor 用户的 isForbidden 标志）。
    * Casdoor 侧封禁后：password grant 登录直接拒绝、refresh grant 续签不放行——
    * 等价于自建模式的 revokeUserTokens（吊销该用户全部会话）。
