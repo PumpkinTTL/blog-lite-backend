@@ -188,8 +188,10 @@ export class CasdoorService implements OnModuleInit {
     const { payload } = await jwtVerify(accessToken, this.jwks, {
       // issuer = Casdoor 站点地址（Casdoor 的 iss 即 endpoint）
       issuer: this.endpoint,
-      // Casdoor JWT 统一 RS256 签名，显式限定防算法混用
-      algorithms: ['RS256'],
+      // Casdoor 证书系统支持 RSA(RS256)/ECDSA(ES256)，无 Ed25519。
+      // 白名单三种非对称算法：部署方换证书类型无需改代码；JWKS 按 kid
+      // 匹配公钥，实际可用算法受 JWKS 里的 key 类型约束。
+      algorithms: ['RS256', 'ES256', 'EdDSA'],
     });
     const localUserId = this.parseLocalUserId(payload.sub);
     if (!localUserId) {
