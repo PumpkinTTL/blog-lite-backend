@@ -352,6 +352,20 @@ export class UserController {
   }
 
   @Roles('admin')
+  /**
+   * 存量用户对账同步到 Casdoor（casdoor 模式）：缺号补建（随机密码占位，
+   * 用户走忘记密码重置后可登录）+ 已有号对齐展示字段。可重复执行。
+   */
+  @Roles('admin')
+  @Post('sync-casdoor')
+  async syncCasdoor(@Req() req: Request) {
+    const op = (req as any).user;
+    const data = await this.userService.syncAllToCasdoor(
+      op ? { id: Number(op.sub), nickname: op.nickname || op.sub } : undefined,
+    );
+    return { success: true, data, message: `同步完成：补建 ${data.created}，对齐 ${data.updated}，失败 ${data.failed.length}` };
+  }
+
   @Put(':id/toggle-status')
   async toggleStatus(
     @Param('id', ParseIntPipe) id: number,

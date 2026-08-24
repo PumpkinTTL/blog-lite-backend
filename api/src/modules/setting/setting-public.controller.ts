@@ -87,6 +87,9 @@ export class SettingPublicController {
       commentsEnabled: this.toBoolWithDefault(await get('comments.enabled'), true),
       announcementsEnabled: this.toBoolWithDefault(await get('announcements.enabled'), true),
       adsEnabled: this.toBoolWithDefault(await get('ads.enabled'), true),
+      // 认证模式（self=自建鉴权中心 | casdoor=统一认证）：
+      // 前端据此处理 casdoor 模式下不可用的交互（如验证码登录 → 引导走忘记密码）
+      authProvider: process.env.AUTH_PROVIDER === 'casdoor' ? 'casdoor' : 'self',
     };
 
     return { success: true, data, message: 'ok' };

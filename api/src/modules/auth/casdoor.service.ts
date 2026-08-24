@@ -234,6 +234,7 @@ export class CasdoorService implements OnModuleInit {
     nickname: string;
     password: string;
     email?: string | null;
+    avatar?: string | null;
   }): Promise<void> {
     const body = {
       // 实测（auth.bitlesu.com）：该版本要求同时传 owner + organization，
@@ -246,6 +247,8 @@ export class CasdoorService implements OnModuleInit {
       password: params.password,
       // 来源应用标记：Casdoor 后台用户列表"应用"列显示用（多应用区分用户来自哪）
       signupApplication: this.appName,
+      // 注册时已带头像则一并同步（web 注册通常为空，第三方接入可能携带）
+      ...(params.avatar ? { avatar: params.avatar } : {}),
       // 评分/国家等字段给默认值，避免 Casdoor 校验拒收
       score: 0,
       country: 'CN',
@@ -326,6 +329,21 @@ export class CasdoorService implements OnModuleInit {
       this.logger.warn(
         `Casdoor 删除用户异常（不阻塞）: ${e instanceof Error ? e.message : e}`,
       );
+    }
+  }
+
+  /** Casdoor 侧是否存在指定用户的账号（对账同步用） */
+  async userExists(localUserId: number): Promise<boolean> {
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.get(
+          `${this.endpoint}/api/get-user?id=${this.orgName}/${this.casdoorName(localUserId)}`,
+          { headers: this.adminAuthHeaders() },
+        ),
+      );
+      return !!(data && data.status !== 'error' && data.data?.name);
+    } catch {
+      return false;
     }
   }
 

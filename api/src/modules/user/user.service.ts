@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { UserEntity } from './user.entity';
 import { RoleEntity } from './role.entity';
 import { LoginDto } from './login.dto';
@@ -300,6 +301,7 @@ export class UserService {
           nickname: saved.nickname || `用户#${saved.id}`,
           password,
           email: saved.email,
+          avatar: saved.avatar,
         });
       } catch (e) {
         this.logger.error(
@@ -827,6 +829,7 @@ export class UserService {
           nickname,
           password: dto.password,
           email: dto.email,
+          avatar: dto.avatar,
         });
       } catch (e) {
         this.logger.error(
@@ -1186,5 +1189,58 @@ export class UserService {
     if (this.casdoor.enabled) {
       await this.casdoor.updateCasdoorPassword(id, newPassword);
     }
+  }
+
+  /**
+   * 存量用户对账同步到 Casdoor（admin 手动触发，可重复执行）：
+   * - Casdoor 缺号的用户 → 补建（随机密码——密码不可逆拿不回，补建的号走
+   *   "忘记密码"重置后即可正常登录；展示字段/头像先对齐）
+   * - 已有号的用户 → 对齐展示字段（显示名/头像/邮箱/手机）
+   * 返回 { created, updated, failed } 汇总。
+   */
+  async syncAllToCasdoor(operator?: {
+    id: number;
+    nickname: string;
+  }): Promise<{ created: number; updated: number; failed: string[] }> {
+    if (!this.casdoor.enabled) {
+      throw new BadRequestException('当前非 casdoor 模式，无需同步');
+    }
+    const users = await this.userRepo.find({ select: ['id', 'nickname', 'email', 'avatar', 'phone'] });
+    let created = 0;
+    let updated = 0;
+    const failed: string[] = [];
+    for (const u of users) {
+      try {
+        const exists = await this.casdoor.userExists(u.id);
+        if (!exists) {
+          // 随机密码占位：bcrypt 强度随机串，用户本人也未知——
+          // 补建的号需走"忘记密码"设置新密码后才能登录
+          const randomPwd =
+            randomBytes(18).toString('base64url') + '!aA1';
+          await this.casdoor.createCasdoorUser({
+            localUserId: u.id,
+            nickname: u.nickname || `用户#${u.id}`,
+            password: randomPwd,
+            email: u.email,
+            avatar: u.avatar,
+          });
+          created++;
+        } else {
+          await this.casdoor.syncCasdoorProfile(u.id, {
+            displayName: u.nickname || `用户#${u.id}`,
+            avatar: u.avatar,
+            email: u.email,
+            phone: u.phone,
+          });
+          updated++;
+        }
+      } catch (e) {
+        failed.push(`#${u.id}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    this.logger.log(
+      `Casdoor 对账同步完成：补建 ${created}，对齐 ${updated}，失败 ${failed.length}（操作者 ${operator?.id ?? 'system'}）`,
+    );
+    return { created, updated, failed };
   }
 }
