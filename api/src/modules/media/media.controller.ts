@@ -24,6 +24,7 @@ import {
   BatchIdsDto,
   UploadStorageDto,
   PresignR2Dto,
+  TestR2Dto,
   ConfirmR2Dto,
 } from './media.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -136,6 +137,16 @@ export class MediaController {
       folder: dto.folder,
     });
     return { success: true, data, message: '上传成功' };
+  }
+
+  /**
+   * 测试 R2 账号连通性（系统设置面板「测试连通性」按钮）
+   * 用表单当前值直接验证 endpoint/凭证/桶，无需先保存。
+   */
+  @Post('test-r2')
+  async testR2(@Body() dto: TestR2Dto) {
+    const result = await this.mediaService.testR2Connection(dto);
+    return { success: true, data: result, message: 'ok' };
   }
 
   /**

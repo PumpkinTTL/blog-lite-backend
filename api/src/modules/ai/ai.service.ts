@@ -6,6 +6,7 @@ import type { Readable } from 'stream';
 import type { AiGenerateField, AiChatMessage } from './ai.dto';
 import { POST_AGENT_SYSTEM_PROMPT, POST_AGENT_TOOLS, CONVERSATION_COMPACT_SYSTEM_PROMPT } from './ai.prompts';
 import { AiProviderService } from '../ai-provider/ai-provider.service';
+import { SettingService } from '../setting/setting.service';
 
 /** 统一生成返回结构：只有被请求的字段才会有值 */
 export interface AiGenerateResult {
@@ -152,6 +153,7 @@ export class AiService {
   constructor(
     private readonly providerService: AiProviderService,
     private readonly httpService: HttpService,
+    private readonly settingService: SettingService,
   ) {}
 
   /** 取当前启用的 provider 配置（带缓存） */
@@ -281,16 +283,35 @@ export class AiService {
       body.tools = POST_AGENT_TOOLS;
       body.tool_choice = 'auto';
     }
-    const { data } = await firstValueFrom(
-      this.httpService.post<Readable>(url, body, {
-        headers: {
-          Authorization: `Bearer ${cfg.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        responseType: 'stream',
-      }),
-    );
-    return data;
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post<Readable>(url, body, {
+          headers: {
+            Authorization: `Bearer ${cfg.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          responseType: 'stream',
+        }),
+      );
+      return data;
+    } catch (e) {
+      // 与 chat() 一致：带上游地址/状态码/body 摘要，避免裸的
+      // "Request failed with status code xxx" 直接透传给前端
+      const err = e as AxiosError;
+      const status = err.response?.status;
+      const bodyStr = this.describeErrBody(err.response?.data);
+      this.logger.error(
+        `AI 调用失败 url=${url} model=${usedModel} status=${status} body=${bodyStr}`,
+      );
+      if (!err.response) {
+        throw new GatewayStreamError(
+          `无法连接 AI 上游（${new URL(url).host}）：${err.message}`,
+        );
+      }
+      throw new GatewayStreamError(
+        `AI 上游（${new URL(url).host}）返回 ${status}：${bodyStr}`,
+      );
+    }
   }
 
   /** 拼接 agent system prompt + 当前文章上下文 */
@@ -490,15 +511,37 @@ export class AiService {
 
   /* ============ Tavily 联网搜索（写作助手 web_search 工具用）============ */
 
+  /**
+   * Tavily 凭证：系统设置面板（ai.tavily_*）优先，空则回落 .env。
+   * 面板保存后 SettingService 缓存失效，下次搜索即用新 key（热读取）。
+   */
+  private async getTavilyConfig(): Promise<{ apiKey: string; baseUrl: string }> {
+    const db = async (k: string) =>
+      ((await this.settingService.findByKey(k))?.value ?? '').trim();
+    const [panelKey, panelUrl] = await Promise.all([
+      db('ai.tavily_key'),
+      db('ai.tavily_url'),
+    ]);
+    return {
+      apiKey: panelKey || process.env.TAVILY_API_KEY || '',
+      baseUrl: (
+        panelUrl ||
+        process.env.TAVILY_BASE_URL ||
+        'https://api.tavily.com'
+      ).replace(/\/+$/, ''),
+    };
+  }
+
   /** 精简后的搜索结果（发给前端 / 塞回 messages 给 AI） */
   async tavilySearch(
     query: string,
     maxResults = 5,
   ): Promise<TavilySearchResult> {
-    const apiKey = process.env.TAVILY_API_KEY ?? '';
-    const baseUrl = (process.env.TAVILY_BASE_URL ?? 'https://api.tavily.com').replace(/\/+$/, '');
+    const { apiKey, baseUrl } = await this.getTavilyConfig();
     if (!apiKey) {
-      throw new Error('Tavily API Key 未配置（TAVILY_API_KEY）');
+      throw new Error(
+        'Tavily API Key 未配置（系统设置 → AI 联网搜索，或 .env TAVILY_API_KEY）',
+      );
     }
 
     const startedAt = Date.now();

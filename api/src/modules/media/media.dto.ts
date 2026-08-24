@@ -4,9 +4,10 @@ import {
   IsNumber,
   IsPositive,
   IsUrl,
-  IsInt,
-  IsArray,
+  IsInt, Min,
+  IsArray, ArrayMaxSize,
   IsEnum,
+  IsNotEmpty,
   Matches,
 } from 'class-validator';
 
@@ -48,6 +49,8 @@ export class UpdateMediaDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }
@@ -73,6 +76,29 @@ export class UploadStorageDto {
   @IsString()
   @IsOptional()
   note?: string;
+}
+
+/**
+ * 测试 R2 账号连通性（系统设置面板「测试连通性」按钮）。
+ * 直接用表单当前值测试，无需先保存。
+ */
+export class TestR2Dto {
+  /** R2 Account ID 或完整 endpoint（https://xxx.r2.cloudflarestorage.com） */
+  @IsString()
+  @IsNotEmpty()
+  accountId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  accessKeyId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  secretAccessKey: string;
+
+  @IsString()
+  @IsNotEmpty()
+  bucket: string;
 }
 
 /**

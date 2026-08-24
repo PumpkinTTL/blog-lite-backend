@@ -21,11 +21,16 @@ import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ANNOUNCEMENT_STATUS } from '../../common/constants/status';
 import { parsePagination } from '../../common/utils/parse-pagination';
+import { SettingService } from '../setting/setting.service';
 
 @Controller('announcement')
 @Roles('admin')
 export class AnnouncementController {
-  constructor(private readonly service: AnnouncementService) {}
+  constructor(
+    private readonly service: AnnouncementService,
+    // SettingModule 是 @Global，直接注入即可读站点开关
+    private readonly settingService: SettingService,
+  ) {}
 
   @Public()
   @Get()
@@ -40,6 +45,20 @@ export class AnnouncementController {
     // 未登录或普通用户只返回已发布的公告；管理员看全部
     const user = (req as any)?.user;
     const isAdmin = user?.roles?.includes('admin') ?? false;
+    // 站点开关：announcements.enabled 关闭时，非 admin 前台返回空列表
+    // （admin 管理端仍要能看/管理公告，不拦截）
+    if (!isAdmin) {
+      const enabledRow =
+        await this.settingService.findByKey('announcements.enabled');
+      const enabled = !(enabledRow?.value === 'false' || enabledRow?.value === '0');
+      if (!enabled) {
+        return {
+          success: true,
+          data: { list: [], total: 0 },
+          message: 'ok',
+        };
+      }
+    }
     const finalStatus = !isAdmin ? ANNOUNCEMENT_STATUS.VISIBLE : status;
     const { page: p, pageSize: ps } = parsePagination({ page, pageSize });
     const data = await this.service.findAll(p, ps, {

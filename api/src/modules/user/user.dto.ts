@@ -2,7 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
-  IsArray,
+  IsArray, ArrayMaxSize, Min,
   IsInt,
   MinLength,
   IsEmail,
@@ -41,6 +41,8 @@ export class CreateUserDto {
   status?: string;
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   roleIds?: number[];
@@ -73,6 +75,8 @@ export class UpdateUserDto {
   status?: string;
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   roleIds?: number[];
@@ -133,6 +137,8 @@ export class ToggleStatusDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @ArrayNotEmpty()
   @IsInt({ each: true })
   ids: number[];
@@ -148,6 +154,10 @@ export class ResetPasswordDto {
 export class SendResetCodeDto {
   @IsEmail({}, { message: '邮箱格式不正确' })
   email: string;
+
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
 }
 
 export class ResetPasswordByCodeDto {
@@ -162,6 +172,10 @@ export class ResetPasswordByCodeDto {
   @MinLength(6)
   @MaxLength(100)
   newPassword: string;
+
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
 }
 
 /**
@@ -172,6 +186,10 @@ export class ResetPasswordByCodeDto {
 export class SendLoginCodeDto {
   @IsEmail({}, { message: '邮箱格式不正确' })
   email: string;
+
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
 }
 
 /**
@@ -214,4 +232,8 @@ export class LoginByCodeDto {
   @IsString()
   @IsOptional()
   fingerprint?: string;
+
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
 }

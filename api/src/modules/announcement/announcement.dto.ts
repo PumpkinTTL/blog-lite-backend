@@ -1,9 +1,9 @@
 import {
   IsString,
   IsOptional,
-  IsInt,
+  IsInt, Min,
   IsIn,
-  IsArray,
+  IsArray, ArrayMaxSize,
   MaxLength,
 } from 'class-validator';
 
@@ -26,6 +26,8 @@ export class CreateAnnouncementDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }

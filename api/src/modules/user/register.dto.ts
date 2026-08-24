@@ -19,8 +19,9 @@ export class RegisterDto {
   email?: string;
 
   @IsString()
-  @IsNotEmpty()
-  invitationCode: string;
+  @IsOptional()
+  /** 邀请码：registration.require_invitation 开启时必填（服务端校验），关闭时可省略 */
+  invitationCode?: string;
 
   @IsString()
   @IsOptional()
@@ -39,6 +40,10 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   fingerprint?: string;
+
+  @IsString()
+  @IsOptional()
+  turnstileToken?: string;
 }
 
 export class ClientLoginDto {
@@ -58,4 +63,8 @@ export class ClientLoginDto {
   @IsString()
   @IsOptional()
   fingerprint?: string;
+
+  @IsString()
+  @IsOptional()
+  turnstileToken?: string;
 }

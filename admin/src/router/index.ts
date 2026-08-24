@@ -161,7 +161,7 @@ const router = createRouter({
         {
           path: 'settings',
           name: 'settings',
-          component: () => import('../views/setting/IndexView.vue'),
+          component: () => import('../views/site-setting/IndexView.vue'),
           meta: { title: '系统设置' },
         },
         {

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { SettingEntity } from './setting.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
 
@@ -15,10 +15,13 @@ export class SettingService {
   // 进程内缓存：setting 是低频写、高频读，加内存缓存减少 DB 压力。
   // 写操作（create/update/remove）时调用 invalidate() 清空，下次读重新加载。
   private cache: Map<string, SettingEntity> | null = null;
+  // 冷启动雷群防护：并发的 loadCache 共用同一个 Promise
+  private loadPromise: Promise<Map<string, SettingEntity>> | null = null;
 
   constructor(
     @InjectRepository(SettingEntity)
     private readonly repo: Repository<SettingEntity>,
+    private readonly dataSource: DataSource,
     // AuditLogModule 是 @Global，可直接注入；@Optional 兼容测试环境
     @Optional() private readonly auditLog?: AuditLogService,
   ) {}
@@ -28,12 +31,18 @@ export class SettingService {
     this.cache = null;
   }
 
-  /** 加载全部配置到缓存（懒加载） */
+  /** 加载全部配置到缓存（懒加载，带并发去重） */
   private async loadCache(): Promise<Map<string, SettingEntity>> {
     if (this.cache) return this.cache;
-    const list = await this.repo.find();
-    this.cache = new Map(list.map((s) => [s.key, s]));
-    return this.cache;
+    if (this.loadPromise) return this.loadPromise;
+    this.loadPromise = this.repo.find().then((list) => {
+      const m = new Map(list.map((s) => [s.key, s]));
+      this.cache = m;
+      return m;
+    }).finally(() => {
+      this.loadPromise = null;
+    });
+    return this.loadPromise;
   }
 
   /** 记录配置变更审计（value 变化时） */
@@ -150,38 +159,63 @@ export class SettingService {
     items: Record<string, string>,
     operator?: SettingOperator,
   ) {
-    const results: SettingEntity[] = [];
-    for (const [key, value] of Object.entries(items)) {
-      const existing = await this.repo.findOne({ where: { key, group } });
-      if (existing) {
-        this.logChange(existing, value, operator);
-        existing.value = value;
-        results.push(await this.repo.save(existing));
-      } else {
-        // key 不存在则创建（upsert 语义，供 rate_limit 等动态配置首次写入）
-        const created = this.repo.create({ key, value, group });
-        results.push(await this.repo.save(created));
+    // 批量写入必须原子：一次请求里的多个 key 要么全成功要么全回滚，
+    // 否则前端看到 500 时 DB 已是半新半旧（比如 turnstile.enabled=true 但 secret 还是旧的）。
+    // 事务内不再读缓存（缓存可能滞后），直接用 manager 查库。
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const results: SettingEntity[] = [];
+      for (const [key, value] of Object.entries(items)) {
+        const existing = await queryRunner.manager.findOne(SettingEntity, { where: { key, group } });
+        if (existing) {
+          this.logChange(existing, value, operator);
+          // 不直接改 existing（它是缓存对象的引用），克隆后再保存避免脏读
+          const toSave = { ...existing, value };
+          results.push(await queryRunner.manager.save(SettingEntity, toSave));
+        } else {
+          const created = queryRunner.manager.create(SettingEntity, { key, value, group });
+          results.push(await queryRunner.manager.save(created));
+        }
       }
+      await queryRunner.commitTransaction();
+      this.invalidate();
+      return results;
+    } catch (e) {
+      await queryRunner.rollbackTransaction();
+      throw e;
+    } finally {
+      await queryRunner.release();
     }
-    this.invalidate();
-    return results;
   }
 
-  /** 批量更新：接收 { key: value } 对象 */
+  /** 批量更新：接收 { key: value } 对象（按 key 查，不限 group） */
   async batchUpdate(
     items: Record<string, string>,
     operator?: SettingOperator,
   ) {
-    const results: SettingEntity[] = [];
-    for (const [key, value] of Object.entries(items)) {
-      const existing = await this.findByKey(key);
-      if (existing) {
-        this.logChange(existing, value, operator);
-        existing.value = value;
-        results.push(await this.repo.save(existing));
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const results: SettingEntity[] = [];
+      for (const [key, value] of Object.entries(items)) {
+        const existing = await queryRunner.manager.findOne(SettingEntity, { where: { key } });
+        if (existing) {
+          this.logChange(existing, value, operator);
+          const toSave = { ...existing, value };
+          results.push(await queryRunner.manager.save(SettingEntity, toSave));
+        }
       }
+      await queryRunner.commitTransaction();
+      this.invalidate();
+      return results;
+    } catch (e) {
+      await queryRunner.rollbackTransaction();
+      throw e;
+    } finally {
+      await queryRunner.release();
     }
-    this.invalidate();
-    return results;
   }
 }

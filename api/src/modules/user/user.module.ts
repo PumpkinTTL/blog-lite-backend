@@ -10,6 +10,7 @@ import { CodeModule } from '../code/code.module';
 import { EmailCodeModule } from '../email-code/email-code.module';
 import { MembershipModule } from '../membership/membership.module';
 import { MediaModule } from '../media/media.module';
+import { SettingModule } from '../setting/setting.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { MediaModule } from '../media/media.module';
     EmailCodeModule,
     MembershipModule,
     MediaModule,
+    SettingModule,
   ],
   controllers: [UserController, RoleController],
   providers: [UserService, RoleService],

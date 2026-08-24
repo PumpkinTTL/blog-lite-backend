@@ -7,7 +7,7 @@ import {
   Min,
   Max,
   MaxLength,
-  IsArray,
+  IsArray, ArrayMaxSize,
   IsInt,
   IsBoolean,
   IsEmail,
@@ -96,6 +96,8 @@ export class CreateDonationDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }

@@ -1,9 +1,9 @@
 import {
   IsString,
   IsOptional,
-  IsArray,
+  IsArray, ArrayMaxSize,
   IsIn,
-  IsInt,
+  IsInt, Min,
   MaxLength,
 } from 'class-validator';
 
@@ -14,6 +14,8 @@ export class ToggleInteractDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }
@@ -57,16 +59,22 @@ export class CreatePostDto {
   categoryId?: number | null;
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   tagIds?: number[];
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   allowedUserIds?: number[];
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   allowedRoleIds?: number[];
@@ -113,16 +121,22 @@ export class UpdatePostDto {
   categoryId?: number | null;
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   tagIds?: number[];
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   allowedUserIds?: number[];
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   allowedRoleIds?: number[];

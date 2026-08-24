@@ -3,7 +3,7 @@ import {
   IsOptional,
   IsInt,
   IsEnum,
-  IsArray,
+  IsArray, ArrayMaxSize,
   MaxLength,
   Min,
   ValidateNested,
@@ -50,6 +50,7 @@ export class CreateResourceDto {
   content?: string;
 
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => PanLinkDto)
   @IsOptional()
@@ -70,6 +71,8 @@ export class CreateResourceDto {
 
   /** 解锁所需的角色组 ID 列表（空=无门槛），会员权益判定依据 */
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   requiredRoleIds?: number[] | null;
@@ -81,11 +84,15 @@ export class CreateResourceDto {
 
   // private 状态下的可见性配置（参照 post 模块）
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   allowedUserIds?: number[];
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   allowedRoleIds?: number[];
@@ -115,6 +122,7 @@ export class UpdateResourceDto {
   content?: string;
 
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => PanLinkDto)
   @IsOptional()
@@ -135,6 +143,8 @@ export class UpdateResourceDto {
 
   /** 解锁所需的角色组 ID 列表（空=无门槛），会员权益判定依据 */
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   requiredRoleIds?: number[] | null;
@@ -145,11 +155,15 @@ export class UpdateResourceDto {
   sortOrder?: number;
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   allowedUserIds?: number[];
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   @IsOptional()
   allowedRoleIds?: number[];
@@ -158,10 +172,14 @@ export class UpdateResourceDto {
 /** 可见性配置专用 DTO */
 export class UpdateVisibilityDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   allowedUserIds: number[];
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   allowedRoleIds: number[];
 }
@@ -175,6 +193,8 @@ export class RedeemResourceDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }

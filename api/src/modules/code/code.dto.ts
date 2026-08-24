@@ -5,7 +5,7 @@ import {
   IsOptional,
   IsDateString,
   IsObject,
-  IsArray,
+  IsArray, ArrayMaxSize,
   IsNumber,
   Min,
   ValidateIf,
@@ -146,6 +146,8 @@ export class BatchCreateCodeDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }

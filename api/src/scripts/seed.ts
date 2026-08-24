@@ -213,10 +213,14 @@ async function seed() {
   try {
     await queryRunner.startTransaction();
 
-    // 1. 插入 admin 角色
+    // 1. 插入 admin 角色 + 默认角色 user（注册流程依赖 name='user' 的默认角色）
     await queryRunner.query(
       `INSERT IGNORE INTO roles (name, display_name, description, created_at) VALUES (?, ?, ?, NOW())`,
       ['admin', '管理员', '系统超级管理员，拥有所有权限'],
+    );
+    await queryRunner.query(
+      `INSERT IGNORE INTO roles (name, display_name, description, created_at) VALUES (?, ?, ?, NOW())`,
+      ['user', '用户', '注册用户默认角色'],
     );
 
     // 1.5 插入会员等级对应的角色组（权益载体，套餐会绑定它们）
@@ -263,32 +267,80 @@ async function seed() {
     );
 
     // 4. 系统设置初始数据
+    // settings 表只 seed 'site' group（前台可见的业务配置）。
+    // 旧的 general/seo/appearance group 已废弃（前后端均无消费代码），
+    // rate_limit 由 RateLimitConfigService 自行 seed，backup 由 BackupScheduleService 动态写。
+    // 已有库里残留的旧 group 数据不删除（无害），仅新部署不再写入。
     const settings: Array<[string, string, string | null, string]> = [
-      // 基本设置
-      ['site_name', 'Blog Lite', '站点名称', 'general'],
-      ['site_description', 'A lightweight blog', '站点描述', 'general'],
-      ['site_url', '', '站点 URL', 'general'],
-      ['site_keywords', 'blog,tech,vue,nest', '站点关键词', 'general'],
-      ['admin_email', '', '管理员邮箱', 'general'],
-      ['posts_per_page', '10', '每页文章数', 'general'],
-      ['copyright', '', '版权信息', 'general'],
-      ['icp_number', '', '备案号', 'general'],
-      ['allow_registration', 'false', '开启注册', 'general'],
-      ['maintenance_mode', 'false', '维护模式', 'general'],
-      // SEO 设置
-      ['seo_title', '', 'SEO 标题', 'seo'],
-      ['seo_description', '', 'SEO 描述', 'seo'],
-      ['seo_keywords', '', 'SEO 关键词', 'seo'],
-      ['google_analytics_id', '', 'Google Analytics ID', 'seo'],
-      ['baidu_tongji_id', '', '百度统计 ID', 'seo'],
-      // 外观设置
-      ['theme_color', '#18a058', '主题色', 'appearance'],
-      ['logo_url', '', 'Logo URL', 'appearance'],
-      ['favicon_url', '', 'Favicon URL', 'appearance'],
-      ['default_dark_mode', 'false', '默认暗黑模式', 'appearance'],
-      ['custom_css', '', '自定义 CSS', 'appearance'],
-      ['custom_head_html', '', '自定义头部 HTML', 'appearance'],
-      ['custom_footer_html', '', '自定义底部 HTML', 'appearance'],
+      // 站点公开设置（前台可见，白名单由 setting-public.controller 控制）
+      ['site.name', '慢成长', '站点名称', 'site'],
+      ['site.title', '慢成长', '站点标题（浏览器标签后缀）', 'site'],
+      ['site.subtitle', 'Slow Growth', '站点副标题（Logo 下方显示）', 'site'],
+      ['site.description', '记录成长，分享所思', '站点描述', 'site'],
+      ['site.logo_url', '', '站点 Logo URL（空则用文字 Logo）', 'site'],
+      ['site.favicon_url', '', 'Favicon URL（空则用默认）', 'site'],
+      ['site.contact_email', 'contact@bloglite.dev', '联系邮箱', 'site'],
+      ['site.shop_url', 'https://shop.bitlesu.com', '商城跳转链接', 'site'],
+      [
+        'site.social_links',
+        JSON.stringify({ github: '', x: '', telegram: '', rss: '' }),
+        '社交链接 JSON（github/x/telegram/rss）',
+        'site',
+      ],
+      // 捐赠设置
+      ['donation.enabled', 'true', '是否开放捐赠', 'site'],
+      // 注册设置
+      ['registration.enabled', 'true', '是否开放注册', 'site'],
+      ['registration.require_invitation', 'true', '注册是否需要邀请码（关闭则开放自由注册）', 'site'],
+      [
+        'registration.email_whitelist',
+        '',
+        '允许注册的邮箱后缀（逗号分隔，如 qq.com,163.com；留空表示不限）',
+        'site',
+      ],
+      // 维护模式（开启后非管理员只能访问只读接口）
+      ['maintenance.enabled', 'false', '维护模式（开启后前台只读）', 'site'],
+      // 模块开关（控制前台功能显隐 + 后端接口拒绝，前后端一致）
+      ['comments.enabled', 'true', '是否开放评论（关闭后不能发新评论，历史评论仍可查看）', 'site'],
+      ['announcements.enabled', 'true', '是否开放公告（关闭后前台隐藏公告位，列表接口返回空）', 'site'],
+      ['ads.enabled', 'true', '是否开放广告（关闭后前台隐藏所有广告位，列表接口返回空）', 'site'],
+      [
+        'donation.usdt_rate',
+        '7',
+        'CNY→USDT 汇率（用于加密货币换算展示）',
+        'site',
+      ],
+      [
+        'donation.wallet_addresses',
+        JSON.stringify({
+          TRC20: 'TJYeasTPa6gpVh7ZsAPDfnBrLaaTSE3qKr',
+          BSC: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18',
+          POL: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18',
+        }),
+        '加密货币收款地址 JSON（TRC20/BSC/POL）',
+        'site',
+      ],
+      // Turnstile 人机验证（site_key 公开、secret_key 私密，均存库由后端按需读取）
+      ['turnstile.enabled', 'false', '是否启用 Turnstile 人机验证', 'site'],
+      ['turnstile.site_key', '', 'Cloudflare Turnstile Site Key（公开，前端用）', 'site'],
+      ['turnstile.secret_key', '', 'Cloudflare Turnstile Secret Key（私密，后端校验用）', 'site'],
+      // R2 存储（多账号，系统设置面板管理；空列表时回落 .env R2_* 配置）
+      [
+        'storage.r2.accounts',
+        '[]',
+        'Cloudflare R2 账号列表 JSON：[{id,name,accountId,accessKeyId,secretAccessKey,bucket,publicDomain,prefix,enabled}]',
+        'site',
+      ],
+      ['storage.r2.active_id', '', '当前启用的 R2 账号 id（空则取第一个启用账号）', 'site'],
+      // SMTP 邮件（面板配置优先，空字段回落 .env SMTP_*）
+      ['smtp.host', '', 'SMTP 服务器（如 smtp.163.com，空则用 .env）', 'site'],
+      ['smtp.port', '', 'SMTP 端口（常用 465/587，空则用 .env）', 'site'],
+      ['smtp.user', '', 'SMTP 用户名（空则用 .env）', 'site'],
+      ['smtp.pass', '', 'SMTP 密码/授权码（空则用 .env）', 'site'],
+      ['smtp.from', '', '发件人（如 "站名" <noreply@example.com>，空则用 .env）', 'site'],
+      // Tavily 联网搜索（AI 写作助手 web_search 工具用，面板配置优先，空则 .env）
+      ['ai.tavily_key', '', 'Tavily API Key（AI 联网搜索，空则用 .env）', 'site'],
+      ['ai.tavily_url', '', 'Tavily 接口地址（默认 https://api.tavily.com，一般不用改）', 'site'],
     ];
     for (const [key, value, description, group] of settings) {
       await queryRunner.query(
@@ -319,7 +371,7 @@ async function seed() {
       ];
       for (const p of plans) {
         await queryRunner.query(
-          `INSERT INTO plans (name, slug, level, duration_days, price_cents, benefits, role_id, description, is_active, sort, created_at, updated_at)
+          `INSERT INTO plans (name, slug, level, durationDays, priceCents, benefits, roleId, description, isActive, sort, created_at, updated_at)
            VALUES (?, ?, ?, ?, 0, NULL, ?, NULL, 1, 0, NOW(), NOW())`,
           [p.name, p.slug, p.level, p.days, p.roleId],
         );

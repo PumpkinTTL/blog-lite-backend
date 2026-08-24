@@ -10,9 +10,12 @@ import { RolesGuard } from './modules/auth/roles.guard';
 import { RateLimitGuard } from './modules/rate-limit/rate-limit.guard';
 import { RateLimitUserGuard } from './modules/rate-limit/rate-limit-user.guard';
 import { BlacklistGuard } from './common/guards/blacklist.guard';
+import { MaintenanceGuard } from './common/guards/maintenance.guard';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { RedisModule } from './modules/redis/redis.module';
 import { RateLimitModule } from './modules/rate-limit/rate-limit.module';
+import { TurnstileModule } from './modules/turnstile/turnstile.module';
+import { TurnstileGuard } from './modules/turnstile/turnstile.guard';
 import { UserModule } from './modules/user/user.module';
 import { CodeModule } from './modules/code/code.module';
 import { PostModule } from './modules/post/post.module';
@@ -46,9 +49,13 @@ import { ScheduleModule } from '@nestjs/schedule';
     // 1. 黑名单 → 最先查，已封禁 IP 直接 403，不消耗限流额度/鉴权资源
     //    （应用层兜底；nginx 层未来做 deny 硬封禁更早拦截）
     // 2. IP限流 → 鉴权前，挡匿名洪水，违规累计自动拉黑
-    // 3. 鉴权 → 校验 token，挂 req.user
-    // 4. 用户限流 → 鉴权后，对已登录用户按 user id 限流（挡登录态刷接口）
-    // 5. 角色 → 校验 @Roles('admin')
+    // 3. Turnstile → 鉴权前，对标记了 @RequireTurnstile 的接口校验人机 token
+    //    （放在限流后：先挡洪水再校验，避免消耗 Cloudflare 校验配额）
+    // 4. 鉴权 → 校验 token，挂 req.user
+    // 5. 维护模式 → 鉴权后，读 maintenance.enabled，admin 豁免，GET 放行，写操作 503
+    //    （必须在 AuthGuard 后：需要 req.user.roles 判 admin）
+    // 6. 用户限流 → 鉴权后，对已登录用户按 user id 限流（挡登录态刷接口）
+    // 7. 角色 → 校验 @Roles('admin')
     {
       provide: APP_GUARD,
       useClass: BlacklistGuard,
@@ -59,7 +66,15 @@ import { ScheduleModule } from '@nestjs/schedule';
     },
     {
       provide: APP_GUARD,
+      useClass: TurnstileGuard,
+    },
+    {
+      provide: APP_GUARD,
       useClass: AuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: MaintenanceGuard,
     },
     {
       provide: APP_GUARD,
@@ -142,6 +157,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     RedisModule,
     // 限流模块（内存配置 + Guard + 配置接口，热更新）
     RateLimitModule,
+    // Turnstile 人机验证（Guard 挂在登录/注册/发码接口）
+    TurnstileModule,
     UserModule,
     CodeModule,
     AuthModule,

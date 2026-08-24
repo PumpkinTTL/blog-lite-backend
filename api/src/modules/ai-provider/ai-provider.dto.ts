@@ -1,11 +1,11 @@
 import {
   IsString,
   IsOptional,
-  IsInt,
+  IsInt, Min,
   IsIn,
   MaxLength,
   IsArray,
-  ArrayMinSize,
+  ArrayMinSize, ArrayMaxSize,
   ValidateNested,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
@@ -60,6 +60,7 @@ export class CreateAiProviderDto {
   protocol?: string;
 
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => AiProviderModelDto)
   @IsOptional()
@@ -79,7 +80,8 @@ export class CreateAiProviderDto {
 /** 批量删除 */
 export class BatchIdsDto {
   @IsArray()
-  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }
@@ -107,6 +109,7 @@ export class UpdateAiProviderDto {
   protocol?: string;
 
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => AiProviderModelDto)
   @IsOptional()

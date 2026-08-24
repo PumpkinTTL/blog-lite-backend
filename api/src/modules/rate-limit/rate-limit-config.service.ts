@@ -69,20 +69,32 @@ export class RateLimitConfigService implements OnModuleInit {
         );
       const map = new Map(rows.map((r) => [r.key, r.value]));
 
-      // 全局默认
+      // 全局默认（带 NaN 校验，非数字时回退 FALLBACK，避免限流被静默关闭）
       const dl = map.get('default.limit');
       const dt = map.get('default.ttl');
-      if (dl && dt) {
-        this.defaultRule = { limit: Number(dl), ttl: Number(dt) };
+      if (dl != null && dt != null) {
+        const nLimit = Number(dl);
+        const nTtl = Number(dt);
+        if (Number.isFinite(nLimit) && nLimit > 0 && Number.isFinite(nTtl) && nTtl > 0) {
+          this.defaultRule = { limit: nLimit, ttl: nTtl };
+        } else {
+          this.logger.warn(`限流全局阈值非法 dl=${dl} dt=${dt}，已回退默认值`);
+        }
       }
 
-      // 敏感接口（key 格式：rule.<routeKey>.limit / .ttl）
+      // 敏感接口（key 格式：rule.<routeKey>.limit / .ttl，带 NaN 校验）
       this.rules.clear();
       for (const meta of this.metas) {
         const rl = map.get(`rule.${meta.routeKey}.limit`);
         const rt = map.get(`rule.${meta.routeKey}.ttl`);
-        if (rl && rt) {
-          this.rules.set(meta.routeKey, { limit: Number(rl), ttl: Number(rt) });
+        if (rl != null && rt != null) {
+          const nLimit = Number(rl);
+          const nTtl = Number(rt);
+          if (Number.isFinite(nLimit) && nLimit > 0 && Number.isFinite(nTtl) && nTtl > 0) {
+            this.rules.set(meta.routeKey, { limit: nLimit, ttl: nTtl });
+          } else {
+            this.logger.warn(`限流规则 ${meta.routeKey} 非法 rl=${rl} rt=${rt}，已跳过（用默认值 ${meta.limit}/${meta.ttl}）`);
+          }
         }
       }
 

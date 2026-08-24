@@ -24,10 +24,15 @@ import {
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
+import { SettingService } from '../setting/setting.service';
 
 @Controller('comment')
 export class CommentController {
-  constructor(private readonly service: CommentService) {}
+  constructor(
+    private readonly service: CommentService,
+    // SettingModule 是 @Global，直接注入即可读站点开关
+    private readonly settingService: SettingService,
+  ) {}
 
   // ===== 用户端：列表（公开，只看 approved）=====
 
@@ -72,6 +77,14 @@ export class CommentController {
 
   @Post()
   async create(@Body() dto: CreateCommentDto, @Req() req: Request) {
+    // 站点开关：comments.enabled 关闭时拒绝发新评论（前端已隐藏输入区，这里防绕过）。
+    // 历史评论的查看/编辑/删除不受影响（用户仍可管理自己已发的内容）。
+    const enabledRow = await this.settingService.findByKey('comments.enabled');
+    const enabled =
+      enabledRow?.value === 'false' || enabledRow?.value === '0' ? false : true;
+    if (!enabled) {
+      throw new BadRequestException('评论功能暂未开放');
+    }
     const userId = Number((req as any)?.user?.sub);
     if (!userId) {
       return { success: false, message: '请先登录', data: null };

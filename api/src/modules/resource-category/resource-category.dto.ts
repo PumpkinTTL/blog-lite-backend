@@ -2,7 +2,7 @@ import {
   IsString,
   IsOptional,
   IsInt,
-  IsArray,
+  IsArray, ArrayMaxSize,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -42,6 +42,8 @@ export class UpdateResourceCategoryDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }

@@ -71,6 +71,9 @@ export class InteractionController {
     if (entityIds.length === 0) {
       return { success: true, data: {}, message: 'ok' };
     }
+    if (entityIds.length > 100) {
+      throw new BadRequestException('entityIds 数量不能超过 100');
+    }
     const userId = Number((req as any)?.user?.sub) || 0;
     if (!userId) {
       const result: Record<number, boolean> = {};

@@ -12,6 +12,22 @@ import { In, Repository } from 'typeorm';
 import { applyFilters } from '../../common/utils/apply-filters';
 import { MediaEntity, OssPlatform, StorageType } from './media.entity';
 import { StorageProvider, StorageConfig } from './storage.provider';
+import { SettingService } from '../setting/setting.service';
+
+/** 系统设置面板管理的 R2 账号（storage.r2.accounts JSON 的一项） */
+export interface R2Account {
+  id: string;
+  name: string;
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  /** 自定义公开域名（R2 绑定的域名），可空 */
+  publicDomain?: string;
+  /** 对象 key 前缀（如 blog/），可空 */
+  prefix?: string;
+  enabled: boolean;
+}
 
 @Injectable()
 export class MediaService {
@@ -21,6 +37,7 @@ export class MediaService {
     @InjectRepository(MediaEntity)
     private readonly mediaRepo: Repository<MediaEntity>,
     private readonly configService: ConfigService,
+    private readonly settingService: SettingService,
   ) {}
 
   async findAll(
@@ -100,10 +117,19 @@ export class MediaService {
       return existing;
     }
 
-    // 3. 存储文件
+    // 3. 存储文件（R2 时对象 key 加账号前缀）
     const originalName = this.decodeFilename(file.originalname);
-    const filename = this.generateFilename(originalName, app, folder);
-    const provider = this.createStorageProvider(storageType, ossPlatform);
+    const r2Account =
+      storageType === 'oss' && ossPlatform === 'cloudflare'
+        ? await this.getActiveR2Account()
+        : null;
+    const filename = this.generateFilename(
+      originalName,
+      app,
+      folder,
+      r2Account?.prefix,
+    );
+    const provider = await this.createStorageProvider(storageType, ossPlatform);
     const url = await provider.upload(file.buffer, filename, file.mimetype);
 
     // 4. 入库
@@ -207,10 +233,16 @@ export class MediaService {
       }
     }
 
-    // 2. 生成 key + 签 URL
+    // 2. 生成 key（带启用账号的 key 前缀）+ 签 URL
     const originalName = this.decodeFilename(filename);
-    const key = this.generateFilename(originalName, app, folder);
-    const provider = this.createR2Provider();
+    const r2Account = await this.getActiveR2Account();
+    const key = this.generateFilename(
+      originalName,
+      app,
+      folder,
+      r2Account?.prefix,
+    );
+    const provider = await this.createR2Provider();
     const uploadUrl = await provider.presignPut(key, contentType, size, 300);
     const publicUrl = provider.getUrl(key);
 
@@ -252,7 +284,7 @@ export class MediaService {
     if (existing) return existing;
 
     // HEAD 探测
-    const provider = this.createR2Provider();
+    const provider = await this.createR2Provider();
     const head = await provider.headObject(key);
     if (!head.exists) {
       throw new BadRequestException(
@@ -294,9 +326,8 @@ export class MediaService {
     const media = await this.mediaRepo.findOne({ where: { id } });
     if (!media) return;
 
-    await this.createStorageProvider(
-      media.storageType,
-      media.ossPlatform,
+    await (
+      await this.createStorageProvider(media.storageType, media.ossPlatform)
     ).delete(media.filename);
     await this.mediaRepo.delete(id);
   }
@@ -313,11 +344,8 @@ export class MediaService {
     // 并行删除存储文件（各文件互不依赖，串行会 N 次网络往返）
     await Promise.all(
       mediaList.map((media) =>
-        this.createStorageProvider(
-          media.storageType,
-          media.ossPlatform,
-        )
-          .delete(media.filename)
+        this.createStorageProvider(media.storageType, media.ossPlatform)
+          .then((provider) => provider.delete(media.filename))
           .catch((e) =>
             this.logger.warn(`删除存储文件失败 ${media.filename}: ${e.message}`),
           ),
@@ -361,9 +389,12 @@ export class MediaService {
     originalName: string,
     app?: string | null,
     folder?: string | null,
+    keyPrefix?: string | null,
   ): string {
     const ext = extname(originalName) || '';
     const parts: string[] = [];
+    // 账号级 key 前缀（系统设置面板按 R2 账号配置，多账号隔离用）
+    if (keyPrefix) parts.push(keyPrefix.replace(/^\/+|\/+$/g, ''));
     if (app) parts.push(app);
     if (folder) parts.push(folder);
     const prefix = parts.length ? parts.join('/') + '/' : '';
@@ -374,10 +405,10 @@ export class MediaService {
     return createHash('sha256').update(buffer).digest('hex');
   }
 
-  private createStorageProvider(
+  private async createStorageProvider(
     storageType: StorageType,
     ossPlatform: OssPlatform,
-  ): StorageProvider {
+  ): Promise<StorageProvider> {
     if (storageType === 'local') {
       return new StorageProvider({ provider: 'local' });
     }
@@ -386,7 +417,7 @@ export class MediaService {
       throw new BadRequestException('请选择 OSS 平台');
     }
 
-    // Cloudflare R2 使用独立配置通道
+    // Cloudflare R2 使用独立配置通道（数据库多账号优先，.env 兜底）
     if (ossPlatform === 'cloudflare') {
       return this.createR2Provider();
     }
@@ -409,10 +440,60 @@ export class MediaService {
     return new StorageProvider(config);
   }
 
-  /**
-   * 创建 Cloudflare R2 存储实例（独立配置通道）
+  /** 当前启用的 R2 账号（系统设置 storage.r2.accounts JSON）。
+   * 无账号配置时返回 null（走 .env 兜底）。
+   * active_id 匹配优先，否则取第一个 enabled 账号。
    */
-  private createR2Provider(): StorageProvider {
+  private async getActiveR2Account(): Promise<R2Account | null> {
+    const raw = (await this.settingService.findByKey('storage.r2.accounts'))
+      ?.value;
+    if (!raw) return null;
+    let list: unknown;
+    try {
+      list = JSON.parse(raw);
+    } catch {
+      this.logger.warn('storage.r2.accounts JSON 解析失败，忽略并走 .env 配置');
+      return null;
+    }
+    if (!Array.isArray(list)) return null;
+    const accounts = list.filter(
+      (a): a is R2Account =>
+        !!a && typeof a === 'object' && (a as R2Account).enabled !== false,
+    );
+    if (accounts.length === 0) return null;
+    const activeId = (
+      (await this.settingService.findByKey('storage.r2.active_id'))?.value ?? ''
+    ).trim();
+    return accounts.find((a) => a.id === activeId) ?? accounts[0];
+  }
+
+  /**
+   * 创建 Cloudflare R2 存储实例。
+   * 优先用系统设置面板的多账号配置；无账号时回落 .env（R2_* 环境变量）。
+   */
+  private async createR2Provider(): Promise<StorageProvider> {
+    const account = await this.getActiveR2Account();
+    if (account) {
+      const missing = (
+        ['accountId', 'accessKeyId', 'secretAccessKey', 'bucket'] as const
+      ).filter((f) => !account[f]);
+      if (missing.length > 0) {
+        throw new BadRequestException(
+          `R2 账号「${account.name || account.id}」配置不完整，缺少：${missing.join('、')}（系统设置 → 存储配置）`,
+        );
+      }
+      return new StorageProvider({
+        provider: 'cloudflare',
+        endpoint: this.resolveR2Endpoint(account.accountId),
+        region: 'auto',
+        bucket: account.bucket,
+        accessKeyId: account.accessKeyId,
+        secretAccessKey: account.secretAccessKey,
+        publicDomain: account.publicDomain || undefined,
+      });
+    }
+
+    // .env 兜底（未在面板配置任何账号时的旧行为）
     const accountId = this.configService.get<string>('R2_ACCOUNT_ID');
     const accessKeyId = this.configService.get<string>('R2_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>(
@@ -423,7 +504,7 @@ export class MediaService {
 
     if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
       throw new BadRequestException(
-        'R2 未配置：请设置 R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET',
+        'R2 未配置：请在系统设置 → 存储配置添加账号，或设置 R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET',
       );
     }
 
@@ -436,5 +517,39 @@ export class MediaService {
       secretAccessKey,
       publicDomain: publicDomain || undefined,
     });
+  }
+
+  /**
+   * 解析 R2 endpoint：输入可以是完整 endpoint（https://xxx.r2.cloudflarestorage.com）
+   * 或纯 Account ID（自动拼上 R2 域名）。两种粘贴习惯都兼容。
+   */
+  private resolveR2Endpoint(accountIdOrEndpoint: string): string {
+    const v = (accountIdOrEndpoint || '').trim();
+    if (!v) return '';
+    if (/^https?:\/\//i.test(v)) return v.replace(/\/+$/, '');
+    return `https://${v}.r2.cloudflarestorage.com`;
+  }
+
+  /**
+   * 测试 R2 账号连通性（系统设置面板用）：用表单当前值直接 HeadBucket，
+   * 不需要先保存。返回分类后的中文错误信息。
+   */
+  async testR2Connection(dto: {
+    accountId: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    bucket: string;
+  }): Promise<{ ok: boolean; message: string; latencyMs: number }> {
+    const provider = new StorageProvider({
+      provider: 'cloudflare',
+      endpoint: this.resolveR2Endpoint(dto.accountId),
+      region: 'auto',
+      bucket: dto.bucket.trim(),
+      accessKeyId: dto.accessKeyId.trim(),
+      secretAccessKey: dto.secretAccessKey,
+    });
+    const startedAt = Date.now();
+    const result = await provider.headBucket();
+    return { ...result, latencyMs: Date.now() - startedAt };
   }
 }

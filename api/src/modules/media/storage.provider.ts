@@ -68,6 +68,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
+  HeadBucketCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
@@ -208,6 +209,47 @@ export class StorageProvider {
       Key: key,
     });
     return getSignedUrl(client, command, { expiresIn: expiresInSec });
+  }
+
+  /**
+   * 探测存储桶连通性/权限（HEAD Bucket）—— 设置面板"测试连通性"用。
+   * 验证 endpoint + 凭证 + 桶名三者同时正确（任一错误都会在这里暴露）。
+   * 不抛错：把失败原因分类返回，让前端能展示人话。
+   */
+  async headBucket(): Promise<{
+    ok: boolean;
+    message: string;
+  }> {
+    if (this.config.provider === 'local') {
+      return { ok: false, message: '本地存储无需测试连通性' };
+    }
+    const client = this.getClient();
+    try {
+      await client.send(
+        new HeadBucketCommand({ Bucket: this.config.bucket }),
+      );
+      return { ok: true, message: '连接成功，凭证与存储桶均有效' };
+    } catch (err) {
+      const e = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+      const status = e.$metadata?.httpStatusCode;
+      const name = e.name ?? '';
+      if (name === 'NoSuchBucket' || status === 404) {
+        return { ok: false, message: `存储桶「${this.config.bucket}」不存在，请检查桶名` };
+      }
+      if (status === 403 || name === 'AccessDenied' || name === 'SignatureDoesNotMatch') {
+        if (name === 'SignatureDoesNotMatch') {
+          return { ok: false, message: '签名不匹配：Access Key 或 Secret Key 错误' };
+        }
+        return { ok: false, message: '无权限访问该桶：凭证错误或该 Key 无此桶权限' };
+      }
+      if (name === 'ENOTFOUND' || name === 'ECONNREFUSED' || name === 'TimeoutError' || (e.message ?? '').includes('getaddrinfo')) {
+        return { ok: false, message: `无法连接 ${this.resolvedEndpoint}：请检查 Endpoint / Account ID` };
+      }
+      return {
+        ok: false,
+        message: `连接失败（${status ?? name}）：${(e.message ?? '未知错误').slice(0, 120)}`,
+      };
+    }
   }
 
   /**

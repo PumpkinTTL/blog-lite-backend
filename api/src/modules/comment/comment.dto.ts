@@ -7,6 +7,7 @@ import {
   Length,
   IsArray,
   ArrayNotEmpty,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -56,7 +57,9 @@ export class UpdateCommentDto {
 export class BatchIdsDto {
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(100)
   @IsInt({ each: true })
+  @Min(1, { each: true })
   ids: number[];
 }
 
@@ -76,7 +79,9 @@ export class ModerateCommentDto {
 export class BatchModerateDto {
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(100)
   @IsInt({ each: true })
+  @Min(1, { each: true })
   ids: number[];
 
   @IsEnum(['approved', 'rejected'])

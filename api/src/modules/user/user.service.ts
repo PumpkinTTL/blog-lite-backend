@@ -24,6 +24,7 @@ import { generateUniqueUserId } from '../../common/utils/generate-user-id';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { MediaService } from '../media/media.service';
 import { EmailCodeService } from '../email-code/email-code.service';
+import { SettingService } from '../setting/setting.service';
 
 export interface TokenPayload {
   accessToken: string;
@@ -49,6 +50,7 @@ export class UserService {
     private readonly auditLog: AuditLogService,
     private readonly mediaService: MediaService,
     private readonly emailCodeService: EmailCodeService,
+    private readonly settingService: SettingService,
   ) {}
 
   /**
@@ -574,8 +576,30 @@ export class UserService {
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
-    // 1. 检查邮箱是否已被注册（友好提示，避免触发数据库 unique 约束的原生报错）
-    // username 概念已移除，不再做唯一性校验。用户唯一标识是 id（自增主键）。
+    // 0. 站点设置校验：注册开关 + 邮箱后缀白名单（管理员可在后台 site-setting 配置）
+    const regEnabled = await this.settingService.findByKey('registration.enabled');
+    const enabledVal = regEnabled?.value;
+    if (enabledVal === 'false' || enabledVal === '0') {
+      throw new BadRequestException('注册功能暂未开放');
+    }
+    if (dto.email) {
+      const whitelistRaw = (await this.settingService.findByKey('registration.email_whitelist'))?.value || '';
+      const whitelist = whitelistRaw
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      if (whitelist.length > 0) {
+        const emailDomain = dto.email.split('@')[1]?.toLowerCase() || '';
+        if (!emailDomain || !whitelist.includes(emailDomain)) {
+          throw new BadRequestException(
+            `仅允许以下邮箱后缀注册：${whitelist.join(', ')}`,
+          );
+        }
+      }
+    }
+
+    // 1. 邮箱已在事务外做友好提示校验，但并发注册仍可能同时通过。
+    //    事务内对 manager.save 的 ER_DUP_ENTRY 做二次兜底，转为 400，避免 500 泄露 DB 细节。
     if (dto.email) {
       const existingEmail = await this.findByEmail(dto.email);
       if (existingEmail) {
@@ -583,16 +607,26 @@ export class UserService {
       }
     }
 
-    // 2. 检查邀请码是否有效
-    const verifyResult = await this.codeService.verifyCode({
-      code: dto.invitationCode,
-      type: 'invitation',
-    });
-    if (!verifyResult.valid) {
-      throw new BadRequestException(verifyResult.message || '邀请码无效');
-    }
+    // 2. 邀请码开关：registration.require_invitation 关闭时开放自由注册（默认开启）
+    const requireInviteRaw = (
+      await this.settingService.findByKey('registration.require_invitation')
+    )?.value;
+    const requireInvite = requireInviteRaw !== 'false' && requireInviteRaw !== '0';
 
-    const codeEntity = verifyResult.code!;
+    let codeEntity: CodeEntity | null = null;
+    if (requireInvite) {
+      if (!dto.invitationCode?.trim()) {
+        throw new BadRequestException('请输入邀请码');
+      }
+      const verifyResult = await this.codeService.verifyCode({
+        code: dto.invitationCode,
+        type: 'invitation',
+      });
+      if (!verifyResult.valid) {
+        throw new BadRequestException(verifyResult.message || '邀请码无效');
+      }
+      codeEntity = verifyResult.code!;
+    }
 
     // 3. 事务内：消费邀请码 + 创建用户（只做 DB 操作，不含外部调用）
     const { userId, nickname } = await this.dataSource.transaction(
@@ -605,32 +639,33 @@ export class UserService {
           throw new NotFoundException('默认角色 user 不存在');
         }
 
-        // 邀请码并发安全消费：条件更新，usedCount 未达上限才能 +1。
-        // affectedRows=0 表示已被并发抢光，回滚事务。
-        const consumeResult = await manager
-          .createQueryBuilder()
-          .update(CodeEntity)
-          .set({
-            usedCount: () => 'usedCount + 1',
-            usedAt: new Date(),
-            status: () =>
-              codeEntity.maxUses > 0 &&
-              codeEntity.usedCount + 1 >= codeEntity.maxUses
-                ? "'used'"
-                : 'status',
-          })
-          .where('id = :id', { id: codeEntity.id })
-          // maxUses=0 表示不限次；否则 usedCount 必须 < maxUses
-          .andWhere(
-            codeEntity.maxUses > 0
-              ? 'usedCount < :maxUses'
-              : '1 = 1',
-            { maxUses: codeEntity.maxUses },
-          )
-          .execute();
+        // 邀请码并发安全消费（自由注册模式下 codeEntity 为 null，直接跳过）
+        if (codeEntity) {
+          const consumeResult = await manager
+            .createQueryBuilder()
+            .update(CodeEntity)
+            .set({
+              usedCount: () => 'usedCount + 1',
+              usedAt: new Date(),
+              status: () =>
+                codeEntity.maxUses > 0 &&
+                codeEntity.usedCount + 1 >= codeEntity.maxUses
+                  ? "'used'"
+                  : 'status',
+            })
+            .where('id = :id', { id: codeEntity.id })
+            // maxUses=0 表示不限次；否则 usedCount 必须 < maxUses
+            .andWhere(
+              codeEntity.maxUses > 0
+                ? 'usedCount < :maxUses'
+                : '1 = 1',
+              { maxUses: codeEntity.maxUses },
+            )
+            .execute();
 
-        if (consumeResult.affected === 0) {
-          throw new BadRequestException('邀请码已被使用完毕');
+          if (consumeResult.affected === 0) {
+            throw new BadRequestException('邀请码已被使用完毕');
+          }
         }
 
         // 创建用户（不再写入 username，已移除该字段）
@@ -647,22 +682,33 @@ export class UserService {
           status: USER_STATUS.ACTIVE,
           registerIp: clientIp,
           registerSource: dto.registerSource || 'web',
-          registerCodeId: codeEntity.id,
+          registerCodeId: codeEntity?.id ?? null,
           lastLoginAt: new Date(),
         });
         user.roles = [userRole];
 
-        await manager.save(user);
+        try {
+          await manager.save(user);
+        } catch (e: unknown) {
+          const code = (e as { code?: string })?.code;
+          // 并发注册同一邮箱：事务外的 findByEmail 同时通过，这里唯一键冲突，转为友好 400
+          if (code === 'ER_DUP_ENTRY') {
+            throw new BadRequestException('该邮箱已被注册，若忘记密码请重置');
+          }
+          throw e;
+        }
 
-        // 记录邀请码使用日志
-        await manager.insert(CodeUsageLogEntity, {
-          codeId: codeEntity.id,
-          userId: user.id,
-          usedAt: new Date(),
-          clientIp,
-          metadata: { action: 'register' },
-          createdAt: new Date(),
-        });
+        // 记录邀请码使用日志（自由注册无邀请码则跳过）
+        if (codeEntity) {
+          await manager.insert(CodeUsageLogEntity, {
+            codeId: codeEntity.id,
+            userId: user.id,
+            usedAt: new Date(),
+            clientIp,
+            metadata: { action: 'register' },
+            createdAt: new Date(),
+          });
+        }
 
         return { userId: user.id, nickname: user.nickname };
       },

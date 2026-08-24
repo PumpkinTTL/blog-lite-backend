@@ -4,12 +4,14 @@ import {
   Post,
   Body,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { DonationService } from './donation.service';
 import { PublicSubmitDonationDto } from './donation.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import { DONATION_STATUS } from '../../common/constants/status';
+import { SettingService } from '../setting/setting.service';
 
 /**
  * 前台公开捐赠接口（@Public）。
@@ -20,12 +22,21 @@ import { DONATION_STATUS } from '../../common/constants/status';
  */
 @Controller('donation')
 export class DonationPublicController {
-  constructor(private readonly service: DonationService) {}
+  constructor(
+    private readonly service: DonationService,
+    private readonly settingService: SettingService,
+  ) {}
 
   /** 前台自助提交捐赠登记 */
   @Public()
   @Post('public/submit')
   async submit(@Body() dto: PublicSubmitDonationDto) {
+    // 站点设置校验：donation.enabled 关闭时拒绝提交（前端已隐藏 UI，这里防绕过）
+    const enabled = await this.settingService.findByKey('donation.enabled');
+    const enabledVal = enabled?.value;
+    if (enabledVal === 'false' || enabledVal === '0') {
+      throw new BadRequestException('捐赠登记暂未开放');
+    }
     // 强制管理字段：用户提交一律 pending + 不上墙，待管理员确认
     const data = await this.service.create({
       donorName: dto.donorName,

@@ -32,6 +32,7 @@ import {
 import { RegisterDto, ClientLoginDto } from './register.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { RequireTurnstile } from '../../common/decorators/require-turnstile.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import { EmailCodeService } from '../email-code/email-code.service';
 import { USER_STATUS } from '../../common/constants/status';
@@ -46,6 +47,7 @@ export class UserController {
   // ===== 管理端登录 =====
 
   @Public()
+  @RequireTurnstile()
   @Post('login')
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     const fingerprint = dto.fingerprint || '';
@@ -84,6 +86,7 @@ export class UserController {
   // ===== 用户端注册 =====
 
   @Public()
+  @RequireTurnstile()
   @Post('register')
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const fingerprint = dto.fingerprint || '';
@@ -108,6 +111,7 @@ export class UserController {
   // ===== 用户端登录 =====
 
   @Public()
+  @RequireTurnstile()
   @Post('client-login')
   async clientLogin(@Body() dto: ClientLoginDto, @Req() req: Request) {
     const fingerprint = dto.fingerprint || '';
@@ -137,6 +141,7 @@ export class UserController {
    * 未注册直接抛错（而非防枚举静默成功），避免用户空等验证码。
    */
   @Public()
+  @RequireTurnstile()
   @Post('send-login-code')
   async sendLoginCode(@Body() dto: SendLoginCodeDto) {
     const user = await this.userService.findByEmail(dto.email);
@@ -154,6 +159,7 @@ export class UserController {
    * 邮箱验证码登录（无需密码）。
    */
   @Public()
+  @RequireTurnstile()
   @Post('login-by-code')
   async loginByCode(@Body() dto: LoginByCodeDto, @Req() req: Request) {
     const fingerprint = dto.fingerprint || '';
@@ -371,6 +377,7 @@ export class UserController {
   // ===== 忘记密码：发送验证码 =====
 
   @Public()
+  @RequireTurnstile()
   @Post('send-reset-code')
   async sendResetCode(@Body() dto: SendResetCodeDto) {
     // 统一消息，防止邮箱枚举
@@ -384,6 +391,7 @@ export class UserController {
   // ===== 忘记密码：验证码重置密码 =====
 
   @Public()
+  @RequireTurnstile()
   @Post('reset-password-by-code')
   async resetPasswordByCode(@Body() dto: ResetPasswordByCodeDto) {
     // 验证验证码

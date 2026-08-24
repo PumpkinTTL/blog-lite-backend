@@ -6,7 +6,7 @@ import {
   IsDateString,
   MaxLength,
   Min,
-  IsArray,
+  IsArray, ArrayMaxSize,
   IsNotEmpty,
 } from 'class-validator';
 
@@ -53,6 +53,8 @@ export class RedeemMembershipDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }

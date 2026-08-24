@@ -59,7 +59,16 @@ export class DonationEntity {
   })
   donorEmail: string | null;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, comment: '捐赠金额' })
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    comment: '捐赠金额',
+    transformer: {
+      from: (v: string | null) => (v == null ? 0 : Number(v)),
+      to: (v: number | string | null) => v as unknown as string,
+    },
+  })
   amount: number;
 
   @Column({ type: 'varchar', length: 10, default: 'CNY', comment: '币种' })

@@ -4,7 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsBoolean,
-  IsArray,
+  IsArray, ArrayMaxSize,
   Min,
   MaxLength,
   Matches,
@@ -33,6 +33,7 @@ export class CreatePlanDto {
   priceCents?: number;
 
   @IsArray()
+  @ArrayMaxSize(100)
   @IsOptional()
   benefits?: string[];
 
@@ -56,6 +57,8 @@ export class CreatePlanDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }
@@ -83,6 +86,7 @@ export class UpdatePlanDto {
   priceCents?: number;
 
   @IsArray()
+  @ArrayMaxSize(100)
   @IsOptional()
   benefits?: string[];
 

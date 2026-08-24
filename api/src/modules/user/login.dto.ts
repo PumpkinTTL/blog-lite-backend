@@ -42,4 +42,9 @@ export class LoginDto {
   @IsString()
   @IsOptional()
   fingerprint?: string;
+
+  // Turnstile 人机验证 token（开关开启时必填，由全局 TurnstileGuard 校验）
+  @IsString()
+  @IsOptional()
+  turnstileToken?: string;
 }

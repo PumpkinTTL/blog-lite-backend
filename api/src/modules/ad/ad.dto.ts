@@ -6,7 +6,7 @@ import {
   IsDateString,
   Min,
   MaxLength,
-  IsArray,
+  IsArray, ArrayMaxSize,
 } from 'class-validator';
 import type { AdPosition, AdType, AdStatus } from './ad.entity';
 
@@ -123,6 +123,8 @@ export class UpdateAdDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }

@@ -1,8 +1,8 @@
 import {
   IsString,
   IsOptional,
-  IsArray,
-  IsInt,
+  IsArray, ArrayMaxSize,
+  IsInt, Min,
   MaxLength,
 } from 'class-validator';
 
@@ -18,6 +18,8 @@ export class CreateTagDto {
 
 export class BatchIdsDto {
   @IsArray()
+  @ArrayMaxSize(100)
+  @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
 }
