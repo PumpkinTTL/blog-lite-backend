@@ -289,7 +289,28 @@ export class UserService {
       user.roles = await this.roleRepo.findBy({ id: In(roleIds) });
     }
 
-    return this.userRepo.save(user);
+    const saved = await this.userRepo.save(user);
+
+    // casdoor 模式：admin 手动建的用户也要同步（否则 Casdoor 无此号无法登录）。
+    // 无密码的创建不同步（该用户本来就无法密码登录）。
+    if (this.casdoor.enabled && password) {
+      try {
+        await this.casdoor.createCasdoorUser({
+          localUserId: saved.id,
+          nickname: saved.nickname || `用户#${saved.id}`,
+          password,
+          email: saved.email,
+        });
+      } catch (e) {
+        this.logger.error(
+          `admin 建用户 #${saved.id} 成功但同步 Casdoor 失败: ${e instanceof Error ? e.message : e}`,
+        );
+        throw new BadRequestException(
+          '用户已创建，但统一认证同步失败，请检查 Casdoor 服务后重置该用户密码',
+        );
+      }
+    }
+    return saved;
   }
 
   async update(
@@ -371,6 +392,10 @@ export class UserService {
 
     if (password) {
       user.password = await bcrypt.hash(password, 10);
+      // casdoor 模式：admin 改密后同步（best-effort，失败不阻塞本地改密）
+      if (this.casdoor.enabled) {
+        await this.casdoor.updateCasdoorPassword(id, password);
+      }
     }
 
     if (roleIds !== undefined) {
@@ -419,6 +444,11 @@ export class UserService {
       await this.deleteMediaByUrl(user.avatar).catch((e) =>
         this.logger.warn(`删除用户 ${id} 头像文件失败: ${e.message}`),
       );
+    }
+
+    // casdoor 模式：同步删除 Casdoor 侧账号（best-effort，失败仅记日志）
+    if (this.casdoor.enabled) {
+      await this.casdoor.deleteCasdoorUser(id);
     }
   }
 
@@ -512,6 +542,13 @@ export class UserService {
         await manager.delete(UserEntity, { id });
       }
     });
+
+    // casdoor 模式：同步删除 Casdoor 侧账号（best-effort，失败仅记日志）
+    if (this.casdoor.enabled) {
+      for (const id of ids) {
+        await this.casdoor.deleteCasdoorUser(id);
+      }
+    }
   }
 
   /** 根据 URL 删除对应的 media 记录及 R2 文件 */
@@ -564,9 +601,18 @@ export class UserService {
 
     const targetName = `${user.nickname || `用户#${user.id}`}(#${id})`;
 
-    // 封禁时调鉴权中心吊销该用户所有 Token（堵死 refresh 续命）
+    // 封禁时同步吊销凭证，堵死 refresh 续命：
+    // - self 模式：调鉴权中心吊销该用户所有 Token
+    // - casdoor 模式：设置 Casdoor 侧 isForbidden（登录+续签全拒，等价吊销全部会话）
     if (willDisable) {
-      await this.authService.revokeUserTokens(id);
+      if (this.casdoor.enabled) {
+        await this.casdoor.setCasdoorUserForbidden(id, true);
+      } else {
+        await this.authService.revokeUserTokens(id);
+      }
+    } else if (this.casdoor.enabled) {
+      // 解封同步恢复（Casdoor 侧放行登录/续签）
+      await this.casdoor.setCasdoorUserForbidden(id, false);
     }
 
     // 写审计日志（含封禁原因，便于事后追溯）

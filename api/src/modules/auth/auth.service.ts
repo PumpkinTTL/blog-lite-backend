@@ -196,6 +196,14 @@ export class AuthService implements OnModuleInit {
     userId: string | number,
     deviceId?: string,
   ): Promise<void> {
+    // casdoor 模式：等价动作是封禁 Casdoor 用户（setCasdoorUserForbidden），
+    // 由 toggleStatus 调用。这里防误调（authCenterUrl 为空会打出无效请求）。
+    if (this.casdoor.enabled) {
+      this.logger.warn(
+        'casdoor 模式下 revokeUserTokens 不适用（应调 casdoor.setCasdoorUserForbidden），已跳过',
+      );
+      return;
+    }
     try {
       const { data } = await firstValueFrom(
         this.httpService.post(`${this.authCenterUrl}/auth/revoke-by-user`, {

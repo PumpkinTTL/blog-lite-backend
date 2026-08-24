@@ -279,10 +279,14 @@ export class CasdoorService implements OnModuleInit {
         return;
       }
       const body = { ...existing.data, password: newPassword };
+      // 实测：update-user 必须在 URL 带 ?id=org/name 指明目标用户，
+      // 不带时 Casdoor 会按 client 身份定位（app/blog-lite）导致 "user doesn't exist"
       const { data } = await firstValueFrom(
-        this.httpService.post(`${this.endpoint}/api/update-user`, body, {
-          headers: this.adminAuthHeaders(),
-        }),
+        this.httpService.post(
+          `${this.endpoint}/api/update-user?id=${this.orgName}/${this.casdoorName(localUserId)}`,
+          body,
+          { headers: this.adminAuthHeaders() },
+        ),
       );
       if (data?.status !== 'ok') {
         this.logger.warn(`Casdoor 改密同步失败: ${data?.msg || '未知原因'}`);
@@ -290,6 +294,76 @@ export class CasdoorService implements OnModuleInit {
     } catch (e) {
       this.logger.warn(
         `Casdoor 改密同步异常（不阻塞本地改密）: ${e instanceof Error ? e.message : e}`,
+      );
+    }
+  }
+
+  /**
+   * 删除用户同步（admin 删除用户时清理 Casdoor 侧账号）。
+   * best-effort：失败仅记日志——本地已删则该账号已无法登录
+   * （login 先查本地 users 表），Casdoor 残留只是脏数据，可后台手动清。
+   */
+  async deleteCasdoorUser(localUserId: number): Promise<void> {
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post(
+          `${this.endpoint}/api/delete-user`,
+          { owner: this.orgName, name: this.casdoorName(localUserId) },
+          { headers: this.adminAuthHeaders() },
+        ),
+      );
+      if (data?.status !== 'ok') {
+        this.logger.warn(
+          `Casdoor 删除用户返回失败（不阻塞）: ${data?.msg || '未知原因'}`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(
+        `Casdoor 删除用户异常（不阻塞）: ${e instanceof Error ? e.message : e}`,
+      );
+    }
+  }
+
+  /**
+   * 封禁/解封同步（Casdoor 用户的 isForbidden 标志）。
+   * Casdoor 侧封禁后：password grant 登录直接拒绝、refresh grant 续签不放行——
+   * 等价于自建模式的 revokeUserTokens（吊销该用户全部会话）。
+   * best-effort：失败仅记日志——本地 status 已改，AuthGuard 拦截兜底。
+   */
+  async setCasdoorUserForbidden(
+    localUserId: number,
+    forbidden: boolean,
+  ): Promise<void> {
+    try {
+      const { data: existing } = await firstValueFrom(
+        this.httpService.get(
+          `${this.endpoint}/api/get-user?id=${this.orgName}/${this.casdoorName(localUserId)}`,
+          { headers: this.adminAuthHeaders() },
+        ),
+      );
+      if (!existing || existing.status === 'error' || !existing.data?.name) {
+        this.logger.warn(
+          `Casdoor 用户不存在，跳过封禁同步: ${this.casdoorName(localUserId)}`,
+        );
+        return;
+      }
+      const body = { ...existing.data, isForbidden: forbidden };
+      // 同 updateCasdoorPassword：URL 必须带 ?id=org/name 定位目标用户
+      const { data } = await firstValueFrom(
+        this.httpService.post(
+          `${this.endpoint}/api/update-user?id=${this.orgName}/${this.casdoorName(localUserId)}`,
+          body,
+          { headers: this.adminAuthHeaders() },
+        ),
+      );
+      if (data?.status !== 'ok') {
+        this.logger.warn(
+          `Casdoor 封禁同步失败（${forbidden ? '封禁' : '解封'}）: ${data?.msg || '未知原因'}`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(
+        `Casdoor 封禁同步异常（不阻塞本地操作）: ${e instanceof Error ? e.message : e}`,
       );
     }
   }
