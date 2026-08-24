@@ -175,6 +175,14 @@ export class ResetPasswordByCodeDto {
 
   @IsOptional()
   @IsString()
+  deviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  fingerprint?: string;
+
+  @IsOptional()
+  @IsString()
   turnstileToken?: string;
 }
 

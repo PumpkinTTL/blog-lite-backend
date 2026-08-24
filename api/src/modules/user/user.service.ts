@@ -558,7 +558,15 @@ export class UserService {
     }
   }
 
-  /** 根据 URL 删除对应的 media 记录及 R2 文件 */
+/**
+   * 验证码重置密码后自动登录（casdoor 模式：新密码已双端生效，直接复用 login 完整链路）。
+   * self 模式下卡友好的 401 文案（若用户换邮箱，原封禁判定会误导，明确告知旧账号不存在）。
+   */
+  async loginAfterResetByEmail(email: string, newPassword: string, deviceId: string, ip: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number; deviceId: string }> {
+    const did = (deviceId || '').trim() || `reset-${Date.now().toString(36)}`;
+    return this.login({ account: email, password: newPassword, deviceId: did } as any, did, '', ip);
+  }
+
   private async deleteMediaByUrl(url: string): Promise<void> {
     const media = await this.mediaService.findByUrl(url);
     if (media) {
@@ -920,9 +928,11 @@ export class UserService {
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
-    // casdoor 模式：密码/凭证都在 Casdoor 侧，本服务无法凭验证码签发 Casdoor Token
+    // casdoor 模式：Casdoor 单密码模型，无免密签发能力——
+    // 本服务无法凭验证码签发 Casdoor Token。引导用户走忘记密码
+    // （验证码+新密码+自动登录，体验等价、同样邮箱验证，且不产生副作用）
     if (this.casdoor.enabled) {
-      throw new BadRequestException('当前认证模式暂不支持验证码登录，请使用密码登录');
+      throw new BadRequestException('当前认证模式验证码登录已整合至忘记密码：验证码重置后自动登录');
     }
     // 1. 校验验证码（verifyCode 失败会抛 BadRequestException）
     await this.emailCodeService.verifyCode(email, code);
@@ -1171,6 +1181,10 @@ export class UserService {
       .catch((e) => this.logger.warn('审计日志写入失败', e));
 
     await this.userRepo.update(userId, { email: newEmail });
+    // casdoor 模式：邮箱换绑同步（best-effort）
+    if (this.casdoor.enabled) {
+      await this.casdoor.syncProfileFromLocal(userId, { email: newEmail });
+    }
     // reload 返回完整对象（与 updateProfile 同套，避免 save 返回值缺字段）
     const reloaded = await this.userRepo.findOne({
       where: { id: userId },

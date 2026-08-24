@@ -434,7 +434,7 @@ export class UserController {
   @Public()
   @RequireTurnstile()
   @Post('reset-password-by-code')
-  async resetPasswordByCode(@Body() dto: ResetPasswordByCodeDto) {
+  async resetPasswordByCode(@Body() dto: ResetPasswordByCodeDto, @Req() req: any) {
     // 验证验证码
     await this.emailCodeService.verifyCode(dto.email, dto.code);
 
@@ -446,6 +446,19 @@ export class UserController {
     }
 
     await this.userService.resetPassword(user.id, dto.newPassword);
-    return { success: true, message: '密码重置成功' };
+    // 重置后自动登录（新密码已本地+CAS同步，直接登录签发 token，省用户再输一遍）
+    try {
+      const tokenPayload = await this.userService.loginAfterResetByEmail(
+        dto.email, dto.newPassword, dto.deviceId || '', getClientIp(req),
+      );
+      return {
+        success: true,
+        data: { ...tokenPayload, tokenType: 'Bearer' },
+        message: '密码重置成功，已自动登录',
+      };
+    } catch {
+      // 登录签发失败（鉴权中心抖动等）不回滚改密：密码已改对，用户下次用新密码登录即可
+      return { success: true, message: '密码重置成功，请用新密码登录' };
+    }
   }
 }
