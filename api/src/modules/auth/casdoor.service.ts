@@ -45,9 +45,6 @@ export class CasdoorService implements OnModuleInit {
   private readonly clientSecret: string;
   /** Casdoor 组织名（password grant 的 username 前缀 / 建用户用） */
   private readonly orgName: string;
-  /** 管理 API 凭证（可选：不填则注册同步/改密同步被禁用，仅登录可用） */
-  private readonly adminUser?: string;
-  private readonly adminPass?: string;
 
   private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
@@ -59,8 +56,6 @@ export class CasdoorService implements OnModuleInit {
     this.clientId = this.configService.get<string>('CASDOOR_CLIENT_ID') || '';
     this.clientSecret = this.configService.get<string>('CASDOOR_CLIENT_SECRET') || '';
     this.orgName = this.configService.get<string>('CASDOOR_ORG_NAME') || 'blog';
-    this.adminUser = this.configService.get<string>('CASDOOR_ADMIN_USER') || undefined;
-    this.adminPass = this.configService.get<string>('CASDOOR_ADMIN_PASS') || undefined;
 
     const provider = this.configService.get<string>('AUTH_PROVIDER') || 'self';
     const configured = !!(this.endpoint && this.clientId && this.clientSecret);
@@ -196,15 +191,14 @@ export class CasdoorService implements OnModuleInit {
     return { ...payload, sub: String(localUserId) };
   }
 
-  // ── 管理 API（可选：需 CASDOOR_ADMIN_USER/PASS）─────────────────────
+  // ── 管理 API（注册同步 / 改密同步）──────────────────────────────────
+  // Casdoor 管理 API 用应用自己的 Client ID/Client Secret 做 Basic auth，
+  // 权限限定在本应用所属组织内——不需要、也不应该用全局管理员账号。
 
   private adminAuthHeaders() {
-    if (!this.adminUser || !this.adminPass) {
-      throw new Error('Casdoor 管理 API 未配置（CASDOOR_ADMIN_USER / CASDOOR_ADMIN_PASS）');
-    }
     return {
       Authorization:
-        'Basic ' + Buffer.from(`${this.adminUser}:${this.adminPass}`).toString('base64'),
+        'Basic ' + Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64'),
     };
   }
 
