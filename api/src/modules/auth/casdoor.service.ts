@@ -45,6 +45,8 @@ export class CasdoorService implements OnModuleInit {
   private readonly clientSecret: string;
   /** Casdoor 组织名（password grant 的 username 前缀 / 建用户用） */
   private readonly orgName: string;
+  /** 本站在 Casdoor 的应用名（用户 signupApplication 标记，后台"应用"列显示用） */
+  private readonly appName: string;
 
   private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
@@ -56,6 +58,7 @@ export class CasdoorService implements OnModuleInit {
     this.clientId = this.configService.get<string>('CASDOOR_CLIENT_ID') || '';
     this.clientSecret = this.configService.get<string>('CASDOOR_CLIENT_SECRET') || '';
     this.orgName = this.configService.get<string>('CASDOOR_ORG_NAME') || 'blog';
+    this.appName = this.configService.get<string>('CASDOOR_APP_NAME') || 'blog-lite';
 
     const provider = this.configService.get<string>('AUTH_PROVIDER') || 'self';
     const configured = !!(this.endpoint && this.clientId && this.clientSecret);
@@ -241,6 +244,8 @@ export class CasdoorService implements OnModuleInit {
       displayName: params.nickname,
       email: params.email || '',
       password: params.password,
+      // 来源应用标记：Casdoor 后台用户列表"应用"列显示用（多应用区分用户来自哪）
+      signupApplication: this.appName,
       // 评分/国家等字段给默认值，避免 Casdoor 校验拒收
       score: 0,
       country: 'CN',
