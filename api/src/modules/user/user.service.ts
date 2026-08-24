@@ -407,16 +407,8 @@ export class UserService {
     const saved = await this.userRepo.save(user);
 
     // casdoor 模式：admin 改资料时展示类字段同步（best-effort）
-    if (this.casdoor.enabled) {
-      const patch: { displayName?: string | null; avatar?: string | null; email?: string | null; phone?: string | null } = {};
-      if (userData.nickname !== undefined) patch.displayName = userData.nickname;
-      if (userData.avatar !== undefined) patch.avatar = userData.avatar;
-      if (userData.email !== undefined) patch.email = userData.email;
-      if (userData.phone !== undefined) patch.phone = userData.phone;
-      if (Object.keys(patch).length > 0) {
-        await this.casdoor.syncCasdoorProfile(id, patch);
-      }
-    }
+    await this.casdoor.syncProfileFromLocal(id, userData);
+
     return saved;
   }
 
@@ -1109,16 +1101,7 @@ export class UserService {
     Object.assign(user, data);
     await this.userRepo.save(user);
     // casdoor 模式：展示类字段同步（best-effort，快照滞后无害）
-    if (this.casdoor.enabled) {
-      const patch: { displayName?: string | null; avatar?: string | null; email?: string | null; phone?: string | null } = {};
-      if (data.nickname !== undefined) patch.displayName = data.nickname;
-      if (data.avatar !== undefined) patch.avatar = data.avatar;
-      if (data.email !== undefined) patch.email = data.email;
-      if (data.phone !== undefined) patch.phone = data.phone;
-      if (Object.keys(patch).length > 0) {
-        await this.casdoor.syncCasdoorProfile(userId, patch);
-      }
-    }
+    await this.casdoor.syncProfileFromLocal(userId, data);
     // 重新查一次返回完整对象。TypeORM save() 返回值在带 @ManyToMany 关系时
     // 可能缺失部分非关系字段（实测 nickname 偶发为 undefined），reload 保证完整。
     const reloaded = await this.userRepo.findOne({

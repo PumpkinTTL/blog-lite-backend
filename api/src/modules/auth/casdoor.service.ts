@@ -330,6 +330,26 @@ export class CasdoorService implements OnModuleInit {
   }
 
   /**
+   * 资料同步入口（业务代码统一调这个，不再直接碰 syncCasdoorProfile）：
+   * 内部处理 casdoor 模式判断 + 本地字段名→Casdoor 字段名映射 + 未变更跳过。
+   * 传本地字段名（nickname/avatar/email/phone），undefined = 本次未改不动它。
+   */
+  async syncProfileFromLocal(
+    localUserId: number,
+    changed: { nickname?: unknown; avatar?: unknown; email?: unknown; phone?: unknown },
+  ): Promise<void> {
+    if (!this.enabled) return;
+    const patch: { displayName?: string | null; avatar?: string | null; email?: string | null; phone?: string | null } = {};
+    if (changed.nickname !== undefined) patch.displayName = changed.nickname as string | null;
+    if (changed.avatar !== undefined) patch.avatar = changed.avatar as string | null;
+    if (changed.email !== undefined) patch.email = changed.email as string | null;
+    if (changed.phone !== undefined) patch.phone = changed.phone as string | null;
+    if (Object.keys(patch).length > 0) {
+      await this.syncCasdoorProfile(localUserId, patch);
+    }
+  }
+
+  /**
    * 资料同步（展示类字段：显示名/头像/邮箱/手机号）。
    * 本地 updateProfile / admin 改用户资料时 best-effort 同步，失败仅记日志——
    * Casdoor 侧资料只是快照（业务展示全读本地库），滞后无害。
