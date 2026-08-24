@@ -114,18 +114,23 @@ export class CasdoorService implements OnModuleInit {
     // TODO(部署后确认): 部分 Casdoor 版本 password grant 的 username 需要去掉 org 前缀。
     // 若登录报 "user not found"，将 username 改为 this.casdoorName(localUserId) 重试。
     const username = `${this.orgName}/${this.casdoorName(localUserId)}`;
+    // 实测该部署对 body 内 client_id/secret 解析有误（报 invalid_client），
+    // 必须用 Basic 头携带凭证
     const { data } = await firstValueFrom(
       this.httpService.post(
         `${this.endpoint}/api/login/oauth/access_token`,
         new URLSearchParams({
           grant_type: 'password',
-          client_id: this.clientId,
-          client_secret: this.clientSecret,
           username,
           password,
           scope: 'openid offline_access',
         }).toString(),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            ...this.adminAuthHeaders(),
+          },
+        },
       ),
     );
     if (!data?.access_token) {
@@ -152,11 +157,14 @@ export class CasdoorService implements OnModuleInit {
         `${this.endpoint}/api/login/oauth/access_token`,
         new URLSearchParams({
           grant_type: 'refresh_token',
-          client_id: this.clientId,
-          client_secret: this.clientSecret,
           refresh_token: refreshToken,
         }).toString(),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            ...this.adminAuthHeaders(),
+          },
+        },
       ),
     );
     if (!data?.access_token) {
