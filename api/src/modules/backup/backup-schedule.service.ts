@@ -199,13 +199,9 @@ export class BackupScheduleService implements OnModuleInit {
       this.running = true;
       try {
         this.logger.log(`定时器「${cfg.name}」触发备份`);
-        const log = await this.backupService.runBackup('schedule', cfg.name);
-        // 备份成功后清理该定时器的过期备份
-        if (log.status === 'success' && cfg.retainDays > 0) {
-          await this.backupService.cleanExpired(cfg.retainDays).catch((e) => {
-            this.logger.warn(`清理过期备份失败: ${(e as Error).message}`);
-          });
-        }
+        // retainDays 透传：executeBackup 成功分支内清理（返回值 status 恒为 running，
+        // 在这里判 success 是死代码，清理从未执行过——已修）
+        await this.backupService.runBackup('schedule', cfg.name, cfg.retainDays);
       } finally {
         this.running = false;
       }

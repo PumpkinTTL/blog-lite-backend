@@ -7,8 +7,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { CasdoorService } from './casdoor.service';
+import { LOCAL_ISSUER, LocalTokenService } from './local-token.service';
 
 export interface AuthTokenResponse {
   accessToken: string;
@@ -29,6 +30,7 @@ export class AuthService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
     private readonly casdoor: CasdoorService,
+    private readonly localToken: LocalTokenService,
   ) {
     // casdoor 模式下这些配置仅 self 流程使用，不再强制必填
     if (!this.casdoor.enabled) {
@@ -92,10 +94,24 @@ export class AuthService implements OnModuleInit {
 
   /**
    * 本地验签 Access Token（通过 JWKS 公钥）。
+   * - 本地短命 token（验证码登录签发，iss=blog-lite-local）：LocalTokenService 验签
    * - self 模式：自建鉴权中心 JWKS
    * - casdoor 模式：Casdoor JWKS，并把 sub（u<id>）映射回本地 userId
    */
   async verifyToken(accessToken: string) {
+    // 先不验签解出 iss 做分流：仅读 payload 不验证签名。
+    // 分流基于未验签的 iss 是安全的——三个分支各自做完整验签，
+    // 伪造 iss 指到哪个分支都过不了该分支的签名校验。
+    let iss: unknown;
+    try {
+      iss = decodeJwt(accessToken).iss;
+    } catch {
+      // 格式非法（非 JWT）→ 继续走原分支，由其抛出统一验签错误
+      iss = undefined;
+    }
+    if (iss === LOCAL_ISSUER) {
+      return this.localToken.verifyAccessToken(accessToken);
+    }
     if (this.casdoor.enabled) {
       return this.casdoor.verifyCasdoorToken(accessToken);
     }

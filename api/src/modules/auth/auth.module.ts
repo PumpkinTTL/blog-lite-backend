@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { RolesGuard } from './roles.guard';
 import { CasdoorService } from './casdoor.service';
+import { LocalTokenService } from './local-token.service';
 
 @Global()
 @Module({
@@ -12,7 +13,7 @@ import { CasdoorService } from './casdoor.service';
       timeout: 10000,
     }),
   ],
-  providers: [AuthService, CasdoorService, AuthGuard, RolesGuard],
-  exports: [AuthService, CasdoorService, AuthGuard, RolesGuard],
+  providers: [AuthService, CasdoorService, LocalTokenService, AuthGuard, RolesGuard],
+  exports: [AuthService, CasdoorService, LocalTokenService, AuthGuard, RolesGuard],
 })
 export class AuthModule {}

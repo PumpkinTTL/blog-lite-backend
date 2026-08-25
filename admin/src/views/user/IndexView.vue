@@ -2,8 +2,8 @@
 import { ref, onMounted, h, watch } from 'vue'
 import { NButton, NDataTable, NSpace, NInput, NIcon, NTag, NModal, NForm, NFormItem, NSelect, NPagination, NSwitch, NAvatar, NUpload, NDatePicker, NRadio, NRadioGroup, NText } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
-import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline } from '@vicons/ionicons5'
-import { getUsers, createUser, updateUser, deleteUser, batchDeleteUsers, toggleUserStatus } from '../../api/user'
+import { AddOutline, TrashOutline, CreateOutline, SearchOutline, RefreshOutline , CloudUploadOutline } from '@vicons/ionicons5'
+import { getUsers, createUser, updateUser, deleteUser, batchDeleteUsers, toggleUserStatus, syncCasdoor } from '../../api/user'
 import type { User } from '../../api/user'
 import { getRoles } from '../../api/role'
 import type { Role } from '../../api/role'
@@ -60,12 +60,6 @@ function computeBannedUntil(): string | null {
 
 const userStatusOptions = [
   { label: '全部', value: null },
-  { label: '正常', value: 'active' },
-  { label: '禁用', value: 'disabled' },
-] as unknown as SelectOption[]
-
-// 表单用的状态选项（不含"全部"）
-const formStatusOptions = [
   { label: '正常', value: 'active' },
   { label: '禁用', value: 'disabled' },
 ] as unknown as SelectOption[]
@@ -155,12 +149,15 @@ const { loading, list, searchId, searchKeyword, showModal, editingId, saving, fo
     updateApi: (id, data) => {
       const payload = { ...data }
       if (!payload.password) delete payload.password
+      // status 不走编辑表单（后端 update 也已剥离）：改状态的唯一入口是
+      // 列表的封禁开关（含 bannedUntil/Casdoor 同步/审计全套语义）
+      delete payload.status
       return updateUser(id, payload)
     },
     deleteApi: deleteUser,
     batchDeleteApi: batchDeleteUsers,
     deleteContent: (row) => `确定删除用户「${row.nickname}」？`,
-    defaultForm: () => ({ password: '', nickname: '', email: '', status: 'active', roleIds: [] }),
+    defaultForm: () => ({ password: '', nickname: '', email: '', roleIds: [] }),
     extractList: (res) => {
       const payload = res.data
       if (payload?.list) {
@@ -180,7 +177,6 @@ function openEdit(row: User) {
     password: '',
     nickname: r.nickname,
     email: r.email || '',
-    status: r.status,
     roleIds: (r.roles || []).map((r) => r.id),
   }))
 }
@@ -196,6 +192,22 @@ function handleReset() {
   searchStatus.value = null
   page.value = 1
   _handleReset()
+}
+
+const syncingCasdoor = ref(false)
+async function handleSyncCasdoor() {
+  syncingCasdoor.value = true
+  try {
+    const res: any = await syncCasdoor()
+    const d = res?.data || {}
+    message.success(`同步完成：补建 ${d.created ?? 0}，对齐 ${d.updated ?? 0}，失败 ${d.failed?.length ?? 0}`)
+    if (d.failed?.length) console.warn('同步失败明细:', d.failed)
+    _handleSearch()
+  } catch (e: any) {
+    message.error(e?.message || '同步失败')
+  } finally {
+    syncingCasdoor.value = false
+  }
 }
 
 async function handleSave() {
@@ -417,6 +429,10 @@ const columns: DataTableColumns<User> = [
         <template #icon><n-icon><TrashOutline /></n-icon></template>
         批量删除
       </n-button>
+      <n-button :loading="syncingCasdoor" @click="handleSyncCasdoor">
+        <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
+        同步到Casdoor
+      </n-button>
     </n-space>
 
     <div class="table-section">
@@ -464,9 +480,6 @@ const columns: DataTableColumns<User> = [
         </n-form-item>
         <n-form-item label="邮箱" path="email">
           <n-input v-model:value="formValue.email" placeholder="可选" />
-        </n-form-item>
-        <n-form-item label="状态" path="status">
-          <n-select v-model:value="formValue.status" :options="formStatusOptions" placeholder="选择状态" />
         </n-form-item>
         <n-form-item label="角色" path="roleIds">
           <n-select v-model:value="formValue.roleIds" :options="roleOptions" placeholder="选择角色" multiple clearable />

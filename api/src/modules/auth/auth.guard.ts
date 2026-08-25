@@ -9,6 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { AuthService } from './auth.service';
+import { CasdoorService } from './casdoor.service';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 
 @Injectable()
@@ -17,6 +18,7 @@ export class AuthGuard implements CanActivate {
 
   constructor(
     private readonly authService: AuthService,
+    private readonly casdoor: CasdoorService,
     private readonly reflector: Reflector,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
@@ -86,6 +88,17 @@ export class AuthGuard implements CanActivate {
           `UPDATE users SET status = 'active', banned_until = NULL WHERE id = ?`,
           [userId],
         );
+        // 解封同步 Casdoor（审查 P0：否则 passwordGrant 仍被拒，用户永久锁死）。
+        // fire-and-forget：本地 status 是权威，同步失败不阻塞本次请求。
+        if (this.casdoor.enabled) {
+          this.casdoor
+            .setCasdoorUserForbidden(userId, false)
+            .catch((e) =>
+              this.logger.warn(
+                `解封同步 Casdoor 失败 userId=${userId}: ${e instanceof Error ? e.message : e}`,
+              ),
+            );
+        }
       } else {
         throw new UnauthorizedException('账号已被禁用');
       }

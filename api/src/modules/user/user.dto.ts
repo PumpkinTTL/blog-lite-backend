@@ -36,9 +36,8 @@ export class CreateUserDto {
   @MaxLength(500)
   avatar?: string;
 
-  @IsIn(['active', 'disabled'])
-  @IsOptional()
-  status?: string;
+  // status 已移除（审查双入口分叉）：改状态唯一入口 PUT /:id/toggle-status
+  // （含 bannedUntil 语义 / Casdoor isForbidden 同步 / 审计 / 防自我封禁）
 
   @IsArray()
   @ArrayMaxSize(100)
@@ -85,13 +84,12 @@ export class UpdateUserDto {
 export class UpdateProfileDto {
   @IsString()
   @IsOptional()
+  @MinLength(2, { message: '昵称至少 2 个字符' })
   @MaxLength(50)
   nickname?: string;
 
-  @IsEmail({}, { message: '邮箱格式不正确' })
-  @IsOptional()
-  @MaxLength(100)
-  email?: string;
+  // email 已移除（审查 P0）：曾可经本接口无验证码直接改邮箱，绕过换绑流程
+  // （change-email 有验证码+占用校验）。换邮箱唯一入口：POST /user/change-email。
 
   @IsString()
   @IsOptional()

@@ -93,3 +93,8 @@ export function batchDeleteUsers(ids: number[]) {
 export function toggleUserStatus(id: number, data?: { reason?: string; bannedUntil?: string | null }) {
   return request.put(`/user/${id}/toggle-status`, data || {})
 }
+
+/** 存量用户对账同步到 Casdoor（casdoor 模式）：缺号补建 + 展示字段对齐，可重复执行 */
+export function syncCasdoor() {
+  return request.post<any, any>('/user/sync-casdoor', {})
+}

@@ -12,6 +12,10 @@ coverage/
 # Uploads (local storage)
 api/uploads/
 
+# 本地 JWT 签发私钥（验证码登录的本地短命 token，自动生成绝不入库）
+api/.local-jwt-key.json
+.local-jwt-key.json
+
 # Docs (reference only)
 admin/src/docs/
 

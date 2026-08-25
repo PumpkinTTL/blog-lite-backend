@@ -366,6 +366,8 @@ export class UserController {
     return { success: true, data, message: `同步完成：补建 ${data.created}，对齐 ${data.updated}，失败 ${data.failed.length}` };
   }
 
+  // @Roles('admin') 必须：曾有普通用户可越权封禁/解封任意用户的 P0 漏洞
+  @Roles('admin')
   @Put(':id/toggle-status')
   async toggleStatus(
     @Param('id', ParseIntPipe) id: number,

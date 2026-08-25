@@ -13,6 +13,7 @@ import { UpdateProfileDto } from './user.dto';
 import { AuthService } from '../auth/auth.service';
 import type { AuthTokenResponse } from '../auth/auth.service';
 import { CasdoorService } from '../auth/casdoor.service';
+import { LocalTokenService } from '../auth/local-token.service';
 import { CodeService } from '../code/code.service';
 import { CodeEntity } from '../code/code.entity';
 import { CodeUsageLogEntity } from '../code/code-usage-log.entity';
@@ -46,6 +47,7 @@ export class UserService {
     private readonly roleRepo: Repository<RoleEntity>,
     private readonly authService: AuthService,
     private readonly casdoor: CasdoorService,
+    private readonly localToken: LocalTokenService,
     private readonly configService: ConfigService,
     private readonly codeService: CodeService,
     private readonly membershipService: MembershipService,
@@ -119,6 +121,11 @@ export class UserService {
       });
       user.status = USER_STATUS.ACTIVE;
       user.bannedUntil = null;
+      // 封禁到期解封必须同步 Casdoor（isForbidden），否则本地放行但
+      // passwordGrant 仍被拒 → 用户被永久锁死（审查 P0）
+      if (this.casdoor.enabled) {
+        await this.casdoor.setCasdoorUserForbidden(user.id, false);
+      }
     }
 
     // 恒定时间防时序攻击：无论用户存不存在/状态是否正常，都执行一次 bcrypt 比较，
@@ -139,13 +146,23 @@ export class UserService {
       let casdoorToken;
       try {
         casdoorToken = await this.casdoor.passwordGrant(user.id, dto.password);
-      } catch {
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // 区分"凭证错误"与"服务故障"（审查 P1）：把 Casdoor 宕机/超时误报成
+        // 密码错误会误导用户反复重试甚至去重置密码
+        const credentialWrong = /incorrect|password|not found|forbidden|invalid/i.test(msg);
+        if (!credentialWrong) {
+          this.logger.error(`Casdoor 登录通道异常: ${msg}`);
+          throw new UnauthorizedException('登录服务暂时不可用，请稍后重试');
+        }
         throw new UnauthorizedException(UserService.LOGIN_FAIL_MSG);
       }
       const roleNames = (user.roles || []).map((r) => r.name);
       this.logger.log(
         `用户 #${user.id} 登录成功（casdoor），角色: [${roleNames.join(', ')}]`,
       );
+      // 与 self 分支对齐更新最后登录时间（审查 P1：主登录路径一直漏更）
+      await this.userRepo.update(user.id, { lastLoginAt: new Date() });
       return {
         accessToken: casdoorToken.accessToken,
         refreshToken: casdoorToken.refreshToken,
@@ -184,6 +201,8 @@ export class UserService {
     this.logger.log(
       `用户 #${user.id} 登录成功，角色: [${roles.join(', ')}]`,
     );
+    // 最后登录时间（审查 P1：此前仅注册/验证码登录更新，密码主路径漏更）
+    await this.userRepo.update(user.id, { lastLoginAt: new Date() });
 
     return {
       accessToken: tokenData.accessToken,
@@ -276,6 +295,14 @@ export class UserService {
 
   async create(data: Partial<UserEntity> & { roleIds?: number[] }) {
     const { roleIds, password, ...userData } = data;
+    // 邮箱占用预检（审查 P1）：register 有 ER_DUP_ENTRY 兜底，这里没有——
+    // 撞唯一键直接 500。提前转友好 400。
+    if (userData.email) {
+      const existingEmail = await this.findByEmail(userData.email);
+      if (existingEmail) {
+        throw new BadRequestException('该邮箱已被注册');
+      }
+    }
     // 生成 9 位随机 id（非自增主键，防推算/防遍历）
     userData.id = await generateUniqueUserId((id) =>
       this.userRepo.exists({ where: { id } }),
@@ -308,7 +335,7 @@ export class UserService {
           `admin 建用户 #${saved.id} 成功但同步 Casdoor 失败: ${e instanceof Error ? e.message : e}`,
         );
         throw new BadRequestException(
-          '用户已创建，但统一认证同步失败，请检查 Casdoor 服务后重置该用户密码',
+          '用户已创建，但统一认证同步失败：请在用户列表点「同步到Casdoor」补建该账号后，再重置其密码',
         );
       }
     }
@@ -386,18 +413,28 @@ export class UserService {
         operatorName: operator?.nickname,
       });
     }
-    this.auditLog
-      .logMany(entries)
-      .catch((e) => this.logger.warn('审计日志写入失败', e));
+    // status 剥离（审查 P1）：改状态唯一入口是 toggle-status（含 bannedUntil
+    // 语义/Casdoor 同步/审计/防自我封禁），编辑表单直改状态会绕过全套
+    delete (userData as any).status;
+
+    // email 占用预检（审查双入口分叉）：admin 改邮箱也查重，撞唯一键 500 → 友好 400
+    if (userData.email && userData.email !== user.email) {
+      if (!(await this.canUseEmail(userData.email, id))) {
+        throw new BadRequestException('该邮箱已被其他账号绑定');
+      }
+    }
 
     Object.assign(user, userData);
 
     if (password) {
-      user.password = await bcrypt.hash(password, 10);
-      // casdoor 模式：admin 改密后同步（best-effort，失败不阻塞本地改密）
+      // casdoor 模式：先同步成功再改本地（与 resetPassword 同序，审查 P0）
       if (this.casdoor.enabled) {
-        await this.casdoor.updateCasdoorPassword(id, password);
+        const syncOk = await this.casdoor.updateCasdoorPassword(id, password);
+        if (!syncOk) {
+          throw new BadRequestException('统一认证服务同步失败，密码未修改，请稍后重试');
+        }
       }
+      user.password = await bcrypt.hash(password, 10);
     }
 
     if (roleIds !== undefined) {
@@ -407,6 +444,11 @@ export class UserService {
     }
 
     const saved = await this.userRepo.save(user);
+
+    // 审计挪到 save 成功后（审查 P1：原先先记审计后落库，save 失败会误记"已改"）
+    this.auditLog
+      .logMany(entries)
+      .catch((e) => this.logger.warn('审计日志写入失败', e));
 
     // casdoor 模式：admin 改资料时展示类字段同步（best-effort）
     await this.casdoor.syncProfileFromLocal(id, userData);
@@ -928,12 +970,6 @@ export class UserService {
     clientFingerprint: string,
     clientIp: string,
   ): Promise<TokenPayload> {
-    // casdoor 模式：Casdoor 单密码模型，无免密签发能力——
-    // 本服务无法凭验证码签发 Casdoor Token。引导用户走忘记密码
-    // （验证码+新密码+自动登录，体验等价、同样邮箱验证，且不产生副作用）
-    if (this.casdoor.enabled) {
-      throw new BadRequestException('当前认证模式验证码登录已整合至忘记密码：验证码重置后自动登录');
-    }
     // 1. 校验验证码（verifyCode 失败会抛 BadRequestException）
     await this.emailCodeService.verifyCode(email, code);
 
@@ -962,30 +998,44 @@ export class UserService {
         });
         user.status = USER_STATUS.ACTIVE;
         user.bannedUntil = null;
+        // 同 login()：解封同步 Casdoor，防永久锁死（审查 P0）
+        if (this.casdoor.enabled) {
+          await this.casdoor.setCasdoorUserForbidden(user.id, false);
+        }
       } else {
         throw new UnauthorizedException('账号不存在或已禁用');
       }
     }
 
     // 4. 签发 Token（deviceId 由前端传入，不再由 IP 派生；roles 由 issueLoginToken 内部从 user 取）
-    const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
-    const refreshTtl = this.configService.get<number>(
-      'REFRESH_TOKEN_TTL',
-      604800,
-    );
-
-    const tokenData = await this.issueLoginToken(
-      user,
-      deviceId,
-      accessTtl,
-      refreshTtl,
-    );
+    // tokenType 仅自建/casdoor 通道有，本地 token 对无该字段，这里只取三公共字段
+    let tokenData: Pick<AuthTokenResponse, 'accessToken' | 'refreshToken' | 'expiresIn'>;
+    if (this.casdoor.enabled) {
+      // casdoor 模式：Casdoor 单密码模型无免密签发能力，改用本地 Ed25519
+      // 短命 JWT（C'' 方案）：AT 2h（iss=blog-lite-local，AuthGuard 按 iss 分流
+      // 到本地验签）+ RT 7d（local- 前缀，refresh 走本地旋转续签）
+      const roles = (user.roles || []).map((r) => r.name);
+      tokenData = await this.localToken.signTokenPair(user.id, roles);
+    } else {
+      // self 模式：保持原 issueLoginToken（自建鉴权中心）逻辑
+      const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
+      const refreshTtl = this.configService.get<number>(
+        'REFRESH_TOKEN_TTL',
+        604800,
+      );
+      tokenData = await this.issueLoginToken(
+        user,
+        deviceId,
+        accessTtl,
+        refreshTtl,
+      );
+    }
 
     // 5. 更新最后登录时间
     await this.userRepo.update(user.id, { lastLoginAt: new Date() });
 
     this.logger.log(
-      `用户 #${user.id} 验证码登录成功`,
+      `用户 #${user.id} 验证码登录成功（${this.casdoor.enabled ? 'casdoor 模式，本地 token' : 'self 模式'}）`,
     );
 
     return {
@@ -1024,11 +1074,42 @@ export class UserService {
 
   /**
    * 刷新 Token：调用鉴权中心刷新双 Token
+   * local- 前缀的 RT（验证码登录签发的本地短命 token）走本地旋转续签
    */
   async refreshToken(
     refreshToken: string,
     deviceId: string,
   ): Promise<TokenPayload> {
+    // ── 本地短命 token（C'' 方案）：本地验签 + 旋转签发新 AT/RT 对 ──
+    if (refreshToken.startsWith('local-')) {
+      try {
+        const payload = await this.localToken.verifyRefreshToken(refreshToken);
+        const userId = Number(payload.sub);
+        if (!Number.isInteger(userId) || userId <= 0) {
+          throw new Error('refreshToken sub 无效');
+        }
+        // 重查用户拿最新角色/状态：RT 有效期 7 天，期间角色可能被改、账号可能被封
+        const user = await this.userRepo.findOne({
+          where: { id: userId },
+          relations: ['roles'],
+        });
+        if (!user || user.status !== USER_STATUS.ACTIVE) {
+          // 已封禁/删除用户不允许续签（本地 token 无外部吊销通道，这里是唯一闸口）
+          throw new Error('用户不存在或已禁用');
+        }
+        const roles = (user.roles || []).map((r) => r.name);
+        const pair = await this.localToken.signTokenPair(user.id, roles);
+        return {
+          accessToken: pair.accessToken,
+          refreshToken: pair.refreshToken,
+          expiresIn: pair.expiresIn,
+          deviceId,
+        };
+      } catch {
+        throw new UnauthorizedException('登录已过期，请重新登录');
+      }
+    }
+
     let tokenData;
     try {
       tokenData = await this.authService.refreshToken(
@@ -1039,6 +1120,27 @@ export class UserService {
       // 鉴权中心拒绝（refreshToken 已被吊销/过期/不存在）→ 统一转 401，
       // 让前端走"登录过期"流程，而不是暴露 500
       throw new UnauthorizedException('登录已过期，请重新登录');
+    }
+    // casdoor 模式：续签成功后复查封禁（审查纵深缺口：本地 token 路径有查、
+    // casdoor 路径没有）。Casdoor RT 的 sub 是内部 UUID，身份在新 AT 的 name(u<id>)。
+    if (this.casdoor.enabled) {
+      try {
+        const seg = tokenData.accessToken.split('.')[1];
+        const payload = JSON.parse(Buffer.from(seg, 'base64').toString('utf8'));
+        const m = /^u(\d+)$/.exec(String(payload.name || ''));
+        if (m) {
+          const u = await this.userRepo.findOne({
+            where: { id: Number(m[1]) },
+            select: ['id', 'status'],
+          });
+          if (u && u.status !== 'active') {
+            throw new UnauthorizedException('账号已被禁用');
+          }
+        }
+      } catch (e) {
+        if (e instanceof UnauthorizedException) throw e;
+        // 解析失败不阻塞续签（AuthGuard 每请求查 status 兜底）
+      }
     }
     return {
       accessToken: tokenData.accessToken,
@@ -1092,7 +1194,6 @@ export class UserService {
       userId,
       {
         nickname: user.nickname,
-        email: user.email,
         avatar: user.avatar,
         gender: user.gender,
         signature: user.signature,
@@ -1100,13 +1201,12 @@ export class UserService {
       },
       {
         nickname: data.nickname ?? user.nickname,
-        email: data.email ?? user.email,
         avatar: data.avatar ?? user.avatar,
         gender: data.gender ?? user.gender,
         signature: data.signature ?? user.signature,
         phone: data.phone ?? user.phone,
       },
-      ['nickname', 'email', 'avatar', 'gender', 'signature', 'phone'],
+      ['nickname', 'avatar', 'gender', 'signature', 'phone'],
       {
         // 自助修改：operator 就是用户自己
         operatorId: userId,
@@ -1196,13 +1296,29 @@ export class UserService {
   async resetPassword(id: number, newPassword: string) {
     const user = await this.userRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('用户不存在');
+    // casdoor 模式：Casdoor 是凭据真相源，先同步成功再落本地——
+    // 反过来（先本地后 best-effort 同步）失败时会出现"重置成功但旧密码仍有效"（审查 P0）
+    if (this.casdoor.enabled) {
+      const ok = await this.casdoor.updateCasdoorPassword(id, newPassword);
+      if (!ok) {
+        throw new BadRequestException(
+          '统一认证服务同步失败，密码未修改，请稍后重试（若持续失败，请在用户管理执行「同步到Casdoor」）',
+        );
+      }
+    }
     user.password = await bcrypt.hash(newPassword, 10);
     await this.userRepo.save(user);
-    // casdoor 模式：登录密码实际存在 Casdoor，本地改密后必须同步过去才生效。
-    // updateCasdoorPassword 是 best-effort（失败仅记日志），避免 Casdoor 抖动阻塞本地改密。
-    if (this.casdoor.enabled) {
-      await this.casdoor.updateCasdoorPassword(id, newPassword);
-    }
+    // 审计（审查双入口分叉：resetPassword 可经公开的验证码重置接口触达，
+    // 此前无任何痕迹；admin update 改密有审计，此处对齐）
+    this.auditLog
+      .log({
+        targetType: 'user',
+        targetId: id,
+        field: 'password',
+        note: '密码重置（admin/验证码重置共用）',
+        targetName: `${user.nickname || `用户#${id}`}(#${id})`,
+      })
+      .catch((e) => this.logger.warn('审计日志写入失败', e));
   }
 
   /**

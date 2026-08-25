@@ -479,8 +479,21 @@ export class PostService implements OnModuleInit {
       for (const post of posts) {
         allUrls.push(...this.extractImageUrls(post.coverImage, post.content));
       }
-      await this.deleteMediaByUrls([...new Set(allUrls)]);
-      await this.postRepo.delete(ids);
+      // 与单删同套清理（审查发现：批删曾跳过 interactions/entity_visibility，
+      // 硬删后留孤儿互动/授权数据）
+      await this.dataSource.transaction(async (manager) => {
+        await manager.delete(InteractionEntity, {
+          entityType: 'post',
+          entityId: In(ids),
+        });
+        for (const id of ids) {
+          await this.visibilityService.purgeEntity('post', id);
+        }
+        await manager.delete(PostEntity, ids);
+      });
+      await this.deleteMediaByUrls([...new Set(allUrls)]).catch((e) =>
+        this.logger.warn(`批量删除文章图片失败: ${e.message}`),
+      );
     } else {
       await this.postRepo.update({ id: In(ids) }, { deletedAt: new Date() });
     }

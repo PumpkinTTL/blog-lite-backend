@@ -266,13 +266,15 @@ export class CasdoorService implements OnModuleInit {
   }
 
   /**
-   * 改密同步：本地改密后（admin 重置 / 验证码重置）同步更新 Casdoor 密码。
-   * best-effort：失败仅记日志，不阻塞本地改密（用户可用 Casdoor 找回）。
+   * 改密同步：更新 Casdoor 侧密码。
+   * 返回是否成功——Casdoor 是凭据真相源，调用方（resetPassword/update）必须
+   * 在成功后才落本地库（审查 P0：曾因静默吞错导致"重置成功但旧密码仍有效"）。
+   * Casdoor 无此号返回 false（调用方提示走 sync-casdoor 补建）。
    */
   async updateCasdoorPassword(
     localUserId: number,
     newPassword: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       const { data: existing } = await firstValueFrom(
         this.httpService.get(
@@ -282,9 +284,9 @@ export class CasdoorService implements OnModuleInit {
       );
       if (!existing || existing.status === 'error' || !existing.data?.name) {
         this.logger.warn(
-          `Casdoor 用户不存在，跳过改密同步: ${this.casdoorName(localUserId)}`,
+          `Casdoor 用户不存在，改密同步未执行: ${this.casdoorName(localUserId)}`,
         );
-        return;
+        return false;
       }
       const body = { ...existing.data, password: newPassword };
       // 实测：update-user 必须在 URL 带 ?id=org/name 指明目标用户，
@@ -297,12 +299,15 @@ export class CasdoorService implements OnModuleInit {
         ),
       );
       if (data?.status !== 'ok') {
-        this.logger.warn(`Casdoor 改密同步失败: ${data?.msg || '未知原因'}`);
+        this.logger.error(`Casdoor 改密同步失败: ${data?.msg || '未知原因'}`);
+        return false;
       }
+      return true;
     } catch (e) {
-      this.logger.warn(
-        `Casdoor 改密同步异常（不阻塞本地改密）: ${e instanceof Error ? e.message : e}`,
+      this.logger.error(
+        `Casdoor 改密同步异常: ${e instanceof Error ? e.message : e}`,
       );
+      return false;
     }
   }
 
