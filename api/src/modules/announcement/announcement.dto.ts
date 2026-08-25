@@ -40,6 +40,7 @@ export class UpdateAnnouncementDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(65535)
   content?: string;
 
   @IsIn(['hidden', 'visible'])

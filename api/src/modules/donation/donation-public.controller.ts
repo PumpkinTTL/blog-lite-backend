@@ -9,6 +9,7 @@ import {
 import { DonationService } from './donation.service';
 import { PublicSubmitDonationDto } from './donation.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { RequireTurnstile } from '../../common/decorators/require-turnstile.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
 import { DONATION_STATUS } from '../../common/constants/status';
 import { SettingService } from '../setting/setting.service';
@@ -29,6 +30,7 @@ export class DonationPublicController {
 
   /** 前台自助提交捐赠登记 */
   @Public()
+  @RequireTurnstile()
   @Post('public/submit')
   async submit(@Body() dto: PublicSubmitDonationDto) {
     // 站点设置校验：donation.enabled 关闭时拒绝提交（前端已隐藏 UI，这里防绕过）

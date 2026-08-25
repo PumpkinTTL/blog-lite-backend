@@ -291,6 +291,9 @@ export class AiService {
             'Content-Type': 'application/json',
           },
           responseType: 'stream',
+          // 审查P1：流式请求曾无超时（连接挂起即永久占用）。
+          // timeout 只约束"拿到响应头"，SSE 流本身的空闲由上游/客户端断开兜底。
+          timeout: 300000,
         }),
       );
       return data;

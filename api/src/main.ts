@@ -76,6 +76,15 @@ async function bootstrap() {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  // 优雅停机（审查P1）：SIGTERM/SIGINT 触发 onModuleDestroy——
+
+
+  // request-log 缓冲刷盘、Redis/DB 连接清理依赖它
+
+
+  app.enableShutdownHooks();
+
+
   await app.listen(port);
 
   const url = await app.getUrl();

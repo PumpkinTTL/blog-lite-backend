@@ -34,6 +34,7 @@ export class CreateResourceDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   description?: string;
 
   @IsString()
@@ -47,6 +48,7 @@ export class CreateResourceDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(65535)
   content?: string;
 
   @IsArray()
@@ -106,6 +108,7 @@ export class UpdateResourceDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   description?: string;
 
   @IsString()
@@ -119,6 +122,7 @@ export class UpdateResourceDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(65535)
   content?: string;
 
   @IsArray()

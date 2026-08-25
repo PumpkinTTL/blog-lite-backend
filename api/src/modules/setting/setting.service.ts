@@ -45,7 +45,9 @@ export class SettingService {
     return this.loadPromise;
   }
 
-  /** 记录配置变更审计（value 变化时） */
+  /** 记录配置变更审计（value 变化时）。
+   *  审查P1：敏感 key 的明文曾直接进 audit_logs（并在 admin 前端回显），
+   *  绕过整套出口掩码。此处对敏感值统一记 [REDACTED]。 */
   private logChange(
     existing: SettingEntity,
     newValue: string,
@@ -53,13 +55,22 @@ export class SettingService {
   ) {
     if (!this.auditLog) return;
     if (existing.value === newValue) return;
+    const SENSITIVE = new Set([
+      'smtp.pass',
+      'ai.tavily_key',
+      'turnstile.secret_key',
+      'storage.r2.accounts',
+    ]);
+    const sensitive = SENSITIVE.has(existing.key);
+    const auditOld = sensitive ? '[REDACTED]' : existing.value;
+    const auditNew = sensitive ? '[REDACTED]' : newValue;
     this.auditLog
       .log({
         targetType: 'setting',
         targetId: existing.id,
         field: existing.key,
-        oldValue: existing.value,
-        newValue,
+        oldValue: auditOld,
+        newValue: auditNew,
         operatorId: operator?.id,
         operatorName: operator?.name,
         targetName: existing.key,

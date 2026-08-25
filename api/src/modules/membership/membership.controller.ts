@@ -9,7 +9,7 @@
   Query,
   ParseIntPipe,
   Req,
-} from '@nestjs/common';
+  Logger } from '@nestjs/common';
 import type { Request } from 'express';
 import { getClientIp } from '../../common/utils/get-client-ip';
 import { MembershipService } from './membership.service';
@@ -27,6 +27,8 @@ import { PlanService } from '../plan/plan.service';
 
 @Controller('membership')
 export class MembershipController {
+  private readonly logger = new Logger(MembershipController.name);
+
   constructor(
     private readonly memberService: MembershipService,
     private readonly codeService: CodeService,
@@ -188,17 +190,35 @@ export class MembershipController {
     }
 
     // 4. 开通会员 —— 时长优先激活码 metadata.days（可覆盖套餐），不传则用套餐默认
+    // 审查P1：useCode（独立事务）已扣减后 grant 若抛错（并发场景下降级拒绝等），
+    // 码已置 used 但会员没开——用户花钱买的码白烧。此处补偿回滚码的计数/状态。
     const codeDays = (code.metadata as any)?.days;
-    const membership = await this.memberService.grant({
-      userId,
-      planId,
-      ...(codeDays !== undefined && codeDays !== null
-        ? { days: Number(codeDays) }
-        : {}),
-      source: 'code',
-      sourceId: code.id,
-      note: `兑换码 ${code.code}`,
-    });
+    let membership;
+    try {
+      membership = await this.memberService.grant({
+        userId,
+        planId,
+        ...(codeDays !== undefined && codeDays !== null
+          ? { days: Number(codeDays) }
+          : {}),
+        source: 'code',
+        sourceId: code.id,
+        note: `兑换码 ${code.code}`,
+      });
+    } catch (grantErr) {
+      try {
+        await this.codeService.rollbackUse(code.id, userId);
+        this.logger.warn(
+          `兑换码 ${code.code} 开通失败已回滚使用记录（用户#${userId}）: ${grantErr instanceof Error ? grantErr.message : grantErr}`,
+        );
+      } catch (rollbackErr) {
+        // 回滚也失败：码被烧但未开通，记 error 留人工补偿凭据
+        this.logger.error(
+          `兑换码 ${code.code} 开通失败且回滚失败（需人工补偿 用户#${userId}）: ${rollbackErr instanceof Error ? rollbackErr.message : rollbackErr}`,
+        );
+      }
+      throw grantErr;
+    }
 
     return {
       success: true,

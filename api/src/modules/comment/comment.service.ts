@@ -43,6 +43,48 @@ export class CommentService {
   /**
    * 列出某实体的一级评论（已审核通过的，分页）
   /**
+   * 宿主实体可见性校验（审查P1：公开评论接口曾不校验目标文章——
+   * private/login 文章下的 approved 评论可被匿名读取，私密讨论旁路）。
+   * post：published 公开 / login 需登录 / private|draft 仅作者（admin 由
+   * controller 传 isAdmin 判定）。非 post 类型暂不限制。
+   */
+  async ensureEntityVisible(
+    entityType: string,
+    entityId: number,
+    user?: { id?: number; isAdmin?: boolean } | null,
+  ): Promise<void> {
+    if (entityType !== 'post') return;
+    const post = await this.postRepo.findOne({
+      where: { id: entityId },
+      select: ['id', 'status', 'deletedAt', 'authorId'],
+    } as any);
+    if (!post || post.deletedAt) {
+      throw new NotFoundException('文章不存在');
+    }
+    if (post.status === 'published') return;
+    if (post.status === 'login') {
+      if (!user?.id) throw new NotFoundException('文章不存在');
+      return;
+    }
+    // draft / private：作者本人或 admin
+    if (user && (user.isAdmin || user.id === post.authorId)) return;
+    throw new NotFoundException('文章不存在');
+  }
+
+  /** 回复列表的宿主校验：经 parent 评论定位 entityType/entityId 后复用校验 */
+  async ensureReplyParentVisible(
+    parentId: number,
+    user?: { id?: number; isAdmin?: boolean } | null,
+  ): Promise<void> {
+    const parent = await this.repo.findOne({
+      where: { id: parentId },
+      select: ['id', 'entityType', 'entityId'],
+    });
+    if (!parent) throw new NotFoundException('评论不存在');
+    await this.ensureEntityVisible(parent.entityType, parent.entityId, user);
+  }
+
+  /**
    * 列出某文章的一级评论（已审核通过的）
    * @param includeUser 是否带作者信息
    */

@@ -9,7 +9,7 @@ import {
   IsNumber,
   Min,
   ValidateIf,
-} from 'class-validator';
+  Max } from 'class-validator';
 
 /**
  * 优惠信息
@@ -120,6 +120,7 @@ export class BatchCreateCodeDto {
 
   @IsInt()
   @Min(1)
+  @Max(500)
   count: number;
 
   @IsInt()

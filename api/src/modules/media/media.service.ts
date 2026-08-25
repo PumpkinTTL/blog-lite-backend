@@ -194,6 +194,8 @@ export class MediaService {
     app?: string;
     folder?: string;
     note?: string;
+    /** 前台用户秒传限定本人记录；admin 不传（全库秒传） */
+    uploaderId?: number;
   }): Promise<
     | { alreadyExists: true; media: MediaEntity }
     | {
@@ -214,7 +216,10 @@ export class MediaService {
       );
     }
 
-    // 1. 秒传检查：前端带 hash 时先查（必须 storageType=oss + ossPlatform=cloudflare）
+    // 1. 秒传检查：前端带 hash 时先查（必须 storageType=oss + ossPlatform=cloudflare）。
+    //    uploaderId 限定（审查P1）：前台用户只能命中自己的记录——曾不限上传者，
+    //    任意用户对公网图片算 sha256 即可读出他人 media 记录并借 note 覆写。
+    //    admin 通道（不传 uploaderId）保持全库秒传。
     if (hash) {
       const qb = this.mediaRepo
         .createQueryBuilder('m')
@@ -223,6 +228,7 @@ export class MediaService {
         .andWhere('m.oss_platform = :ossPlatform', {
           ossPlatform: 'cloudflare',
         });
+      if (params.uploaderId) qb.andWhere('m.uploaderId = :uid', { uid: params.uploaderId });
       const existing = await qb.getOne();
       if (existing) {
         if (note && existing.note !== note) {
@@ -286,6 +292,14 @@ export class MediaService {
       throw new BadRequestException('文件大小超过 10MB 限制');
     }
 
+    // key 格式守卫（审查P0）：confirm 的 key 曾无任何绑定——任意登录用户传
+    // backup/*.sql.gz 等他人/系统对象 key，可借"校验失败删除"链路删光备份或
+    // 他人文件。这里强制 key 必须是本系统 generateFilename 的输出格式，
+    // 不匹配直接拒绝（HEAD 与 delete 均不执行，同时消除对象存在性探测面）。
+    if (!this.isUserMediaKey(key)) {
+      throw new BadRequestException('非法的文件标识');
+    }
+
     // 幂等：同 hash + cloudflare + 同一上传者已有记录直接返回。
     // 限定同 uploader：避免按已知 hash 枚举出他人 media 记录（含 uploaderId）。
     const existing = await this.mediaRepo.findOne({
@@ -308,11 +322,10 @@ export class MediaService {
     }
     // 大小校验：若 HEAD 拿到大小，必须与声明一致（防伪造）且不超上限
     if (head.size != null && head.size !== size) {
-      // 实际对象与声明不符（绕过 presign 声明的典型痕迹），删除防止占用公开桶
+      // 实际对象与声明不符（绕过 presign 声明的典型痕迹），删除防止占用公开桶。
+      // 错误不回显实际 size（对象大小探测 oracle，审查P1）
       await provider.delete(key).catch(() => {});
-      throw new BadRequestException(
-        `文件大小不一致：声明 ${size} 字节，实际 ${head.size} 字节`,
-      );
+      throw new BadRequestException('文件大小校验不一致，请重新上传');
     }
     if (head.size != null && head.size > MediaService.USER_UPLOAD_MAX_BYTES) {
       await provider.delete(key).catch(() => {});
@@ -422,6 +435,20 @@ export class MediaService {
     if (folder) parts.push(folder);
     const prefix = parts.length ? parts.join('/') + '/' : '';
     return `${prefix}${Date.now()}-${randomUUID()}${ext}`;
+  }
+
+  /** confirm 的 key 合法性校验：仅接受本系统生成的媒体对象 key（时间戳-UUID 文件名） */
+  private isUserMediaKey(key: string): boolean {
+    if (!key || key.length > 256 || key.includes('..')) return false;
+    const segs = key.split('/');
+    if (segs.length < 1) return false;
+    // 路径段：字母数字/下划线/连字符，1-64 字符（不允许空段）
+    for (const seg of segs.slice(0, -1)) {
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(seg)) return false;
+    }
+    // 末段文件名：<13位毫秒时间戳>-<UUID>[.扩展名]（与 generateFilename 一致）
+    const file = segs[segs.length - 1];
+    return /^\d{13}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\.[a-zA-Z0-9]{1,8})?$/.test(file);
   }
 
   private computeHash(buffer: Buffer): string {

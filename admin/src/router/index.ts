@@ -197,6 +197,26 @@ router.beforeEach((to) => {
   if (to.path === '/login' && token) {
     return '/dashboard'
   }
+  // 角色校验（审查P1）：后端 @Roles 已兜底（非 admin 全 403），这里避免普通
+  // 用户登录后看到整套管理 UI 菜单产生困惑/结构暴露。userInfo 由登录时存入。
+  if (to.meta.requiresAuth !== false && token) {
+    try {
+      const raw = localStorage.getItem('userInfo') || sessionStorage.getItem('userInfo')
+      if (raw) {
+        const info = JSON.parse(raw)
+        const roles = (info?.roles || []).map((r: any) => r?.iden || r?.name || r)
+        const isAdmin = roles.includes('admin')
+        if (!isAdmin) {
+          // 非 admin：清登录态避免循环，回登录页提示
+          localStorage.removeItem('accessToken'); sessionStorage.removeItem('accessToken')
+          localStorage.removeItem('userInfo'); sessionStorage.removeItem('userInfo')
+          return { path: '/login', query: { reason: 'forbidden' } }
+        }
+      }
+    } catch {
+      // userInfo 解析失败不阻断（后端 403 兜底）
+    }
+  }
 })
 
 export default router

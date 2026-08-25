@@ -24,6 +24,7 @@ const SENSITIVE_DEFAULTS: RateRuleMeta[] = [
   { routeKey: 'UserController.register', label: '注册', limit: 5, ttl: 60000 },
   { routeKey: 'UserController.clientLogin', label: '客户端登录', limit: 5, ttl: 60000 },
   { routeKey: 'UserController.sendLoginCode', label: '发送登录验证码', limit: 3, ttl: 60000 },
+  { routeKey: 'UserController.sendRegisterCode', label: '发送注册验证码', limit: 3, ttl: 60000 },
   { routeKey: 'UserController.loginByCode', label: '验证码登录', limit: 5, ttl: 60000 },
   { routeKey: 'CodeController.verify', label: '兑换码校验', limit: 10, ttl: 60000 },
   { routeKey: 'UserController.sendResetCode', label: '发送重置密码验证码', limit: 3, ttl: 3600000 },

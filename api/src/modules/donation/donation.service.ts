@@ -174,10 +174,8 @@ export class DonationService {
         donationId,
       };
       if (claimedUserId) metadata.claimedUserId = claimedUserId;
-      await this.codeService.update(opts.codeId, {
-        metadata,
-        assignedDonationId: donationId,
-      });
+      // 审查P1：曾用读-判-写（并发双发同一码给两个捐赠者）。改条件 UPDATE 原子分配
+      await this.codeService.assignToDonation(opts.codeId, donationId, metadata);
       // 反向回写 donation
       donation.rewardCodeId = code.id;
       await this.repo.save(donation);

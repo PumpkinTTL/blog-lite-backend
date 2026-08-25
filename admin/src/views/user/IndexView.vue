@@ -120,7 +120,7 @@ async function handleAvatarChange(data: { file: any; fileList: any[] }) {
     const uid = editingId.value ? `#${editingId.value} ` : ''
     // R2 走前端直传（带真实进度），绕过后端中转 + 10s 超时
     const { url } = await uploadToR2Direct(rawFile, {
-      app: 'vibehub',
+      app: 'admin',
       folder: 'avatar',
       note: `${uid}${name} 头像`,
       onProgress: (p) => { avatarProgress.value = p.percent },
@@ -201,7 +201,6 @@ async function handleSyncCasdoor() {
     const res: any = await syncCasdoor()
     const d = res?.data || {}
     message.success(`同步完成：补建 ${d.created ?? 0}，对齐 ${d.updated ?? 0}，失败 ${d.failed?.length ?? 0}`)
-    if (d.failed?.length) console.warn('同步失败明细:', d.failed)
     _handleSearch()
   } catch (e: any) {
     message.error(e?.message || '同步失败')

@@ -125,6 +125,64 @@ export class CodeService {
   /**
    * 使用码（事务更新 usedCount 和插入使用记录）
    */
+  /**
+   * 分配答谢码给捐赠单（审查P1：原读-判-写在并发下双发同一码）。
+   * 条件 UPDATE 原子化：仅当码未被其他捐赠单占用时才分配，affected=0 即竞争失败。
+   */
+  async assignToDonation(
+    codeId: number,
+    donationId: number,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    const result = await this.codeRepo
+      .createQueryBuilder()
+      .update(CodeEntity)
+      .set({ assignedDonationId: donationId, metadata: metadata as any })
+      .where('id = :codeId', { codeId })
+      .andWhere(
+        '(assignedDonationId IS NULL OR assignedDonationId = :donationId)',
+        { donationId },
+      )
+      .execute();
+    if (result.affected === 0) {
+      throw new BadRequestException('该激活码刚被分配给其他捐赠单，请刷新后重试');
+    }
+  }
+
+  /**
+   * 回滚一次使用（审查P1 补偿路径）：useCode 已扣减但业务侧（如开通会员）
+   * 失败时调用——恢复 usedCount/状态并删除该次使用记录，事务内原子。
+   */
+  async rollbackUse(codeId: number, userId: number | null): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const codeEntity = await manager.findOne(CodeEntity, {
+        where: { id: codeId },
+      });
+      if (!codeEntity) return;
+      // 删该用户的最近一条使用记录（幂等：没有记录则跳过）
+      if (userId !== null) {
+        await manager.delete(CodeUsageLogEntity, { codeId, userId });
+      }
+      // 恢复计数与状态（只在还有扣减痕迹时回退，防多退）
+      if (codeEntity.usedCount > 0) {
+        await manager
+          .createQueryBuilder(CodeEntity, 'c')
+          .update()
+          .set({
+            usedCount: () => 'usedCount - 1',
+            status: () =>
+              codeEntity.maxUses > 0 && codeEntity.usedCount <= codeEntity.maxUses
+                ? `'active'`
+                : 'status',
+          })
+          .where('id = :id', { id: codeId })
+          .andWhere('usedCount > 0')
+          .execute();
+      }
+      this.logger.warn(`回滚使用：码#${codeId} 用户#${userId}`);
+    });
+  }
+
   async useCode(
     codeValue: string,
     userId: number | null,

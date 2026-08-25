@@ -97,6 +97,16 @@ import { ScheduleModule } from '@nestjs/schedule';
 
         return {
           pinoHttp: {
+            // 审查P0：默认 std serializer 会把完整 req.headers（含 Bearer token/cookie）
+            // 写进每条请求日志。显式 redact 掉敏感头。
+            redact: {
+              paths: [
+                'req.headers.authorization',
+                'req.headers.cookie',
+                'res.headers["set-cookie"]',
+              ],
+              censor: '[REDACTED]',
+            },
             level:
               configService.get('LOG_LEVEL') ??
               (isProduction ? 'info' : 'debug'),
@@ -105,8 +115,9 @@ import { ScheduleModule } from '@nestjs/schedule';
             // 保证日志 reqId、响应头 X-Request-Id、响应体 requestId 三者一致，
             // 用户上报任一个都能 grep 到对应日志。
             genReqId: (req: any) => {
+              // 仅接受 UUID/十六进制格式（防伪造任意内容污染日志关联与 request_logs 表）
               const incoming = req.headers['x-request-id'];
-              if (typeof incoming === 'string' && incoming.length > 0 && incoming.length <= 128) {
+              if (typeof incoming === 'string' && /^[0-9a-fA-F-]{8,64}$/.test(incoming)) {
                 return incoming;
               }
               return crypto.randomUUID();

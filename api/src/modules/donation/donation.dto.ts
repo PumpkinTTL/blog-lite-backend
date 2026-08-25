@@ -76,7 +76,7 @@ export class CreateDonationDto {
   @MaxLength(100)
   tradeNo?: string;
 
-  @IsIn([0, 1, 2])
+  @IsIn(['pending', 'confirmed', 'refunded'])
   @IsOptional()
   status?: DonationStatus;
 
@@ -201,7 +201,7 @@ export class UpdateDonationDto {
   @MaxLength(100)
   tradeNo?: string;
 
-  @IsIn([0, 1, 2])
+  @IsIn(['pending', 'confirmed', 'refunded'])
   @IsOptional()
   status?: DonationStatus;
 

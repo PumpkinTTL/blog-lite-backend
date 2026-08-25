@@ -13,6 +13,7 @@ import { access } from 'node:fs/promises';
 import { BackupLogEntity } from './backup-log.entity';
 import { StorageProvider } from '../media/storage.provider';
 import { SettingService } from '../setting/setting.service';
+import { randomUUID } from 'crypto';
 
 const execFileAsync = promisify(execFile);
 const gzipAsync = promisify(gzip);
@@ -116,7 +117,8 @@ export class BackupService {
       const gzBuffer = await gzipAsync(sqlBuffer);
       // 3. 上传 R2
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const r2Key = `backup/${timestamp}_${saved.trigger}.sql.gz`;
+      // 审查P0：key 曾是纯时间戳可预测（枚举下载备份）。加随机 UUID 段。
+      const r2Key = `backup/${timestamp}_${saved.trigger}_${randomUUID()}.sql.gz`;
       const provider = await this.createR2Provider();
       const uploadSize = gzBuffer.length;
       await provider.upload(gzBuffer, r2Key, 'application/gzip');
@@ -238,6 +240,10 @@ export class BackupService {
       '--quick', // 大表流式输出，不占内存
       '--routines', // 导出存储过程/函数
       '--triggers',
+      // 审查P0：settings 表存 R2/SMTP/Turnstile/AI 明文密钥，且备份对象可能
+      // 位于配了 publicDomain 的桶（公网可读）。密钥不进备份——恢复时用
+      // 系统设置面板/.env 重建 settings。
+      `--ignore-table=${cfg.database}.settings`,
       '-h', cfg.host,
       '-P', String(cfg.port),
       '-u', cfg.user,

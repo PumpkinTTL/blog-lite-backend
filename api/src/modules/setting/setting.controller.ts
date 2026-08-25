@@ -227,13 +227,14 @@ export class SettingController {
   @Post()
   async create(@Body() dto: CreateSettingDto, @Req() req: Request) {
     const data = await this.service.create(dto, getOperator(req));
-    return { success: true, data, message: '创建成功' };
+    // 出口掩码（审查P1：新建敏感 key 曾原值回显）
+    return { success: true, data: maskSettingItem(data), message: '创建成功' };
   }
 
   @Put('batch')
   async batchUpdate(@Body() dto: BatchUpdateSettingDto, @Req() req: Request) {
     const data = await this.service.batchUpdate(dto.items, getOperator(req));
-    return { success: true, data, message: '更新成功' };
+    return { success: true, data: (data as any[]).map(maskSettingItem), message: '更新成功' };
   }
 
   @Put(':id')

@@ -206,10 +206,22 @@ export class PostService implements OnModuleInit {
     if (publicOnly) {
       where.status = POST_STATUS.PUBLISHED;
     }
-    const post = await this.postRepo.findOne({
-      where,
-      relations: ['author', 'category', 'tags'],
-    });
+    // 审查P0：详情曾用 relations:['author'] 加载完整作者实体（email/phone/
+    // registerIp/bannedUntil 等全泄给匿名）。与列表一致改为白名单三列。
+    const qb = this.postRepo
+      .createQueryBuilder('p')
+      .where('p.id = :id', { id })
+      .andWhere('p.deletedAt IS NULL');
+    if (publicOnly) {
+      // 匿名仅已发布（原 findOne 的 where.status 语义，重写时保留）
+      qb.andWhere('p.status = :published', { published: POST_STATUS.PUBLISHED });
+    }
+    const post = await qb
+      .leftJoin('p.author', 'author')
+      .addSelect(['author.id', 'author.nickname', 'author.avatar'])
+      .leftJoinAndSelect('p.category', 'category')
+      .leftJoinAndSelect('p.tags', 'tags')
+      .getOne();
     // 软删的文章（deletedAt != null）对所有人不可见（包括详情接口）。
     // 之前 findById 没过滤 deletedAt，软删的文章仍可通过 /post/:id 访问到完整内容。
     if (post && post.deletedAt) {

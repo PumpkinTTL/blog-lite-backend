@@ -46,6 +46,7 @@ export class CommentController {
     @Query('entityId') entityId: string,
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '20',
+    @Req() req: any,
   ) {
     if (!entityType || !entityId) {
       throw new BadRequestException('entityType/entityId 必填');
@@ -54,6 +55,12 @@ export class CommentController {
     if (!Number.isFinite(eid) || eid <= 0) {
       throw new BadRequestException('entityId 必须是正整数');
     }
+    // 宿主可见性校验（@Public 下 AuthGuard 对带 token 请求仍会挂 req.user）
+    const u = req?.user;
+    await this.service.ensureEntityVisible(entityType, eid, {
+      id: u ? Number(u.sub) : undefined,
+      isAdmin: !!(u?.roles || []).includes('admin'),
+    });
     const { list, total } = await this.service.listTopLevel(
       entityType,
       eid,
@@ -68,7 +75,13 @@ export class CommentController {
    */
   @Public()
   @Get(':id/replies')
-  async replies(@Param('id', ParseIntPipe) id: number) {
+  async replies(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    // 同 list：回复的宿主文章也需可见性校验（借 parent 评论定位宿主）
+    const u = req?.user;
+    await this.service.ensureReplyParentVisible(id, {
+      id: u ? Number(u.sub) : undefined,
+      isAdmin: !!(u?.roles || []).includes('admin'),
+    });
     const list = await this.service.listReplies(id);
     return { success: true, data: list, message: 'ok' };
   }

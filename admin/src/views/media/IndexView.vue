@@ -168,7 +168,7 @@ async function handleUpload({ file }: { file: UploadFileInfo }) {
     if (storageChannel.value === 'r2') {
       // R2 走前端直传（带真实进度，绕过后端 10s 超时）
       await uploadToR2Direct(file.file, {
-        app: 'vibehub', folder: 'media', note: file.file.name,
+        app: 'admin', folder: 'media', note: file.file.name,
         onProgress: (p) => { uploadProgress.value = p.percent },
       })
     } else {
@@ -176,7 +176,7 @@ async function handleUpload({ file }: { file: UploadFileInfo }) {
       await uploadMedia(file.file, {
         storageType: storageChannel.value === 'oss' ? 'oss' : 'local',
         ossPlatform: storageChannel.value === 'oss' ? uploadOssPlatform.value : null,
-        app: 'vibehub', folder: 'media', note: file.file.name,
+        app: 'admin', folder: 'media', note: file.file.name,
       })
     }
     message.success('上传成功')

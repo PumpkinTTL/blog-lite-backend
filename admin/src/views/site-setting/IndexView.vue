@@ -49,6 +49,7 @@ const form = reactive({
   walletAddressesText: '', // JSON 文本
   // 注册
   registrationEnabled: true,
+  registrationRequireInvitation: true,
   registrationEmailWhitelist: '',
   // 维护模式
   maintenanceEnabled: false,
@@ -215,6 +216,7 @@ function applyItems(items: { key: string; value: string }[]) {
   form.donationEnabled = toBool(get('donation.enabled', 'true'))
   form.donationUsdtRate = Number(get('donation.usdt_rate', '7')) || 7
   form.registrationEnabled = toBool(get('registration.enabled', 'true'))
+  form.registrationRequireInvitation = toBool(get('registration.require_invitation', 'true'))
   form.registrationEmailWhitelist = get('registration.email_whitelist')
   form.maintenanceEnabled = toBool(get('maintenance.enabled', 'false'))
   form.commentsEnabled = toBool(get('comments.enabled', 'true'))
@@ -278,6 +280,7 @@ function buildItems(): Record<string, string> | null {
     'donation.enabled': String(form.donationEnabled),
     'donation.usdt_rate': String(form.donationUsdtRate),
     'registration.enabled': String(form.registrationEnabled),
+    'registration.require_invitation': String(form.registrationRequireInvitation),
     'registration.email_whitelist': form.registrationEmailWhitelist,
     'maintenance.enabled': String(form.maintenanceEnabled),
     'comments.enabled': String(form.commentsEnabled),

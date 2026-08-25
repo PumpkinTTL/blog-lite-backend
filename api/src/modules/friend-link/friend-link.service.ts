@@ -17,9 +17,14 @@ export class FriendLinkService {
     pageSize = 20,
     filters?: { id?: number; keyword?: string; status?: string; category?: string },
   ) {
+    // 审查P1：曾 leftJoinAndSelect 整篇 post（draft/private 的全文 content/status
+    // 泄给匿名）。仅取展示所需的 id/title/slug，且仅已发布未删的。
     const qb = this.repo
       .createQueryBuilder('e')
-      .leftJoinAndSelect('e.post', 'post');
+      .leftJoin('e.post', 'post')
+      .addSelect(['post.id', 'post.title', 'post.slug'])
+      .andWhere('(post.id IS NULL OR (post.status = :published AND post.deletedAt IS NULL))')
+      .setParameter('published', 'published');
     applyFilters(qb, {
       exact: { 'e.id': filters?.id, 'e.status': filters?.status, 'e.category': filters?.category },
       like: { keyword: filters?.keyword, fields: ['e.name'] },
