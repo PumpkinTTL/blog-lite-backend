@@ -186,6 +186,8 @@ export class BackupScheduleService implements OnModuleInit {
   private registerJob(cfg: BackupScheduleConfig): void {
     if (!cfg.enabled) return;
     const cron = this.toCronExpression(cfg);
+    // 时区固定 Asia/Shanghai：cron 默认取服务器本地时区，生产机为 UTC 时
+    // "每天 3:00"实际是北京上午 11 点执行（与 DB 连接层 +08:00 的假设错位）
     const job = new CronJob(cron, async () => {
       // 重叠保护：BackupService 内部持有"真正执行期"的锁（runBackup 撞锁会抛
       // ConflictException），这里先查忙再调，只为了日志友好——真正的防线在
@@ -201,7 +203,7 @@ export class BackupScheduleService implements OnModuleInit {
       // retainDays 透传：executeBackup 成功分支内清理（返回值 status 恒为 running，
       // 在这里判 success 是死代码，清理从未执行过——已修）
       await this.backupService.runBackup('schedule', cfg.name, cfg.retainDays);
-    });
+    }, null, false, 'Asia/Shanghai');
     this.schedulerRegistry.addCronJob(this.jobName(cfg.id), job as any);
     job.start();
     this.logger.log(`注册 cron job「${cfg.name}」: ${cron}`);
@@ -223,7 +225,7 @@ export class BackupScheduleService implements OnModuleInit {
     if (!cfg || !cfg.enabled) return null;
     try {
       const cron = this.toCronExpression(cfg);
-      const temp = new CronJob(cron, () => {});
+      const temp = new CronJob(cron, () => {}, null, false, 'Asia/Shanghai');
       return temp.nextDate().toJSDate();
     } catch {
       return null;

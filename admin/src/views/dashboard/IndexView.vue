@@ -223,8 +223,8 @@ onBeforeUnmount(() => {
               v-for="u in stats.recentUsers.slice(0, 5)" :key="u.id"
               class="list-item"
             >
-              <n-avatar :size="24" round class="user-av">{{ (u.nickname).charAt(0).toUpperCase() }}</n-avatar>
-              <span class="list-title">{{ u.nickname }}</span>
+              <n-avatar :size="24" round class="user-av">{{ (u.nickname || '?').charAt(0).toUpperCase() }}</n-avatar>
+              <span class="list-title">{{ u.nickname || '-' }}</span>
               <span class="list-meta">{{ ago(u.createdAt) }}</span>
             </div>
           </n-card>

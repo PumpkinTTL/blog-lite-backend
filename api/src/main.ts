@@ -24,25 +24,12 @@ process.on('uncaughtException', (err) => {
 });
 
 async function bootstrap() {
-  // 生产配置 fail-fast：NODE_ENV=production 且 DB_SYNCHRONIZE=true 时拒绝启动。
-  // 防误拷开发 .env / 配置漂移导致 TypeORM 对生产库自动执行全量 DDL（删列/改类型无确认）。
-  // 先手动加载 .env（ConfigModule 还没跑；不覆盖真实环境变量，容器注入优先）
-  require('dotenv').config();
-  if (
-    process.env.NODE_ENV === 'production' &&
-    process.env.DB_SYNCHRONIZE === 'true'
-  ) {
-    bootstrapLogger.error(
-      '启动中止：NODE_ENV=production 时禁止 DB_SYNCHRONIZE=true（TypeORM 会对生产库自动执行 schema DDL）。请改用 migration。',
-    );
-    process.exit(1);
-  }
-
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('PORT', 5100);
+  // 默认端口与全链路约定（nginx/vite proxy/文档）对齐 5200，漏配 PORT 时不再落到 5100 造成 502
+  const port = configService.get<number>('PORT', 5200);
 
   // 信任反向代理：nginx/CDN 后必须设置，否则 req.ip 恒为代理内网地址（如 127.0.0.1），
   // 导致限流/黑名单的 IP 维度全员串号、审计 IP 失真。

@@ -139,7 +139,19 @@ import { ScheduleModule } from '@nestjs/schedule';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => {
+        // 生产配置 fail-fast（在 TypeORM 初始化前拦截，env 已由 ConfigModule/systemd 加载）：
+        // NODE_ENV=production 且 DB_SYNCHRONIZE=true 时拒绝启动。防误拷开发 .env /
+        // 配置漂移导致 TypeORM 对生产库自动执行全量 schema DDL（删列/改类型无确认）。
+        if (
+          configService.get('NODE_ENV') === 'production' &&
+          configService.get('DB_SYNCHRONIZE') === 'true'
+        ) {
+          throw new Error(
+            '启动中止：NODE_ENV=production 时禁止 DB_SYNCHRONIZE=true（TypeORM 会对生产库自动执行 schema DDL）。请改用 schema 基线 + 手工变更。',
+          );
+        }
+        return {
         type: 'mysql',
         host: configService.getOrThrow<string>('DB_HOST'),
         port: configService.get<number>('DB_PORT', 3306),
@@ -167,7 +179,8 @@ import { ScheduleModule } from '@nestjs/schedule';
           waitForConnections: true,
           connectTimeout: 10000,
         },
-      }),
+        };
+      },
     }),
     // Redis（限流计数，全局共享 ioredis 实例）
     RedisModule,

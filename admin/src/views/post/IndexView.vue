@@ -72,7 +72,7 @@ const columns: DataTableColumns<Post> = [
     width: 110,
     render: (row) =>
       row.category?.name
-        ? h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => row.category.name })
+        ? h(NTag, { size: 'small', type: 'info', bordered: false }, { default: () => row.category!.name })
         : h('span', { style: 'color:#bbb' }, '-'),
   },
   {

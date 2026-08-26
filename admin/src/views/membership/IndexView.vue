@@ -49,8 +49,10 @@ const planForm = ref({
 
 // 角色组列表（用于套餐绑定角色下拉）
 const roles = ref<Role[]>([])
-const roleOptions = computed(() => [
-  { label: '不绑定角色', value: null },
+// value: null 表示"不绑定"——显式标注联合类型，避免 TS 推断的 {value:null} 不满足
+// naive-ui SelectMixedOption（其 value 不接受 null，用 undefined 语义等同）
+const roleOptions = computed<{ label: string; value: number | undefined }[]>(() => [
+  { label: '不绑定角色', value: undefined },
   ...roles.value.map((r) => ({ label: `${r.displayName}（${r.name}）`, value: r.id })),
 ])
 

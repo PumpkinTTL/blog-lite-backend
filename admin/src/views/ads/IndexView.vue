@@ -97,10 +97,6 @@ function handleReset() {
   _handleReset()
 }
 
-async function handleSave() {
-  return _handleSave(() => formRef.value?.validate())
-}
-
 function handlePageChange(p: number) {
   page.value = p
   _handleSearch()

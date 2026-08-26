@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import {
-  NCard, NForm, NFormItem, NInput, NInputNumber, NSwitch,
-  NButton, NSpace, NSpin, NGrid, NGridItem, NTabs, NTabPane, NTag, useMessage,
+  NCard, NInput, NInputNumber, NSwitch,
+  NButton, NSpace, NSpin, NTabs, NTabPane, NTag, useMessage,
 } from 'naive-ui'
 import { getSiteSettings, saveSiteSettings, testR2Connection, getEffectiveConfig, testSmtp } from '../../api/site-setting'
 import type { EffectiveConfig } from '../../api/site-setting'
@@ -64,9 +64,10 @@ const form = reactive({
   // R2 存储多账号（storage.r2.accounts）
   r2Accounts: [] as R2AccountForm[],
   r2ActiveId: '',
-  // SMTP 邮件（smtp.*）
+  // SMTP 邮件（smtp.*）—— smtpPort 用 string：n-input 的 value 只收 string，
+  // 保存时 String() 归一（294 行），赋值处 get() 也是 string
   smtpHost: '',
-  smtpPort: '' as string | number,
+  smtpPort: '',
   smtpUser: '',
   smtpPass: '',
   smtpFrom: '',
