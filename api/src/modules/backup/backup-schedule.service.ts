@@ -24,7 +24,6 @@ export class BackupScheduleService implements OnModuleInit {
   /** 内存缓存：id → 配置（避免每次都查库） */
   private configs = new Map<string, BackupScheduleConfig>();
   /** 定时备份执行中标记（跨所有定时器互斥，防重叠） */
-  private running = false;
 
   constructor(
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -188,23 +187,20 @@ export class BackupScheduleService implements OnModuleInit {
     if (!cfg.enabled) return;
     const cron = this.toCronExpression(cfg);
     const job = new CronJob(cron, async () => {
-      // 重叠保护：上一次备份还没跑完（如整库 dump 慢于 interval 周期）时跳过本轮，
-      // 否则多个 mysqldump 并发叠加会打爆内存（备份在内存里聚合）。
-      if (this.running) {
+      // 重叠保护：BackupService 内部持有"真正执行期"的锁（runBackup 撞锁会抛
+      // ConflictException），这里先查忙再调，只为了日志友好——真正的防线在
+      // BackupService（此前这把 this.running 假锁在 fire-and-forget 返回后毫秒级
+      // 复位，形同虚设，手动触发更是完全不经过这里）。
+      if (this.backupService.isBusy()) {
         this.logger.warn(
           `定时器「${cfg.name}」触发时上一轮备份仍在执行，本轮跳过`,
         );
         return;
       }
-      this.running = true;
-      try {
-        this.logger.log(`定时器「${cfg.name}」触发备份`);
-        // retainDays 透传：executeBackup 成功分支内清理（返回值 status 恒为 running，
-        // 在这里判 success 是死代码，清理从未执行过——已修）
-        await this.backupService.runBackup('schedule', cfg.name, cfg.retainDays);
-      } finally {
-        this.running = false;
-      }
+      this.logger.log(`定时器「${cfg.name}」触发备份`);
+      // retainDays 透传：executeBackup 成功分支内清理（返回值 status 恒为 running，
+      // 在这里判 success 是死代码，清理从未执行过——已修）
+      await this.backupService.runBackup('schedule', cfg.name, cfg.retainDays);
     });
     this.schedulerRegistry.addCronJob(this.jobName(cfg.id), job as any);
     job.start();

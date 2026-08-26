@@ -17,6 +17,8 @@ export interface RequestLogEntry {
 
 /** 批量刷盘阈值：buffer 满此数立即落库 */
 const FLUSH_BATCH = 100;
+/** 缓冲硬上限（DB 故障期间防无界内存增长；日志可损，超限丢最旧） */
+const MAX_BUFFER = 50_000;
 /** 定时刷盘间隔：即使没攒满也定时落库（ms） */
 const FLUSH_INTERVAL_MS = 10_000;
 
@@ -54,6 +56,15 @@ export class RequestLogService implements OnModuleDestroy {
    * 由请求日志中间件在 res.on('finish') 时调用。
    */
   log(entry: RequestLogEntry): void {
+    // 硬上限保护：DB 长时间故障时 flush 失败的数据会 unshift 回缓冲且无界增长
+    // （高流量站点几十分钟可吃掉数 GB 内存）。日志是可损数据，超限丢弃最旧的。
+    if (this.buffer.length >= MAX_BUFFER) {
+      const dropped = this.buffer.length - MAX_BUFFER + 1;
+      this.buffer.splice(0, dropped);
+      this.logger.warn(
+        `请求日志缓冲已达上限 ${MAX_BUFFER}，丢弃最旧 ${dropped} 条（DB 落库持续失败？）`,
+      );
+    }
     this.buffer.push(this.repo.create(entry));
     if (this.buffer.length >= FLUSH_BATCH) {
       // 攒满立即刷（异步，不阻塞当前请求）

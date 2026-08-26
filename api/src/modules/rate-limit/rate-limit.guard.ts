@@ -77,6 +77,9 @@ export class RateLimitGuard implements CanActivate {
             this.logger.warn(`自动拉黑失败（不影响限流）: ${(e as Error).message}`);
           });
         }
+        // Retry-After：告知客户端当前固定窗口还剩多久（此前缺失，前端只能盲等）
+        const response = context.switchToHttp().getResponse();
+        response?.setHeader?.('Retry-After', String(windowSec));
         throw new HttpException(
           {
             success: false,

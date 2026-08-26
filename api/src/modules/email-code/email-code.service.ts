@@ -1,4 +1,4 @@
-import { Inject, Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException, ServiceUnavailableException, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { MailerService } from '../mailer/mailer.service';
@@ -39,13 +39,21 @@ export class EmailCodeService {
   async sendCode(email: string): Promise<void> {
     // 冷却检查：SET NX PX 原子，ok=null 表示仍在冷却
     const cooldownKey = this.COOLDOWN_PREFIX + email;
-    const ok = await this.redis.set(
-      cooldownKey,
-      '1',
-      'PX',
-      this.SEND_COOLDOWN,
-      'NX',
-    );
+    let ok: string | null;
+    try {
+      ok = await this.redis.set(
+        cooldownKey,
+        '1',
+        'PX',
+        this.SEND_COOLDOWN,
+        'NX',
+      );
+    } catch (e) {
+      // Redis 故障：验证码全链路依赖 Redis（存储/计数），无法降级，
+      // 明确报 503 而非让 ioredis 原生错误冒成 500（登录/注册/找回同时不可用时排障需要语义）
+      this.logger.error(`Redis 不可用，验证码发送失败: ${(e as Error).message}`);
+      throw new ServiceUnavailableException('验证码服务暂时不可用，请稍后重试');
+    }
     if (!ok) {
       const ttl = await this.redis.pttl(cooldownKey);
       const wait = Math.ceil((ttl || this.SEND_COOLDOWN) / 1000);

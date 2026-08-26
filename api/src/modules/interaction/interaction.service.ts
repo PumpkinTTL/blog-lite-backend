@@ -30,14 +30,17 @@ export class InteractionService {
    * 切换互动：已存在 → 删除（取消）；不存在 → 创建。
    * 原子化实现：先 DELETE，affected=1 表示已取消；否则 INSERT（catch unique 冲突视为已点赞）。
    * 解决旧的 findOne→save 并发双击点赞触发 unique 约束抛错的问题。
-   * @returns { active: boolean } active=true 表示新增，false 表示已取消
+   * @returns { active, mutated } active=当前是否处于互动态；
+   *   mutated=本次请求是否真的改变了互动表——并发下唯一键冲突的输家 active=true
+   *   但 mutated=false，计数方（controller）只应在 mutated 时增减冗余计数，
+   *   否则双击点赞会 likeCount+2 而关联表只有 1 行（永久虚高，无自愈）。
    */
   async toggle(
     userId: number,
     entityType: InteractionEntityType,
     entityId: number,
     type: InteractionType,
-  ): Promise<{ active: boolean }> {
+  ): Promise<{ active: boolean; mutated: boolean }> {
     if (!entityType || !entityId || !type) {
       throw new BadRequestException('无效的互动参数');
     }
@@ -50,17 +53,17 @@ export class InteractionService {
       type,
     });
     if (del.affected && del.affected > 0) {
-      return { active: false };
+      return { active: false, mutated: true };
     }
 
     // 不存在 → INSERT。并发下唯一一个赢，另一个走 catch。
     try {
       await this.repo.insert({ userId, entityType, entityId, type });
-      return { active: true };
+      return { active: true, mutated: true };
     } catch (e: any) {
-      // ER_DUP_ENTRY：别人抢先 INSERT 了，本次视为已点赞（幂等）
+      // ER_DUP_ENTRY：并发赢家已插入并已计数，本次是幂等重放，不再计数
       if (e?.code === 'ER_DUP_ENTRY') {
-        return { active: true };
+        return { active: true, mutated: false };
       }
       throw e;
     }

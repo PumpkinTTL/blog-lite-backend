@@ -11,6 +11,9 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
+import { PostEntity } from '../post/post.entity';
 import { InteractionService } from './interaction.service';
 import { ToggleInteractionDto, BatchCountDto, BatchDeleteDto } from './interaction.dto';
 import { Public } from '../../common/decorators/public.decorator';
@@ -24,7 +27,10 @@ import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
  */
 @Controller('interaction')
 export class InteractionController {
-  constructor(private readonly service: InteractionService) {}
+  constructor(
+    private readonly service: InteractionService,
+    @InjectDataSource() private readonly dataSource: DataSource,
+  ) {}
 
   /**
    * 切换互动（点赞/收藏）
@@ -42,6 +48,18 @@ export class InteractionController {
       dto.entityId,
       dto.type,
     );
+    // 对 post 的点赞/收藏维护 posts 冗余计数——文章页走 /post/:id/interact 已维护，
+    // 此端点若不维护会造成"行在、计数不动"的永久漂移（双通道口径必须一致）
+    if (dto.entityType === 'post' && result.mutated) {
+      const delta = result.active ? 1 : -1;
+      const field = dto.type === 'like' ? 'likeCount' : 'favoriteCount';
+      await this.dataSource
+        .createQueryBuilder()
+        .update(PostEntity)
+        .set({ [field]: () => `GREATEST(0, ${field} + ${delta})` })
+        .where('id = :id', { id: dto.entityId })
+        .execute();
+    }
     return {
       success: true,
       data: result,

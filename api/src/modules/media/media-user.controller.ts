@@ -49,11 +49,18 @@ export class MediaUserController {
    * 未命中   → { alreadyExists: false, uploadUrl, key, publicUrl }
    */
   @Post('presign')
-  async presign(@Body() dto: PresignR2Dto) {
+  async presign(@Body() dto: PresignR2Dto, @Req() req: Request) {
     if (dto.size > 10 * 1024 * 1024) {
       throw new BadRequestException('文件大小超过 10MB 限制');
     }
     this.validateScope(dto.app, dto.folder);
+    // 秒传命中范围限定本人：不传 uploaderId 时 service 侧守卫不生效，
+    // 任意用户可用他人公开文件的 hash 命中他人记录并覆写 note（越权）
+    const payload = req as { user?: { sub?: string } };
+    const uploaderId = parseInt(payload.user?.sub ?? '0', 10);
+    if (!uploaderId) {
+      throw new BadRequestException('无法识别用户身份');
+    }
     const data = await this.mediaService.presignR2Upload({
       filename: dto.filename,
       contentType: dto.contentType,
@@ -62,6 +69,7 @@ export class MediaUserController {
       app: dto.app,
       folder: dto.folder,
       note: dto.note,
+      uploaderId,
     });
     return { success: true, data, message: 'ok' };
   }

@@ -119,8 +119,14 @@ export class LocalTokenService implements OnModuleInit {
    * 签发 AT + RT 对。
    * AT：iss=blog-lite-local / aud=blog-lite / exp 2h / roles claim
    * RT：typ=refresh / exp 7d / jti 随机，字符串前缀 `local-`
+   * ver：用户 token 版本号（Redis 递增）。改密/封禁时递增 → 所有旧 RT 失效，
+   * 补上无状态 JWT 唯一缺失的"全量吊销"能力。默认 0（历史无版本 token 也按 0 处理）
    */
-  async signTokenPair(userId: number, roles: string[]): Promise<LocalTokenPair> {
+  async signTokenPair(
+    userId: number,
+    roles: string[],
+    ver = 0,
+  ): Promise<LocalTokenPair> {
     const now = Math.floor(Date.now() / 1000);
 
     const accessToken = await new SignJWT({ roles })
@@ -133,7 +139,7 @@ export class LocalTokenService implements OnModuleInit {
       .sign(this.privateKey);
 
     // typ 放 payload（header 的 typ 固定为 JWT）：verifyRefreshToken 校验用
-    const refreshToken = await new SignJWT({ typ: 'refresh' })
+    const refreshToken = await new SignJWT({ typ: 'refresh', ver })
       .setProtectedHeader({ alg: 'EdDSA', typ: 'JWT' })
       .setIssuer(LOCAL_ISSUER)
       .setAudience('blog-lite')

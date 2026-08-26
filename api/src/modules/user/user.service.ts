@@ -1,9 +1,11 @@
-import { Injectable, UnauthorizedException, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import type Redis from 'ioredis';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
+import { REDIS_CLIENT } from '../redis/redis.module';
 import { UserEntity } from './user.entity';
 import { RoleEntity } from './role.entity';
 import { LoginDto } from './login.dto';
@@ -56,7 +58,56 @@ export class UserService {
     private readonly mediaService: MediaService,
     private readonly emailCodeService: EmailCodeService,
     private readonly settingService: SettingService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
+
+  // ──────────────── 本地 RT（验证码登录）生命周期管理 ────────────────
+  // RT 是无状态 JWT，签发后若不追踪 jti 就没有任何吊销手段：
+  // 一个泄漏的 RT 可在 7 天内无限重放滚动续命（旧 RT 不失效），logout 也是空操作。
+  // 这里用 Redis 补齐三件事：
+  //   1. 一次性消费：jti 首次续签即占用，重放直接 401（检测 token 泄漏/双开竞态）
+  //   2. 主动吊销：logout 把 jti 写入占用集合
+  //   3. 全量吊销：改密/封禁时递增用户 token 版本号，所有旧 RT 全部失效
+
+  /**
+   * jti 一次性消费/吊销标记。返回 true=占用成功（首次或允许），false=已被占用（重放/已吊销）。
+   * Redis 故障时 fail-open（返回 true）：重放检测是加固项，不能因 Redis 抖动把全体
+   * 验证码登录用户登出（与全站限流 fail-open 策略一致）。
+   */
+  private async consumeLocalRtJti(
+    jti: string,
+    expiresAtSec: number,
+  ): Promise<boolean> {
+    try {
+      const ttl = Math.max(1, expiresAtSec - Math.floor(Date.now() / 1000));
+      const ok = await this.redis.set(`local-rt:${jti}`, '1', 'EX', ttl, 'NX');
+      return ok === 'OK';
+    } catch (e) {
+      this.logger.warn(`local-rt jti 消费检查失败（降级放行）: ${e instanceof Error ? e.message : e}`);
+      return true;
+    }
+  }
+
+  /** 吊销全部本地会话（改密/重置密码/封禁时调用）：递增版本号使所有在飞 RT 失效 */
+  private async revokeAllLocalSessions(userId: number): Promise<void> {
+    try {
+      await this.redis.incr(`local-rt-ver:${userId}`);
+      await this.redis.expire(`local-rt-ver:${userId}`, 8 * 24 * 3600);
+    } catch (e) {
+      // Redis 故障不阻塞主流程（改密等仍要成功），但没有版本号旧 RT 会继续可用到自然过期
+      this.logger.warn(`递增用户 ${userId} 本地 token 版本失败: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  /** 读取用户当前本地 token 版本。null=Redis 不可用（跳过比对），0=无记录 */
+  private async getLocalRtVersion(userId: number): Promise<number | null> {
+    try {
+      const v = await this.redis.get(`local-rt-ver:${userId}`);
+      return v ? Number(v) : 0;
+    } catch {
+      return null;
+    }
+  }
 
   /**
    * 管理员登录：
@@ -115,16 +166,20 @@ export class UserService {
       user.bannedUntil &&
       user.bannedUntil < new Date()
     ) {
-      await this.userRepo.update(user.id, {
-        status: USER_STATUS.ACTIVE,
-        bannedUntil: null,
-      });
-      user.status = USER_STATUS.ACTIVE;
-      user.bannedUntil = null;
-      // 封禁到期解封必须同步 Casdoor（isForbidden），否则本地放行但
-      // passwordGrant 仍被拒 → 用户被永久锁死（审查 P0）
-      if (this.casdoor.enabled) {
-        await this.casdoor.setCasdoorUserForbidden(user.id, false);
+      // 条件更新（带原值乐观锁）：无条件 UPDATE 会把读到过期快照后、落地前
+      // 管理员新下达的永久封禁静默覆盖成 active（丢失更新，AuthGuard 同病已修）
+      const upd = await this.userRepo.update(
+        { id: user.id, status: USER_STATUS.DISABLED, bannedUntil: user.bannedUntil },
+        { status: USER_STATUS.ACTIVE, bannedUntil: null },
+      );
+      if (upd.affected) {
+        user.status = USER_STATUS.ACTIVE;
+        user.bannedUntil = null;
+        // 封禁到期解封必须同步 Casdoor（isForbidden），否则本地放行但
+        // passwordGrant 仍被拒 → 用户被永久锁死（审查 P0）
+        if (this.casdoor.enabled) {
+          await this.casdoor.setCasdoorUserForbidden(user.id, false);
+        }
       }
     }
 
@@ -150,7 +205,13 @@ export class UserService {
         const msg = e instanceof Error ? e.message : String(e);
         // 区分"凭证错误"与"服务故障"（审查 P1）：把 Casdoor 宕机/超时误报成
         // 密码错误会误导用户反复重试甚至去重置密码
-        const credentialWrong = /incorrect|password|not found|forbidden|invalid/i.test(msg);
+        // invalid_client = 应用凭证配置错（secret 轮换/漂移）——属服务端故障，
+        // 报"密码错误"会诱发用户无意义改密潮，必须单独分流
+        if (/invalid_client/i.test(msg)) {
+          this.logger.error(`Casdoor 应用凭证错误（invalid_client，检查 CLIENT_ID/SECRET）: ${msg}`);
+          throw new UnauthorizedException('登录服务暂时不可用，请稍后重试');
+        }
+        const credentialWrong = /incorrect|password|not found|forbidden|invalid_grant/i.test(msg);
         if (!credentialWrong) {
           this.logger.error(`Casdoor 登录通道异常: ${msg}`);
           throw new UnauthorizedException('登录服务暂时不可用，请稍后重试');
@@ -445,6 +506,12 @@ export class UserService {
 
     const saved = await this.userRepo.save(user);
 
+    // 改密后吊销该用户全部本地会话（验证码登录的 RT 与密码无绑定，
+    // 不递增版本号的话旧 RT 仍可续命 7 天）
+    if (password) {
+      await this.revokeAllLocalSessions(id);
+    }
+
     // 审计挪到 save 成功后（审查 P1：原先先记审计后落库，save 失败会误记"已改"）
     this.auditLog
       .logMany(entries)
@@ -661,12 +728,14 @@ export class UserService {
     // 封禁时同步吊销凭证，堵死 refresh 续命：
     // - self 模式：调鉴权中心吊销该用户所有 Token
     // - casdoor 模式：设置 Casdoor 侧 isForbidden（登录+续签全拒，等价吊销全部会话）
+    // - 本地 RT（验证码登录）：递增版本号，所有在飞 RT 立即失效（三种通道都要堵）
     if (willDisable) {
       if (this.casdoor.enabled) {
         await this.casdoor.setCasdoorUserForbidden(id, true);
       } else {
         await this.authService.revokeUserTokens(id);
       }
+      await this.revokeAllLocalSessions(id);
     } else if (this.casdoor.enabled) {
       // 解封同步恢复（Casdoor 侧放行登录/续签）
       await this.casdoor.setCasdoorUserForbidden(id, false);
@@ -992,10 +1061,14 @@ export class UserService {
         user.bannedUntil &&
         user.bannedUntil < new Date()
       ) {
-        await this.userRepo.update(user.id, {
-          status: USER_STATUS.ACTIVE,
-          bannedUntil: null,
-        });
+        // 条件更新（乐观锁防丢失更新，与 login()/AuthGuard 同修）
+        const upd = await this.userRepo.update(
+          { id: user.id, status: USER_STATUS.DISABLED, bannedUntil: user.bannedUntil },
+          { status: USER_STATUS.ACTIVE, bannedUntil: null },
+        );
+        if (!upd.affected) {
+          throw new UnauthorizedException('账号不存在或已禁用');
+        }
         user.status = USER_STATUS.ACTIVE;
         user.bannedUntil = null;
         // 同 login()：解封同步 Casdoor，防永久锁死（审查 P0）
@@ -1015,7 +1088,10 @@ export class UserService {
       // 短命 JWT（C'' 方案）：AT 2h（iss=blog-lite-local，AuthGuard 按 iss 分流
       // 到本地验签）+ RT 7d（local- 前缀，refresh 走本地旋转续签）
       const roles = (user.roles || []).map((r) => r.name);
-      tokenData = await this.localToken.signTokenPair(user.id, roles);
+      // 用当前版本号签发（改密/封禁递增过版本后，新登录会话必须挂在新版本上，
+      // 否则 ver=0 的默认值与递增后的版本对不上，新 RT 一出生就失效）
+      const ver = (await this.getLocalRtVersion(user.id)) ?? 0;
+      tokenData = await this.localToken.signTokenPair(user.id, roles, ver);
     } else {
       // self 模式：保持原 issueLoginToken（自建鉴权中心）逻辑
       const accessTtl = this.configService.get<number>('ACCESS_TOKEN_TTL', 3600);
@@ -1052,15 +1128,27 @@ export class UserService {
    * 此时只靠 refreshToken 吊销 Redis 会话，跳过 lastLoginAt 更新。
    */
   async logout(userId: number, refreshToken?: string): Promise<void> {
-    // 调鉴权中心吊销 refreshToken（删除 Redis 中的会话）
     if (refreshToken) {
-      try {
-        await this.authService.revokeToken(refreshToken);
-      } catch (e) {
-        // 吊销失败不阻塞登出流程（token 自然过期）
-        this.logger.warn(
-          `用户 ${userId} 登出吊销 Token 失败: ${e instanceof Error ? e.message : e}`,
-        );
+      // 本地 RT（验证码登录）：吊销 jti（续签通道一次性消费会拒绝它）。
+      // 之前无差别透传给 Casdoor 吊销端点必然失败（local- 不是 Casdoor token），等于空操作
+      if (refreshToken.startsWith('local-')) {
+        try {
+          const payload = await this.localToken.verifyRefreshToken(refreshToken);
+          const jti = String(payload.jti ?? '');
+          const exp = Number(payload.exp ?? 0);
+          if (jti && exp) await this.consumeLocalRtJti(jti, exp);
+        } catch {
+          // 验签失败说明 token 本身已过期/非法，无需吊销
+        }
+      } else {
+        try {
+          await this.authService.revokeToken(refreshToken);
+        } catch (e) {
+          // 吊销失败不阻塞登出流程（token 自然过期）
+          this.logger.warn(
+            `用户 ${userId} 登出吊销 Token 失败: ${e instanceof Error ? e.message : e}`,
+          );
+        }
       }
     }
     // 注意：登出不更新 lastLoginAt（那是"最后登录时间"，登出时改它语义错误，
@@ -1088,6 +1176,22 @@ export class UserService {
         if (!Number.isInteger(userId) || userId <= 0) {
           throw new Error('refreshToken sub 无效');
         }
+        // jti 一次性消费：同一 RT 第二次出现即为重放（泄漏/双开），
+        // 之前无状态签发不废旧，旧 RT 可在 7 天内无限滚动续命
+        const jti = String(payload.jti ?? '');
+        const exp = Number(payload.exp ?? 0);
+        if (!jti || !exp) {
+          throw new Error('refreshToken 缺少 jti/exp');
+        }
+        if (!(await this.consumeLocalRtJti(jti, exp))) {
+          throw new Error('refreshToken 已被使用或吊销（疑似重放）');
+        }
+        // 版本校验：改密/封禁后版本号已递增，所有旧 RT 立即失效
+        const ver = Number(payload.ver ?? 0);
+        const curVer = await this.getLocalRtVersion(userId);
+        if (curVer !== null && curVer !== ver) {
+          throw new Error('token 版本已失效');
+        }
         // 重查用户拿最新角色/状态：RT 有效期 7 天，期间角色可能被改、账号可能被封
         const user = await this.userRepo.findOne({
           where: { id: userId },
@@ -1098,7 +1202,7 @@ export class UserService {
           throw new Error('用户不存在或已禁用');
         }
         const roles = (user.roles || []).map((r) => r.name);
-        const pair = await this.localToken.signTokenPair(user.id, roles);
+        const pair = await this.localToken.signTokenPair(user.id, roles, ver);
         return {
           accessToken: pair.accessToken,
           refreshToken: pair.refreshToken,
@@ -1308,6 +1412,8 @@ export class UserService {
     }
     user.password = await bcrypt.hash(newPassword, 10);
     await this.userRepo.save(user);
+    // 改密后吊销全部本地会话（RT 不绑密码，必须靠版本号失效）
+    await this.revokeAllLocalSessions(id);
     // 审计（审查双入口分叉：resetPassword 可经公开的验证码重置接口触达，
     // 此前无任何痕迹；admin update 改密有审计，此处对齐）
     this.auditLog

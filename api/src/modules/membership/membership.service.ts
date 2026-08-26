@@ -77,36 +77,37 @@ export class MembershipService implements OnModuleInit {
     });
     if (toExpire.length === 0) return 0;
 
-    // 2. 标记 expired（批量）
+    // 2+3. 标记 expired + 撤角色必须在同一事务：两段式（先批量标 expired 提交，
+    //    再逐条撤角色）中途失败/崩溃时，sweepExpired 只查 status='active'，
+    //    已标 expired 但角色未撤的用户将永远不会再被处理——过期会员权益终身残留
     const ids = toExpire.map((m) => m.id);
-    await this.memberRepo
-      .createQueryBuilder()
-      .update()
-      .set({ status: 'expired' })
-      .where('id IN (:...ids)', { ids })
-      .execute();
+    await this.dataSource.transaction(async (manager) => {
+      await manager
+        .createQueryBuilder()
+        .update(MembershipEntity)
+        .set({ status: 'expired' })
+        .where('id IN (:...ids)', { ids })
+        .execute();
 
-    // 3. 移除每条过期订阅绑定的角色（safeRevokeRole 自带双重订阅防误删）
-    //    按 userId+roleId 去重，避免同一用户多条同时过期时重复处理
-    const handled = new Set<string>();
-    for (const m of toExpire) {
-      const roleId = m.plan.roleId;
-      if (!roleId) continue;
-      const key = `${m.userId}:${roleId}`;
-      if (handled.has(key)) continue;
-      handled.add(key);
-      try {
-        const revoked = await this.safeRevokeRole(null, m.userId, roleId, m.id);
+      // 移除每条过期订阅绑定的角色（safeRevokeRole 自带双重订阅防误删）
+      // 按 userId+roleId 去重，避免同一用户多条同时过期时重复处理
+      const handled = new Set<string>();
+      for (const m of toExpire) {
+        const roleId = m.plan.roleId;
+        if (!roleId) continue;
+        const key = `${m.userId}:${roleId}`;
+        if (handled.has(key)) continue;
+        handled.add(key);
+        // 事务内撤角色：失败抛错 → 整个事务回滚（membership 保持 active，
+        // 下一轮 sweep 重试），不再留下"expired 但角色还在"的永久残留
+        const revoked = await this.safeRevokeRole(manager, m.userId, roleId, m.id);
         if (revoked) {
           this.logger.log(
             `过期撤角色：userId=${m.userId} roleId=${roleId}（订阅 #${m.id} 过期）`,
           );
         }
-      } catch (e) {
-        // 单个撤角色失败不应阻塞批量过期；记录日志继续
-        this.logger.warn(`过期撤角色失败 userId=${m.userId} roleId=${roleId}: ${(e as Error).message}`);
       }
-    }
+    });
 
     this.logger.log(`自动过期 ${toExpire.length} 条会员订阅`);
     return toExpire.length;

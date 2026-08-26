@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
@@ -85,6 +86,12 @@ export class BackupService {
     scheduleName?: string,
     retainDays?: number,
   ): Promise<BackupLogEntity> {
+    // 防重入：真正的备份执行（dump/压缩/上传）耗时可达分钟级，期间不允许再启动。
+    // 之前只有 schedule 侧一把"立即复位"的假锁（fire-and-forget 返回即解锁），
+    // 手动触发完全不设防——定时 + 手动可叠加多个并发 mysqldump（各持 512MB 缓冲）。
+    if (this.executing) {
+      throw new ConflictException('已有备份正在进行中，请稍后再试');
+    }
     const log = this.logRepo.create({
       trigger,
       scheduleName: scheduleName || null,
@@ -92,16 +99,28 @@ export class BackupService {
     });
     const saved = await this.logRepo.save(log);
 
-    // 后台异步执行，不 await（立即返回给调用方）。
+    // 后台异步执行，不 await（立即返回给调用方），但锁挂到"真正执行完成"。
     // retainDays 一并透传：本方法返回的记录恒为 running，调用方判
     // status==='success' 再清理是死代码（审查发现：备份曾无限累积 R2）——
     // 清理必须移到 executeBackup 的成功分支内做。
-    this.executeBackup(saved, retainDays).catch((err) => {
-      this.logger.error(`备份后台任务异常: ${err.message}`);
-    });
+    this.executing = this.executeBackup(saved, retainDays)
+      .catch((err) => {
+        this.logger.error(`备份后台任务异常: ${err.message}`);
+      })
+      .finally(() => {
+        this.executing = null;
+      });
 
     return saved;
   }
+
+  /** 当前是否有备份在真正执行（schedule 判重 + 手动触发判重共用） */
+  isBusy(): boolean {
+    return this.executing !== null;
+  }
+
+  /** 进行中的备份执行句柄（schedule 侧等待真正完成后再释放自己的节奏判断） */
+  private executing: Promise<void> | null = null;
 
   /**
    * 实际执行备份（dump → gzip → 上传 R2 → HEAD 校验）
@@ -255,8 +274,12 @@ export class BackupService {
         env: { ...process.env, MYSQL_PWD: cfg.password },
         maxBuffer: 512 * 1024 * 1024, // 512MB 上限（压缩前）
         timeout: 300000, // 5 分钟超时
+        // buffer 编码：execFile 默认把 stdout 解码成 JS 字符串（UTF-16 内部表示
+        // 可占 2 字节/字符），再 Buffer.from 又拷一份。改 buffer 直接拿原始字节，
+        // 消除字符串中间态（峰值内存约降 1/3）。dump 是字节流不是文本，无解码必要。
+        encoding: 'buffer',
       });
-      return Buffer.from(stdout, 'utf8');
+      return stdout as unknown as Buffer;
     } catch (err) {
       const msg = (err as Error).message;
       // 给出常见错误的友好提示

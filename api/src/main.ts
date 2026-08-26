@@ -9,7 +9,35 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 const bootstrapLogger = new NestLogger('Bootstrap');
 
+// 进程级异常兜底：任何漏网的 unhandledRejection 不再让进程直接崩溃
+// （Node 20 默认 --unhandled-rejections=throw），记录后继续服务；
+// uncaughtException 后堆栈状态不可信，记录后优雅退出交给编排层拉起。
+process.on('unhandledRejection', (reason) => {
+  bootstrapLogger.error(
+    `unhandledRejection: ${reason instanceof Error ? reason.stack : String(reason)}`,
+  );
+});
+process.on('uncaughtException', (err) => {
+  bootstrapLogger.error(`uncaughtException: ${err.stack ?? err.message}`);
+  // 给日志一点落盘时间再退出
+  setTimeout(() => process.exit(1), 200);
+});
+
 async function bootstrap() {
+  // 生产配置 fail-fast：NODE_ENV=production 且 DB_SYNCHRONIZE=true 时拒绝启动。
+  // 防误拷开发 .env / 配置漂移导致 TypeORM 对生产库自动执行全量 DDL（删列/改类型无确认）。
+  // 先手动加载 .env（ConfigModule 还没跑；不覆盖真实环境变量，容器注入优先）
+  require('dotenv').config();
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.DB_SYNCHRONIZE === 'true'
+  ) {
+    bootstrapLogger.error(
+      '启动中止：NODE_ENV=production 时禁止 DB_SYNCHRONIZE=true（TypeORM 会对生产库自动执行 schema DDL）。请改用 migration。',
+    );
+    process.exit(1);
+  }
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });

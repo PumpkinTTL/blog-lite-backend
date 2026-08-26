@@ -16,7 +16,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { PostService } from './post.service';
 import { PostEntity } from './post.entity';
-import { CreatePostDto, UpdatePostDto, BatchIdsDto, ToggleInteractDto } from './post.dto';
+import { CreatePostDto, UpdatePostDto, BatchIdsDto, BatchDeletePostDto, ToggleInteractDto } from './post.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { parsePage, parsePageSize } from '../../common/utils/parse-pagination';
@@ -164,8 +164,8 @@ export class PostController {
   }
 
   @Post('batch/delete')
-  async batchDelete(@Body() body: BatchIdsDto & { force?: boolean }) {
-    await this.postService.batchDelete(body.ids, body.force);
+  async batchDelete(@Body() dto: BatchDeletePostDto) {
+    await this.postService.batchDelete(dto.ids, dto.force);
     return { success: true, message: '批量删除成功' };
   }
 
@@ -233,16 +233,19 @@ export class PostController {
       id,
       type,
     );
-    // 原子计数：toggle 返回 active（新增=+1，取消=-1），直接原子增减，
-    // 用 GREATEST(0,...) 防负数（历史计数漂移或并发竞态可能造成负数）。
-    const delta = result.active ? 1 : -1;
-    const field = type === 'like' ? 'likeCount' : 'favoriteCount';
-    await this.dataSource
-      .createQueryBuilder()
-      .update(PostEntity)
-      .set({ [field]: () => `GREATEST(0, ${field} + ${delta})` })
-      .where('id = :id', { id })
-      .execute();
+    // 原子计数：只在 toggle 真正改变互动表时增减（mutated=false 是并发幂等重放，
+    // 双击点赞的第二个请求不能再 +1，否则 likeCount 永久虚高）。
+    // GREATEST(0,...) 防负数（历史计数漂移兜底）。
+    if (result.mutated) {
+      const delta = result.active ? 1 : -1;
+      const field = type === 'like' ? 'likeCount' : 'favoriteCount';
+      await this.dataSource
+        .createQueryBuilder()
+        .update(PostEntity)
+        .set({ [field]: () => `GREATEST(0, ${field} + ${delta})` })
+        .where('id = :id', { id })
+        .execute();
+    }
     return {
       success: true,
       data: result,

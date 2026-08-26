@@ -28,6 +28,20 @@ const C = {
 
 const FONT =
   "'PingFang SC','Hiragino Sans GB','Microsoft YaHei',-apple system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+
+/**
+ * HTML 转义：所有用户可控值（捐赠者昵称、管理员留言、联系方式等）进模板前必须转义。
+ * 公开捐赠表单的 donorName 未转义直插 HTML —— 管理员点"发送感谢"后官方邮箱会
+ * 发出携带任意标签（img/onerror 钓鱼轮子）的邮件（审查 P0）。
+ */
+function esc(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 const FONT_MONO =
   "'SF Mono','Cascadia Code',Consolas,'Courier New',monospace";
 
@@ -56,7 +70,7 @@ function renderShell(opts: ShellOptions): string {
   const tagline = opts.tagline !== undefined ? opts.tagline : DEFAULT_TAGLINE;
   // 联系方式段：文案写死，contact 只是联系方式占位值。有 contact 才渲染。
   const contactLine = opts.contact
-    ? `<p style="margin:16px 0 0;font-size:12px;line-height:1.7;color:${C.inkMute};">如有疑问或需要帮助，请随时联系我们，我们将尽快为您解答。<br/>联系方式：${opts.contact}</p>`
+    ? `<p style="margin:16px 0 0;font-size:12px;line-height:1.7;color:${C.inkMute};">如有疑问或需要帮助，请随时联系我们，我们将尽快为您解答。<br/>联系方式：${esc(opts.contact)}</p>`
     : '';
 
   return `
@@ -68,16 +82,16 @@ function renderShell(opts: ShellOptions): string {
     <tr><td align="center">
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:520px;background:${C.card};border:1px solid ${C.border};border-radius:14px;overflow:hidden;">
         <tr><td style="padding:36px 36px 28px;">
-          <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:${C.ink};letter-spacing:0.02em;">${opts.title}</h1>
-          ${opts.intro ? `<p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:${C.inkSoft};">${opts.intro}</p>` : ''}
+          <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:${C.ink};letter-spacing:0.02em;">${esc(opts.title)}</h1>
+          ${opts.intro ? `<p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:${C.inkSoft};">${esc(opts.intro)}</p>` : ''}
           ${opts.body}
           ${contactLine}
         </td></tr>
-        ${opts.footer ? `<tr><td style="padding:0 36px 32px;"><p style="margin:0;padding-top:20px;border-top:1px solid ${C.divider};font-size:12px;line-height:1.6;color:${C.inkMute};">${opts.footer}</p></td></tr>` : ''}
+        ${opts.footer ? `<tr><td style="padding:0 36px 32px;"><p style="margin:0;padding-top:20px;border-top:1px solid ${C.divider};font-size:12px;line-height:1.6;color:${C.inkMute};">${esc(opts.footer)}</p></td></tr>` : ''}
       </table>
       <!-- 底部署名：平台名 + 寄语，占满主容器宽度 -->
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:520px;">
-        <tr><td style="padding:20px 4px 0;font-size:11px;color:${C.inkMute};text-align:center;">${platform} · ${tagline}</td></tr>
+        <tr><td style="padding:20px 4px 0;font-size:11px;color:${C.inkMute};text-align:center;">${esc(platform)} · ${esc(tagline)}</td></tr>
       </table>
     </td></tr>
   </table>
@@ -98,7 +112,7 @@ function codeBlock(code: string, label?: string): string {
   return `
   <div style="margin:24px 0;background:${C.white};border:1px solid ${C.border};border-radius:12px;padding:24px 20px;text-align:center;">
     ${labelHtml}
-    <div style="font-family:${FONT_MONO};font-size:24px;font-weight:700;letter-spacing:3px;color:${C.accent};white-space:nowrap;overflow-x:auto;line-height:1.4;">${code}</div>
+    <div style="font-family:${FONT_MONO};font-size:24px;font-weight:700;letter-spacing:3px;color:${C.accent};white-space:nowrap;overflow-x:auto;line-height:1.4;">${esc(code)}</div>
   </div>`;
 }
 
@@ -163,12 +177,12 @@ export function renderDonationThanks(opts: {
 
   // message：管理员留言（浅琥珀底块）
   const messageBlock = opts.message
-    ? `<div style="margin:16px 0;padding:14px 16px;background:${C.accentSoft};border-radius:8px;font-size:13px;line-height:1.6;color:${C.ink};">${opts.message}</div>`
+    ? `<div style="margin:16px 0;padding:14px 16px;background:${C.accentSoft};border-radius:8px;font-size:13px;line-height:1.6;color:${C.ink};">${esc(opts.message)}</div>`
     : '';
 
   return renderShell({
     title: '感谢您的捐赠',
-    intro: `${opts.donorName}，您好：`,
+    intro: `${esc(opts.donorName)}，您好：`,
     body: introPara + codeBlockHtml + messageBlock,
     footer: hasCode ? '请妥善保管激活码，勿泄露他人。' : undefined,
     platformName: opts.platformName,

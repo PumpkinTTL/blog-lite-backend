@@ -151,9 +151,14 @@ import { ScheduleModule } from '@nestjs/schedule';
         // 避免会员到期时间偏移、dashboard 趋势图日期分组错位。
         timezone: '+08:00',
         autoLoadEntities: true,
+        // 生产环境绝不 synchronize：全量 schema 比对 DDL（含删列/改类型）会无确认直写。
+        // 三道防线：① NODE_ENV=production 直接关 ② 生产+显式开 synchronize 时启动
+        // fail-fast 拒绝启动（防配置漂移/误拷开发 .env）③ 上线清单核对 .env.production
         synchronize:
           configService.get('DB_SYNCHRONIZE') === 'true' &&
           configService.get('NODE_ENV') !== 'production',
+        // 慢查询可见性：超过 1s 的查询打 error 日志（生产排障）
+        maxQueryExecutionTime: 1000,
         retryAttempts: 3,
         retryDelay: 1000,
         // 连接池配置（mysql2 默认 connectionLimit:10，显式调优避免突发并发排队超时）

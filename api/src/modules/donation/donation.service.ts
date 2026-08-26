@@ -147,17 +147,36 @@ export class DonationService {
     let claimedUserId: number | null = null;
 
     if (opts.codeId) {
+      // 一单最多一码：此前只防"一码两单"，不防两个管理员并发（或先后）给同一单发不同的码
+      // —— 两个码都能通过码维度校验，rewardCodeId 后写者覆盖，一笔赞助双发会员权益。
+      // 先用条件 UPDATE 占住单据（rewardCodeId 为空才允许写入），输了说明该单已发过码。
+      if (donation.rewardCodeId != null) {
+        throw new BadRequestException('该捐赠单已发放过答谢码');
+      }
+      const claim = await this.repo.update(
+        { id: donationId },
+        { rewardCodeId: opts.codeId },
+      );
+      if (!claim.affected) {
+        throw new BadRequestException('捐赠记录不存在');
+      }
+      // 占位成功后再做码维度的校验（失败则释放占位）
       const code = await this.codeService.findById(opts.codeId);
-      if (!code) throw new NotFoundException('激活码不存在');
-      if (code.type !== 'membership') {
-        throw new BadRequestException('只能发放会员激活码');
-      }
-      if (code.status !== 'active') {
-        throw new BadRequestException(`该激活码状态为 ${code.status}，不可发放`);
-      }
-      // 已分配给其他捐赠单的码不能再发（防止一个码发给多人）
-      if (code.assignedDonationId && code.assignedDonationId !== donationId) {
-        throw new BadRequestException('该激活码已分配给其他捐赠单');
+      try {
+        if (!code) throw new NotFoundException('激活码不存在');
+        if (code.type !== 'membership') {
+          throw new BadRequestException('只能发放会员激活码');
+        }
+        if (code.status !== 'active') {
+          throw new BadRequestException(`该激活码状态为 ${code.status}，不可发放`);
+        }
+        // 已分配给其他捐赠单的码不能再发（防止一个码发给多人）
+        if (code.assignedDonationId && code.assignedDonationId !== donationId) {
+          throw new BadRequestException('该激活码已分配给其他捐赠单');
+        }
+      } catch (e) {
+        await this.repo.update({ id: donationId }, { rewardCodeId: null });
+        throw e;
       }
 
       // 按邮箱反查系统用户锁归属
@@ -176,9 +195,7 @@ export class DonationService {
       if (claimedUserId) metadata.claimedUserId = claimedUserId;
       // 审查P1：曾用读-判-写（并发双发同一码给两个捐赠者）。改条件 UPDATE 原子分配
       await this.codeService.assignToDonation(opts.codeId, donationId, metadata);
-      // 反向回写 donation
-      donation.rewardCodeId = code.id;
-      await this.repo.save(donation);
+      // rewardCodeId 已在上方条件 UPDATE 占位写入，不再全实体 save（避免并发丢更新）
 
       codeEntity = { id: code.id, code: code.code };
       this.logger.log(

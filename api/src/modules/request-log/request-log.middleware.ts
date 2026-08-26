@@ -21,9 +21,10 @@ export class RequestLogMiddleware implements NestMiddleware {
     const startTime = Date.now();
 
     res.on('finish', () => {
-      // 跳过健康检查/静态资源等无意义请求，减少噪声
+      // 跳过健康检查/静态资源等无意义请求，减少噪声。
+      // /health 此前漏跳：LB 每 5s 探针 = 每天 1.7 万行噪声（注释声称跳过但没跳）
       const path = req.path;
-      if (path === '/' || path.startsWith('/uploads/')) return;
+      if (path === '/' || path === '/health' || path.startsWith('/health/') || path.startsWith('/uploads/')) return;
 
       const status = res.statusCode;
       // 错误信息：4xx/5xx 才记录（从 res.locals 取异常过滤器塞的错误消息）

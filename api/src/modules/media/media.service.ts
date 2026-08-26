@@ -9,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID, createHash } from 'node:crypto';
 import { extname } from 'node:path';
 import { In, Repository } from 'typeorm';
-import { applyFilters } from '../../common/utils/apply-filters';
+import { applyFilters, escapeLike } from '../../common/utils/apply-filters';
 import { MediaEntity, OssPlatform, StorageType } from './media.entity';
 import { StorageProvider, StorageConfig } from './storage.provider';
 import { SettingService } from '../setting/setting.service';
@@ -53,8 +53,10 @@ export class MediaService {
       like: { keyword: filters?.keyword, fields: ['e.originalName'] },
     });
     if (filters?.mimeType) {
+      // 转义 LIKE 通配符 + 截断：绕过 applyFilters 的手写前缀匹配，
+      // 不转义时 %%/%_ 可放大扫描全表（admin 接口，参数化无注入，纯性能面）
       qb.andWhere('e.mimeType LIKE :mimeType', {
-        mimeType: `${filters.mimeType}%`,
+        mimeType: `${escapeLike(filters.mimeType.slice(0, 50))}%`,
       });
     }
     qb.orderBy('e.createdAt', 'DESC')

@@ -80,7 +80,13 @@ export class CasdoorService implements OnModuleInit {
     if (!this.enabled || !this.endpoint) return;
     // Casdoor JWKS 端点：全局 /.well-known/jwks（应用独立证书时用 /.well-known/<app>/jwks）
     const jwksUrl = new URL('/.well-known/jwks', this.endpoint);
-    this.jwks = createRemoteJWKSet(jwksUrl);
+    // 显式超时/冷却：jose 默认 timeoutDuration=5s 且失败不进冷却——Casdoor JWKS
+    // 端点故障时每个带 token 的请求都要先挂 5s 再 401，认证通道整体延迟雪崩。
+    // 收紧到 3s + 失败冷却 60s（冷却期内直接用上次结果/立即失败，不重复拉取）
+    this.jwks = createRemoteJWKSet(jwksUrl, {
+      timeoutDuration: 3000,
+      cooldownDuration: 60_000,
+    });
     this.logger.log(`Casdoor JWKS 端点已初始化: ${jwksUrl.toString()}`);
   }
 

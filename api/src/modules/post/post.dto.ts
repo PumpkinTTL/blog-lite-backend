@@ -1,6 +1,7 @@
 import {
   IsString,
   IsOptional,
+  IsBoolean,
   IsArray, ArrayMaxSize,
   IsIn,
   IsInt, Min,
@@ -18,6 +19,15 @@ export class BatchIdsDto {
   @Min(1, { each: true })
   @IsInt({ each: true })
   ids: number[];
+}
+
+/** 批量删除（可带 force 彻底删除）。此前用交叉类型 BatchIdsDto & { force? } 声明 Body，
+ *  TS 交叉类型反射出的 design:type 是 Object，ValidationPipe 直接跳过校验——
+ *  ids 无约束、force 无布尔校验（字符串 "0" 是 truthy，会非预期触发彻底删除） */
+export class BatchDeletePostDto extends BatchIdsDto {
+  @IsBoolean()
+  @IsOptional()
+  force?: boolean;
 }
 
 export class CreatePostDto {
