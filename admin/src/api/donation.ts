@@ -1,4 +1,4 @@
-import request from './request'
+import request, { authedDownload } from './request'
 
 // ── 类型定义 ──
 
@@ -161,20 +161,9 @@ export function batchDeleteDonations(ids: number[]) {
   return request.delete<any, { success: boolean; message: string }>('/donation/batch', { data: { ids } })
 }
 
-export function exportDonations() {
-  const token = localStorage.getItem('accessToken')
+export function exportDonations(): Promise<void> {
+  // 复用 authedDownload：双存储读 token、res.ok 检查、错误上抛给视图提示
+  // （旧实现 .then 链无 return 无 catch、不查 res.ok、token 只读 localStorage）
   const base = import.meta.env.VITE_API_BASE_URL || ''
-  const url = `${base}/donation/export`
-  // 使用原生链接触发下载（带 token）
-  const link = document.createElement('a')
-  // 通过 fetch 下载（需要 Authorization header）
-  fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-    .then((res) => res.blob())
-    .then((blob) => {
-      const blobUrl = URL.createObjectURL(blob)
-      link.href = blobUrl
-      link.download = `donations_${new Date().toISOString().slice(0, 10)}.csv`
-      link.click()
-      URL.revokeObjectURL(blobUrl)
-    })
+  return authedDownload(`${base}/donation/export`, `donations_${new Date().toISOString().slice(0, 10)}.csv`)
 }

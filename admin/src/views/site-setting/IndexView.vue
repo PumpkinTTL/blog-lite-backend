@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import {
   NCard, NInput, NInputNumber, NSwitch,
-  NButton, NSpace, NSpin, NTabs, NTabPane, NTag, useMessage,
+  NButton, NSpace, NSpin, NTabs, NTabPane, NTag, NSelect, useMessage,
 } from 'naive-ui'
 import { getSiteSettings, saveSiteSettings, testR2Connection, getEffectiveConfig, testSmtp } from '../../api/site-setting'
 import type { EffectiveConfig } from '../../api/site-setting'
@@ -46,7 +46,7 @@ const form = reactive({
   // 捐赠
   donationEnabled: true,
   donationUsdtRate: 7,
-  walletAddressesText: '', // JSON 文本
+  walletEntries: [] as WalletEntryForm[],
   // 注册
   registrationEnabled: true,
   registrationRequireInvitation: true,
@@ -101,6 +101,28 @@ function newR2Account(): R2AccountForm {
     prefix: '',
     enabled: true,
   }
+}
+
+/** 钱包地址条目：选链 + 填地址（保存时序列化为 donation.wallet_addresses JSON 对象） */
+interface WalletEntryForm {
+  chain: string
+  address: string
+}
+
+/** 常用链预设（下拉快捷项；支持输入自定义链名） */
+const WALLET_CHAIN_PRESETS = ['TRC20', 'BSC', 'POL', 'ERC20', 'SOL', 'TRX']
+
+const chainOptions = computed(() =>
+  WALLET_CHAIN_PRESETS.filter((c) => !form.walletEntries.some((e) => e.chain === c))
+    .map((c) => ({ label: c, value: c })),
+)
+
+function addWalletEntry() {
+  form.walletEntries.push({ chain: '', address: '' })
+}
+
+function removeWalletEntry(i: number) {
+  form.walletEntries.splice(i, 1)
 }
 
 function addR2Account() {
@@ -212,7 +234,12 @@ function applyItems(items: { key: string; value: string }[]) {
   const social = get('site.social_links')
   form.socialLinksText = social ? JSON.stringify(safeParse(social, {}), null, 2) : ''
   const wallets = get('donation.wallet_addresses')
-  form.walletAddressesText = wallets ? JSON.stringify(safeParse(wallets, {}), null, 2) : ''
+  // JSON 对象 {TRC20:'addr',...} → 结构化条目（选链+地址），后台即可视化编辑
+  const walletsParsed = safeParse<Record<string, string>>(wallets || '', {})
+  form.walletEntries = Object.entries(walletsParsed).map(([chain, address]) => ({
+    chain,
+    address: String(address ?? ''),
+  }))
 
   form.donationEnabled = toBool(get('donation.enabled', 'true'))
   form.donationUsdtRate = Number(get('donation.usdt_rate', '7')) || 7
@@ -339,7 +366,6 @@ function buildItems(): Record<string, string> | null {
   // JSON 字段：校验合法性，非法则提示并中止保存
   for (const [field, key] of [
     ['socialLinksText', 'site.social_links'],
-    ['walletAddressesText', 'donation.wallet_addresses'],
   ] as const) {
     const raw = (form as any)[field] as string
     const trimmed = raw.trim()
@@ -354,6 +380,19 @@ function buildItems(): Record<string, string> | null {
       return null
     }
   }
+
+  // 钱包条目 → donation.wallet_addresses JSON：过滤空链名行，查重链名
+  const wallets: Record<string, string> = {}
+  for (const e of form.walletEntries) {
+    const chain = e.chain.trim()
+    if (!chain) continue
+    if (chain in wallets) {
+      message.error(`链「${chain}」重复，请合并后再保存`)
+      return null
+    }
+    wallets[chain] = e.address.trim()
+  }
+  out['donation.wallet_addresses'] = JSON.stringify(wallets)
   return out
 }
 
@@ -505,11 +544,27 @@ onMounted(() => {
           </n-card>
 
           <n-card title="捐赠配置" size="small" :bordered="false">
+            <template #header-extra>
+              <n-button size="small" dashed type="primary" @click="addWalletEntry">+ 添加链</n-button>
+            </template>
             <div class="vg">
               <div class="f"><span class="f-label">USDT 汇率</span><n-input-number v-model:value="form.donationUsdtRate" :min="0" :step="0.1" style="width: 100%" /></div>
+              <!-- 钱包地址：选链 + 填地址，保存时序列化为 donation.wallet_addresses JSON -->
               <div class="f wide">
-                <span class="f-label">钱包地址（JSON：TRC20 / BSC / POL 三个网络的收款地址）</span>
-                <n-input v-model:value="form.walletAddressesText" type="textarea" :rows="4" placeholder='{"TRC20":"","BSC":"","POL":""}' style="font-family: monospace; font-size: 12px" />
+                <span class="f-label">加密货币收款地址（选择链后填地址；可输入自定义链名；空地址的链前台不显示）</span>
+                <div v-if="form.walletEntries.length === 0" class="panel-tip">暂未配置收款地址，点击右上角「+ 添加链」开始。</div>
+                <div v-for="(entry, i) in form.walletEntries" :key="i" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+                  <n-select
+                    v-model:value="entry.chain"
+                    :options="chainOptions"
+                    filterable
+                    tag
+                    placeholder="选择或输入链名"
+                    style="width: 180px"
+                  />
+                  <n-input v-model:value="entry.address" placeholder="收款钱包地址" style="flex:1" />
+                  <n-button size="small" quaternary type="error" @click="removeWalletEntry(i)">删除</n-button>
+                </div>
               </div>
             </div>
           </n-card>

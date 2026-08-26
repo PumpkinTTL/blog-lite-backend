@@ -234,3 +234,13 @@ WHERE status = 'disabled'
   AND assigned_donation_id IS NOT NULL
   AND used_count = 0;
 
+
+-- ═══ 性能深扫补丁（2026-08-27，十万行级劣化点）═══
+-- posts 公开列表 ORDER BY is_pinned DESC, created_at DESC 零 filesort（H1）
+CREATE INDEX idx_post_list ON posts (status, deleted_at, is_pinned, created_at);
+-- dashboard 互动 7 天趋势窗口扫描（H2）
+CREATE INDEX idx_interaction_created ON interactions (created_at);
+-- comments 一级评论：优化器统计偏斜时不再弃用 entity 索引（M6）
+CREATE INDEX idx_comment_entity_full ON comments (entity_type, entity_id, status, created_at);
+-- request_logs 4xx/5xx 筛选 + 排序（M1）
+CREATE INDEX idx_reqlog_status_created ON request_logs (status, created_at);

@@ -18,7 +18,7 @@ import {
   deleteDonation, batchDeleteDonations, toggleDonationStatus, toggleDonationVisible,
   exportDonations, sendThanks, getDonationNotifications,
 } from '../../api/donation'
-import type { Donation, CreateDonationData, DonationStats, SendThanksResult, DonationNotification } from '../../api/donation'
+import type { Donation, CreateDonationData, DonationStats, SendThanksResult, DonationNotification, DonationStatus } from '../../api/donation'
 import { getCodes } from '../../api/code'
 import type { Code } from '../../api/code'
 import ThanksSendPanel from './ThanksSendPanel.vue'
@@ -85,8 +85,9 @@ const togglingId = ref<number | null>(null)
 const togglingVisibleId = ref<number | null>(null)
 /** 导出 CSV 中（导出按钮 loading） */
 const exporting = ref(false)
-const formData = ref<Omit<CreateDonationData, 'status'> & { status: number }>({
-  donorName: '', amount: 0, currency: 'CNY', payMethod: 'wechat', status: 1, isVisible: 1, sortOrder: 0,
+// status 用字符串枚举（与后端 DTO @IsIn 一致；历史上用 0/1/2 数字，被 ValidationPipe 全拒 → 新建/编辑必 400）
+const formData = ref<Omit<CreateDonationData, 'status'> & { status: DonationStatus }>({
+  donorName: '', amount: 0, currency: 'CNY', payMethod: 'wechat', status: 'pending', isVisible: 1, sortOrder: 0,
 })
 
 // ── 发感谢（统一：三 Tab = 纯感谢 / 带激活码 / 记录）──
@@ -302,7 +303,7 @@ function handlePageSizeChange(s: number) { pageSize.value = s; page.value = 1; l
 // ── 弹窗操作 ──
 function openCreateModal() {
   editingId.value = null
-  formData.value = { donorName: '', amount: 0, currency: 'CNY', payMethod: 'wechat', status: 1, isVisible: 1, sortOrder: 0 }
+  formData.value = { donorName: '', amount: 0, currency: 'CNY', payMethod: 'wechat', status: 'pending', isVisible: 1, sortOrder: 0 }
   showModal.value = true
 }
 
@@ -321,7 +322,7 @@ function openEditModal(row: Donation) {
     cryptoTo: row.cryptoTo || undefined,
     message: row.message || undefined,
     tradeNo: row.tradeNo || undefined,
-    status: Number(row.status as any) || 0,
+    status: row.status, // 后端返回的就是 pending/confirmed/refunded 字符串
     isVisible: row.isVisible,
     sortOrder: row.sortOrder,
     remark: row.remark || undefined,
@@ -333,9 +334,7 @@ async function handleSubmit() {
   try { await formRef.value?.validate() } catch { return }
   formLoading.value = true
   try {
-    // status 字段在表单内为数字（0/1/2），与 API 类型字符串不一致，
-    // 后端按字符串处理但前端历史代码用数字索引——保持现状以兼容
-    const payload = formData.value as unknown as CreateDonationData
+    const payload = formData.value
     if (editingId.value) {
       await updateDonation(editingId.value, payload)
       message.success('更新成功')
@@ -645,9 +644,9 @@ onMounted(() => { loadList(); loadStats() })
         </n-form-item>
         <n-form-item label="状态">
           <n-radio-group v-model:value="formData.status" name="status">
-            <n-radio-button :value="0">待确认</n-radio-button>
-            <n-radio-button :value="1">已确认</n-radio-button>
-            <n-radio-button :value="2">已退款</n-radio-button>
+            <n-radio-button value="pending">待确认</n-radio-button>
+            <n-radio-button value="confirmed">已确认</n-radio-button>
+            <n-radio-button value="refunded">已退款</n-radio-button>
           </n-radio-group>
         </n-form-item>
         <n-form-item label="展示">

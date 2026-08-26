@@ -161,9 +161,11 @@ async function handlePlanSave() {
       level: planForm.value.level,
       durationDays: planForm.value.durationDays,
       priceCents: Math.round(planForm.value.priceCents * 100),  // 元转分
-      benefits: planForm.value.benefits.length ? planForm.value.benefits : undefined,
-      roleId: planForm.value.roleId,
-      description: planForm.value.description || undefined,
+      // 显式 null / 空数组：undefined 会被 JSON 序列化丢弃 → 后端 Object.assign 保留旧值，
+      // 造成"取消绑定角色/清空权益"假成功（提示更新成功实际没变）
+      benefits: planForm.value.benefits.length ? planForm.value.benefits : [],
+      roleId: planForm.value.roleId ?? null,
+      description: planForm.value.description || null,
       isActive: planForm.value.isActive,
       sort: planForm.value.sort,
     }

@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource, IsNull } from 'typeorm';
+import { Repository, MoreThanOrEqual, In, DataSource, IsNull } from 'typeorm';
 import { PostEntity } from './post.entity';
 import { PostViewEntity } from './post-view.entity';
 import { TagEntity } from '../tag/tag.entity';
@@ -531,14 +531,16 @@ export class PostService implements OnModuleInit {
     const exists = await this.findByIdRaw(postId);
     if (!exists) return;
 
-    // 24h 内同 IP 同文章去重
+    // 24h 内同 IP 同文章去重。
+    // 直接条件化查"窗口内是否存在"，不走 ORDER BY viewed_at——旧写法对该 (post_id,ip)
+    // 命中的全部历史行做 filesort 再取 1 条，回访越多越慢；新写法命中
+    // idx_postview_post_ip 区间即短路（零排序），行为等价。
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recent = await this.postViewRepo.findOne({
-      where: { postId, ip },
-      order: { viewedAt: 'DESC' },
+    const recentInWindow = await this.postViewRepo.count({
+      where: { postId, ip, viewedAt: MoreThanOrEqual(since) },
     });
 
-    if (!recent || recent.viewedAt < since) {
+    if (recentInWindow === 0) {
       await this.postViewRepo.save(
         this.postViewRepo.create({
           postId,

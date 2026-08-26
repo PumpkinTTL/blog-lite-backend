@@ -10,7 +10,7 @@ import {
   CheckmarkCircleOutline, PlayOutline, CloudUploadOutline,
 } from '@vicons/ionicons5'
 import {
-  getBackupLogs, runBackup, verifyBackup, deleteBackupLog, downloadBackupUrl,
+  getBackupLogs, runBackup, verifyBackup, deleteBackupLog, downloadBackup,
   getSchedules, createSchedule, updateSchedule, deleteSchedule, runBySchedule,
   type BackupLog, type BackupSchedule,
 } from '../../api/backup'
@@ -132,14 +132,12 @@ async function handleVerify(id: number) {
 async function handleDownload(id: number) {
   if (downloadingId.value !== null) return
   downloadingId.value = id
-  const m = message.loading('正在生成下载链接…', { duration: 0 })
+  const m = message.loading('正在下载备份…', { duration: 0 })
   try {
-    // 后端 302 跳转到 R2 presigned URL，新标签打开
-    window.open(downloadBackupUrl(id), '_blank')
-    // 给浏览器一点时间发起跳转，然后收起 loading
-    await new Promise((r) => setTimeout(r, 800))
+    // fetch blob 携带 Authorization（此前 window.open 带不上 header，实际永远 401）
+    await downloadBackup(id)
     m.destroy()
-    message.success('已在新标签页打开下载，若未开始请检查弹窗拦截')
+    message.success('备份已开始下载')
   } catch (e: any) {
     m.destroy()
     message.error(e?.message || '下载失败')
@@ -236,13 +234,16 @@ const logColumns: DataTableColumns<BackupLog> = [
               },
                 { default: () => '校验', icon: () => h(NIcon, null, { default: () => h(CheckmarkCircleOutline) }) })
             : null,
-          h(NButton, {
-            size: 'small', quaternary: true, type: 'error',
-            loading: deletingLogId.value === row.id,
-            disabled: busy && deletingLogId.value !== row.id,
-            onClick: () => handleDeleteLog(row.id),
-          },
-            { default: () => '删除', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
+          // ⚠ 后端删除记录会连带物理删除 R2 备份文件——必须二次确认
+          h(NPopconfirm, { onPositiveClick: () => handleDeleteLog(row.id) }, {
+            trigger: () => h(NButton, {
+              size: 'small', quaternary: true, type: 'error',
+              loading: deletingLogId.value === row.id,
+              disabled: busy && deletingLogId.value !== row.id,
+            },
+              { default: () => '删除', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
+            default: () => '将同时从 R2 删除该备份文件，且不可恢复！确定删除？',
+          }),
         ]
       },
     }),

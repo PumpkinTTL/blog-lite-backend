@@ -46,7 +46,7 @@ export class DonationPublicController {
       amount: dto.amount,
       currency: dto.currency || 'CNY',
       payMethod: dto.payMethod,
-      cryptoNetwork: dto.cryptoNetwork || null,
+      cryptoNetwork: dto.cryptoNetwork || undefined,
       cryptoTxHash: dto.cryptoTxHash || null,
       message: dto.message || null,
       tradeNo: dto.tradeNo || null,

@@ -174,4 +174,28 @@ request.interceptors.response.use(
   },
 )
 
+// ═══ 文件下载（需要 Authorization 的 GET 导出接口）═══
+// window.open 无法携带 Authorization header（备份下载曾因此永远 401），
+// 统一走 fetch→blob→a[download]。检查 res.ok，避免把 JSON 错误体存成文件。
+export async function authedDownload(url: string, filename: string): Promise<void> {
+  const token = getToken('accessToken')
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) {
+    let msg = `下载失败（HTTP ${res.status}）`
+    try {
+      const j = await res.json()
+      if (j?.message) msg = j.message
+    } catch { /* 非 JSON 错误体 */ }
+    throw new Error(msg)
+  }
+  const blob = await res.blob()
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
 export default request

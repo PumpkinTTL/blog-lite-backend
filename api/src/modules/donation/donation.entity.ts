@@ -8,7 +8,8 @@ import {
 } from 'typeorm';
 
 export type PayMethod = 'wechat' | 'alipay' | 'crypto' | 'other';
-export type CryptoNetwork = 'TRC20' | 'BSC' | 'POL' | null;
+/** 链名由后台「捐赠配置→钱包地址」配置驱动（历史固定 TRC20/BSC/POL，已放开为受控字符串） */
+export type CryptoNetwork = string;
 export type DonationStatus = 'pending' | 'confirmed' | 'refunded';
 
 /**

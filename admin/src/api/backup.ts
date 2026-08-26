@@ -1,4 +1,4 @@
-import request from './request'
+import request, { authedDownload } from './request'
 
 /** 备份状态 */
 export type BackupStatus = 'running' | 'success' | 'failed'
@@ -46,11 +46,10 @@ export function verifyBackup(id: number) {
   return request.post(`/backup/logs/${id}/verify`)
 }
 
-/** 下载备份（返回的 URL 直接 window.open，后端会 302 跳转 R2） */
-export function downloadBackupUrl(id: number): string {
-  // 用完整 URL 直接打开（带 admin token 的 cookie/header 需走同源）
+/** 下载备份：后端 302 跳 R2。window.open 带不上 Authorization（曾永远 401），改 fetch blob */
+export async function downloadBackup(id: number): Promise<void> {
   const base = (import.meta as any).env?.VITE_API_BASE_URL || ''
-  return `${base}/backup/logs/${id}/download`
+  await authedDownload(`${base}/backup/logs/${id}/download`, `backup_${id}.sql.gz`)
 }
 
 export function deleteBackupLog(id: number) {

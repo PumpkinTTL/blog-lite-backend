@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsIn,
   IsEnum,
+  Matches,
   Min,
   Max,
   MaxLength,
@@ -14,7 +15,6 @@ import {
 } from 'class-validator';
 import type {
   PayMethod,
-  CryptoNetwork,
   DonationStatus,
 } from './donation.entity';
 
@@ -47,9 +47,13 @@ export class CreateDonationDto {
   @IsEnum(['wechat', 'alipay', 'crypto', 'other'])
   payMethod: PayMethod;
 
-  @IsEnum(['TRC20', 'BSC', 'POL'])
+  // 链名由后台「捐赠配置→钱包地址」的键驱动（可配任意链），
+  // 放宽为受控字符串：仅作捐赠登记元数据展示，白名单枚举会把新链全部 400
+  @IsString()
+  @MaxLength(24)
+  @Matches(/^[A-Za-z0-9_-]+$/)
   @IsOptional()
-  cryptoNetwork?: CryptoNetwork;
+  cryptoNetwork?: string;
 
   @IsString()
   @IsOptional()
@@ -172,9 +176,13 @@ export class UpdateDonationDto {
   @IsOptional()
   payMethod?: PayMethod;
 
-  @IsEnum(['TRC20', 'BSC', 'POL'])
+  // 链名由后台「捐赠配置→钱包地址」的键驱动（可配任意链），
+  // 放宽为受控字符串：仅作捐赠登记元数据展示，白名单枚举会把新链全部 400
+  @IsString()
+  @MaxLength(24)
+  @Matches(/^[A-Za-z0-9_-]+$/)
   @IsOptional()
-  cryptoNetwork?: CryptoNetwork;
+  cryptoNetwork?: string;
 
   @IsString()
   @IsOptional()
@@ -248,9 +256,13 @@ export class PublicSubmitDonationDto {
   @IsEnum(['wechat', 'alipay', 'crypto', 'other'])
   payMethod: PayMethod;
 
-  @IsEnum(['TRC20', 'BSC', 'POL'])
+  // 链名由后台「捐赠配置→钱包地址」的键驱动（可配任意链），
+  // 放宽为受控字符串：仅作捐赠登记元数据展示，白名单枚举会把新链全部 400
+  @IsString()
+  @MaxLength(24)
+  @Matches(/^[A-Za-z0-9_-]+$/)
   @IsOptional()
-  cryptoNetwork?: CryptoNetwork;
+  cryptoNetwork?: string;
 
   @IsString()
   @IsOptional()

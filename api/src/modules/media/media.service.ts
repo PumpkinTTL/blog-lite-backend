@@ -47,7 +47,9 @@ export class MediaService {
   ) {
     const qb = this.mediaRepo
       .createQueryBuilder('e')
-      .leftJoinAndSelect('e.uploader', 'u');
+      // 只取 uploader 公开三列：整行 JOIN 会把 password/email 等拉进 Node 内存
+      .leftJoin('e.uploader', 'u')
+      .addSelect(['u.id', 'u.nickname', 'u.avatar']);
     applyFilters(qb, {
       exact: { 'e.id': filters?.id },
       like: { keyword: filters?.keyword, fields: ['e.originalName'] },
