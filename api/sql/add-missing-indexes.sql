@@ -16,6 +16,11 @@ SET @idx_exists := (
     AND index_name = 'idx_post_tags_tag'
 );
 SET @sql := IF(@idx_exists = 0,
+
+-- ⚠ dev 环境注意：DB_SYNCHRONIZE=true 时 nest 重启可能清掉本文件手工建的索引
+--   （本轮终审实证：TypeORM sync 会删它不认识的索引）。dev 重启后如发现查询变慢，重跑本文件。
+--   生产无此问题（synchronize 三重禁用）。
+
   'CREATE INDEX idx_post_tags_tag ON post_tags(tag_id)',
   'SELECT "idx_post_tags_tag 已存在，跳过" AS msg'
 );
