@@ -29,7 +29,7 @@ import {
   SendChangeEmailCodeDto,
   ChangeEmailDto,
 } from './user.dto';
-import { RegisterDto, ClientLoginDto } from './register.dto';
+import { RegisterDto, ClientLoginDto, LogoutDto } from './register.dto';
 import { BadRequestException } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -220,7 +220,7 @@ export class UserController {
    */
   @Public()
   @Post('logout')
-  async logout(@Req() req: Request, @Body() body: { refreshToken?: string }) {
+  async logout(@Req() req: Request, @Body() body: LogoutDto) {
     const userId = parseInt((req as any).user?.sub, 10);
     await this.userService.logout(
       Number.isNaN(userId) ? 0 : userId,

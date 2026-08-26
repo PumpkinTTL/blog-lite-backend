@@ -207,6 +207,16 @@ export class CasdoorService implements OnModuleInit {
     // 实测（auth.bitlesu.com）：Casdoor JWT 的 sub 是其内部 UUID（不是用户 name），
     // 用户名在 payload.name 字段（Casdoor 会把整个用户对象放进 JWT claims）。
     // 映射链：payload.name = "u<本地userId>" → 本地用户；sub 仅作兜底。
+    // 纵深防御（红队 V1）：name 即本地账号名，若 Casdoor 侧放开了自助注册，
+    // 攻击者可抢注 name=u<受害者id> 的账号伪造身份。应用来源校验：
+    // token 带 signupApplication claim 且 ≠ 本应用时拒绝（claim 缺省的旧版本兼容跳过）。
+    // 【上线硬前置】Casdoor 后台 blog-lite 应用必须关闭「自助注册」。
+    const signupApp = (payload as { signupApplication?: unknown }).signupApplication;
+    if (typeof signupApp === 'string' && signupApp !== this.appName) {
+      throw new Error(
+        `Casdoor token 来源应用不匹配: ${signupApp}（期望 ${this.appName}），疑似跨应用/抢注 token`,
+      );
+    }
     const localUserId = this.parseLocalUserId(
       (payload as { name?: unknown }).name ?? payload.sub,
     );

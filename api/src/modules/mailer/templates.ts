@@ -166,12 +166,14 @@ export function renderDonationThanks(opts: {
   contact?: string;
 }): string {
   const platform = opts.platformName || DEFAULT_PLATFORM;
+  // platform 是 admin 可控值（renderShell 内已有 esc，这里进 p() 的要单独转义）
+  const platformSafe = esc(platform);
   const hasCode = !!opts.code;
 
   // 正文：根据是否有码，用不同文案，不堆砌
   const introPara = hasCode
-    ? p(`感谢您对 ${platform} 的支持与慷慨捐赠。为表谢意，我们特地为您准备了一份会员激活码，请在「个人中心」输入以下激活码即可开通会员权益：`)
-    : p(`感谢您对 ${platform} 的支持与慷慨捐赠。您的这份心意，是我们持续创作、分享优质内容的温暖动力。`);
+    ? p(`感谢您对 ${platformSafe} 的支持与慷慨捐赠。为表谢意，我们特地为您准备了一份会员激活码，请在「个人中心」输入以下激活码即可开通会员权益：`)
+    : p(`感谢您对 ${platformSafe} 的支持与慷慨捐赠。您的这份心意，是我们持续创作、分享优质内容的温暖动力。`);
 
   const codeBlockHtml = hasCode ? codeBlock(opts.code!, '会员激活码') : '';
 

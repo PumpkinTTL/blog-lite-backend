@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { DonationEntity, DonationStatus } from './donation.entity';
 import { DonationNotificationEntity } from './donation-notification.entity';
 import { applyFilters } from '../../common/utils/apply-filters';
@@ -149,18 +149,18 @@ export class DonationService {
     if (opts.codeId) {
       // 一单最多一码：此前只防"一码两单"，不防两个管理员并发（或先后）给同一单发不同的码
       // —— 两个码都能通过码维度校验，rewardCodeId 后写者覆盖，一笔赞助双发会员权益。
-      // 先用条件 UPDATE 占住单据（rewardCodeId 为空才允许写入），输了说明该单已发过码。
-      if (donation.rewardCodeId != null) {
-        throw new BadRequestException('该捐赠单已发放过答谢码');
-      }
+      // 真·条件 UPDATE 占位：WHERE rewardCodeId IS NULL 才允许写入。
+      // （核验抓出的半吊子版曾把"条件"写在快照预检里，WHERE 只有 id——TOCTOU，
+      // 并发双方都能 affected=1；条件必须落进 WHERE 子句才是原子占位。）
       const claim = await this.repo.update(
-        { id: donationId },
+        { id: donationId, rewardCodeId: IsNull() },
         { rewardCodeId: opts.codeId },
       );
       if (!claim.affected) {
-        throw new BadRequestException('捐赠记录不存在');
+        throw new BadRequestException('该捐赠单已发放过答谢码');
       }
-      // 占位成功后再做码维度的校验（失败则释放占位）
+      // 占位成功后再做码维度的校验（失败则释放占位；
+      // 释放同样带条件——只清自己写入的 codeId，防止覆盖并发赢家的合法占位）
       const code = await this.codeService.findById(opts.codeId);
       try {
         if (!code) throw new NotFoundException('激活码不存在');
@@ -175,7 +175,10 @@ export class DonationService {
           throw new BadRequestException('该激活码已分配给其他捐赠单');
         }
       } catch (e) {
-        await this.repo.update({ id: donationId }, { rewardCodeId: null });
+        await this.repo.update(
+          { id: donationId, rewardCodeId: opts.codeId },
+          { rewardCodeId: null },
+        );
         throw e;
       }
 

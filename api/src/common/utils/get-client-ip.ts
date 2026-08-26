@@ -3,39 +3,18 @@ import type { Request } from 'express';
 /**
  * 统一获取客户端真实 IP。
  *
- * 前置条件：main.ts 已设置 app.set('trust proxy', ...)。
- * 设置后 Express 会自动解析 X-Forwarded-For，req.ip 即为真实客户端 IP，
- * 此时直接用 req.ip 即可，无需手动解析 header。
+ * 唯一信任来源：req.ip（由 Express trust proxy 解析）。
+ * 生产前置：nginx 用 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`，
+ * 应用 TRUST_PROXY 与真实代理跳数一致——此时 req.ip 即真实客户端。
  *
- * 兜底逻辑：若 trust proxy 未生效或解析失败，尝试从 XFF 首段取 IP（最左侧是原始客户端）。
- * 注意：XFF 是逗号分隔的 `client, proxy1, proxy2`，取首个才是真实客户端 IP，
- * 不能用 .toString() 取整串（会污染限流 key 和黑名单 value）。
- *
- * 无法确定时返回 'unknown'（限流/黑名单对此值放行，避免误伤）。
+ * 【红队 V2】不再手动解析 X-Forwarded-For / X-Real-IP 兜底：
+ * 客户端可伪造这两个头——回退路径存在时，攻击者每次请求换一个伪造 IP 即可
+ * 绕过 IP 限流/自动拉黑，还能把任意第三方 IP 投毒进黑名单。
+ * 直接访问源站端口（绕过 nginx）的场景应靠防火墙封 5200 外网入口解决，
+ * 而不是在应用层信任可伪造的头。无法确定时返回 'unknown'（限流对其放行）。
  */
 export function getClientIp(req: Request): string {
-  // trust proxy 生效时的首选路径
   const ip = req.ip;
-  if (ip && ip !== '::ffff:127.0.0.1' && !ip.startsWith('127.')) {
-    return ip;
-  }
-
-  // 兜底：手动解析 X-Forwarded-For 首段（trust proxy 未配或内网回环时）
-  const xff = req.headers['x-forwarded-for'];
-  if (xff) {
-    // 取最左侧第一个非空、非内网占位的 IP
-    const first = xff.toString().split(',')[0]?.trim();
-    if (first && first !== 'unknown') {
-      return first;
-    }
-  }
-
-  // req.ip 可能是回环地址，但也算有效（本地开发场景）
   if (ip) return ip;
-
-  // X-Real-IP（部分代理会用这个）
-  const realIp = req.headers['x-real-ip'];
-  if (realIp) return realIp.toString().trim();
-
   return 'unknown';
 }

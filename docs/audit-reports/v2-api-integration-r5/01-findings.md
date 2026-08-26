@@ -10,7 +10,7 @@
 `modules/ai-provider/ai-provider.controller.ts:92` `@Delete(':id')` 在 `@Delete('batch')`（:98）之前。`DELETE /ai-provider/batch` 命中 `:id`，`ParseIntPipe` 把 "batch" 解析失败 → 批量删除 500。对比 code.controller.ts 把 batch 放前面（正确）。
 
 **B2. API Key 明文泄露在源码**
-`modules/ai-provider/ai-provider.service.ts:13` SEED 对象明文 `apiKey: 'sk-a5192932229f5be4-6wmwyq-13a3121c'`。controller 返回时脱敏了，但密钥进了仓库历史。应改环境变量 + 轮换密钥。
+`modules/ai-provider/ai-provider.service.ts:13` SEED 对象明文 `apiKey: 'sk-a519****(已泄漏,必须轮换——完整值见git历史,勿在此存真钥)'`。controller 返回时脱敏了，但密钥进了仓库历史。应改环境变量 + 轮换密钥。
 
 **B3. 批量删用户不做级联清理**
 `modules/user/user.service.ts:411` `batchRemove` 只 `userRepo.delete(ids)`，不像 `remove`（339-373）那样在事务里清 interactions/memberships/code_usage_logs 并回算文章计数。有文章的作者删除直接 FK 500；即使成功，孤儿数据导致计数虚高。

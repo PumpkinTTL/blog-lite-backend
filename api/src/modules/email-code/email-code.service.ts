@@ -1,4 +1,5 @@
 import { Inject, Injectable, BadRequestException, ServiceUnavailableException, Logger } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { MailerService } from '../mailer/mailer.service';
@@ -61,7 +62,9 @@ export class EmailCodeService {
     }
 
     // 生成 6 位验证码
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    // CSPRNG：Math.random 是 xorshift128+，采样几十个输出即可恢复状态预测后续码
+    // （红队 V3）。randomInt 密码学安全，[100000, 1000000) 恒 6 位。
+    const code = String(randomInt(100000, 1000000));
 
     // 发送邮件（失败则清除冷却，允许立即重试）
     const expireMinutes = this.CODE_TTL / 60000;
@@ -97,8 +100,15 @@ export class EmailCodeService {
    */
   async verifyCode(email: string, code: string): Promise<boolean> {
     const key = this.PREFIX + email;
+    // Redis 故障 → 明确 503（与 sendCode 同语义），不冒原生 ioredis 错误成 500
+    let attempts: number;
+    try {
+      attempts = await this.redis.hincrby(key, 'attempts', 1);
+    } catch (e) {
+      this.logger.error(`Redis 不可用，验证码校验失败: ${(e as Error).message}`);
+      throw new ServiceUnavailableException('验证码服务暂时不可用，请稍后重试');
+    }
     // 原子自增尝试次数
-    const attempts = await this.redis.hincrby(key, 'attempts', 1);
     if (attempts > this.MAX_ATTEMPTS) {
       await this.redis.del(key);
       throw new BadRequestException('验证码错误次数过多，请重新获取');

@@ -1,3 +1,5 @@
+import { randomInt } from 'node:crypto';
+
 /**
  * 用户 ID 生成器：9 位随机数字（首位非 0）。
  *
@@ -22,8 +24,9 @@ const RANGE = MAX_ID - MIN_ID + 1;
  * 生成单个 9 位随机 id（不查库）。
  */
 export function randomUserId(): number {
-  // Math.random() 够用：非密码学场景，用户体量小，碰撞由调用方查重兜底。
-  return MIN_ID + Math.floor(Math.random() * RANGE);
+  // CSPRNG（红队 V3 顺手加固）：id 是登录账号名的一部分（Casdoor name=u<id>），
+  // 可预测的 id 序列降低抢注/枚举成本。碰撞仍由调用方查重兜底。
+  return randomInt(MIN_ID, MAX_ID + 1);
 }
 
 /**

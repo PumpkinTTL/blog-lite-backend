@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, MinLength, IsEmail, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, MinLength, IsEmail, IsOptional, IsEnum, MaxLength } from 'class-validator';
 
 export class RegisterDto {
   // username 概念已移除：注册不再要求登录账号。
@@ -72,4 +72,12 @@ export class ClientLoginDto {
   @IsString()
   @IsOptional()
   turnstileToken?: string;
+}
+
+/** 登出请求体（@Public 路由：refreshToken 有长度上限，防 10MB 字符串透传吊销端点） */
+export class LogoutDto {
+  @IsString()
+  @MaxLength(768)
+  @IsOptional()
+  refreshToken?: string;
 }
