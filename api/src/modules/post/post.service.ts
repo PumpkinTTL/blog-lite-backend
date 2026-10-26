@@ -194,11 +194,15 @@ export class PostService implements OnModuleInit {
    * 轻量查询：仅判断文章是否存在且未软删（不加载关联，不加权限校验）。
    * 用于点赞/评论等操作前的目标校验。
    */
-  async findByIdRaw(id: number): Promise<boolean> {
-    const exists = await this.postRepo.exist({
+  async findByIdRaw(id: number): Promise<boolean | { status: string }> {
+    const post = await this.postRepo.findOne({
       where: { id, deletedAt: IsNull() },
+      select: ['id', 'status'],
     });
-    return exists;
+    if (!post) return false;
+    // 返回状态对象供调用方做 draft/private 判定（互动接口状态机 P2）；
+    // 原布尔语义 true 恒成立（能查到即 true）
+    return { status: post.status };
   }
 
   async findById(id: number, publicOnly = false, userId?: number) {

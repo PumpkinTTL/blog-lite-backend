@@ -11,6 +11,7 @@ import {
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { parseSettingBool } from '../../common/utils/parse-setting-bool';
 import { AnnouncementService } from './announcement.service';
 import {
   CreateAnnouncementDto,
@@ -50,7 +51,7 @@ export class AnnouncementController {
     if (!isAdmin) {
       const enabledRow =
         await this.settingService.findByKey('announcements.enabled');
-      const enabled = !(enabledRow?.value === 'false' || enabledRow?.value === '0');
+      const enabled = parseSettingBool(enabledRow?.value, true);
       if (!enabled) {
         return {
           success: true,

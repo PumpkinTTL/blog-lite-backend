@@ -16,7 +16,12 @@ export class PlanController {
   @Get('public')
   async listPublic() {
     const list = await this.planService.findAll(true);
-    return { success: true, data: list, message: 'ok' };
+    // 公开载荷剔除内部权益配置 roleId（泄露审计 L3：辅助理解资源角色门禁映射）
+    const data = list.map((p) => {
+      const { roleId: _roleId, ...rest } = p as unknown as Record<string, unknown>;
+      return rest;
+    });
+    return { success: true, data, message: 'ok' };
   }
 
   @Get()

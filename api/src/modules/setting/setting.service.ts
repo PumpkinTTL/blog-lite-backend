@@ -10,11 +10,20 @@ export interface SettingOperator {
   name?: string;
 }
 
+/** 缓存 TTL：读路径超时后后台重载。兜底两类陈旧——
+ *  ① 多实例部署时其他实例的写不会失效本进程缓存（invalidate 只作用于本进程）；
+ *  ② loadCache 竞态窗口内旧值被写回缓存并无 TTL 驻留（审查第5轮·配置矩阵） */
+const CACHE_TTL_MS = 30_000;
+
 @Injectable()
 export class SettingService {
   // 进程内缓存：setting 是低频写、高频读，加内存缓存减少 DB 压力。
   // 写操作（create/update/remove）时调用 invalidate() 清空，下次读重新加载。
   private cache: Map<string, SettingEntity> | null = null;
+  private cacheLoadedAt = 0;
+  // 失效代际：invalidate 自增。loadCache 完成回调校验代际未变才落缓存，
+  // 防"读请求在 update 前发起、invalidate 后落地"把旧值写回并无 TTL 驻留
+  private generation = 0;
   // 冷启动雷群防护：并发的 loadCache 共用同一个 Promise
   private loadPromise: Promise<Map<string, SettingEntity>> | null = null;
 
@@ -29,15 +38,29 @@ export class SettingService {
   /** 清空缓存（写操作后调用） */
   private invalidate() {
     this.cache = null;
+    this.generation += 1;
   }
 
-  /** 加载全部配置到缓存（懒加载，带并发去重） */
-  private async loadCache(): Promise<Map<string, SettingEntity>> {
-    if (this.cache) return this.cache;
+  /** 读路径入口：缓存未过期直接用；过期/缺失则重载 */
+  private async getCache(): Promise<Map<string, SettingEntity>> {
+    if (this.cache && Date.now() - this.cacheLoadedAt < CACHE_TTL_MS) {
+      return this.cache;
+    }
+    return this.loadCache(true);
+  }
+
+  /** 加载全部配置到缓存（懒加载，带并发去重；force=忽略现有缓存） */
+  private async loadCache(force = false): Promise<Map<string, SettingEntity>> {
+    if (!force && this.cache) return this.cache;
     if (this.loadPromise) return this.loadPromise;
+    const gen = this.generation;
     this.loadPromise = this.repo.find().then((list) => {
       const m = new Map(list.map((s) => [s.key, s]));
-      this.cache = m;
+      // 查询期间发生过写操作 → 本次结果已过时，不落缓存（下次读会再加载）
+      if (gen === this.generation) {
+        this.cache = m;
+        this.cacheLoadedAt = Date.now();
+      }
       return m;
     }).finally(() => {
       this.loadPromise = null;
@@ -92,7 +115,7 @@ export class SettingService {
   }
 
   async findByKey(key: string) {
-    const cache = await this.loadCache();
+    const cache = await this.getCache();
     return cache.get(key) ?? null;
   }
 
@@ -159,7 +182,7 @@ export class SettingService {
   }
 
   async findByGroup(group: string) {
-    const cache = await this.loadCache();
+    const cache = await this.getCache();
     return Array.from(cache.values())
       .filter((s) => s.group === group)
       .sort((a, b) => a.key.localeCompare(b.key));

@@ -340,8 +340,12 @@ export class BackupService {
           }
         }
       }
-    } catch {
-      // 面板配置解析失败回落 .env（不阻塞备份）
+    } catch (e) {
+      // 面板配置解析失败回落 .env（不阻塞备份）。
+      // 显式告警：落桶与面板显示不一致是灾难恢复时的经典迷惑项（媒体深审 4.1）
+      this.logger.warn(
+        `面板 R2 配置解析失败，备份回落 .env 凭证: ${(e as Error).message}`,
+      );
     }
     return this.createR2ProviderFromEnv();
   }
@@ -460,7 +464,12 @@ export class BackupService {
         const provider = await this.createR2Provider();
         await provider.delete(log.r2Key);
       } catch (err) {
-        this.logger.warn(`删除 R2 备份 ${log.r2Key} 失败: ${(err as Error).message}`);
+        // R2 删除失败 → 保留记录可重试（媒体深审 2.2：此前吞错后删记录，
+        // 对象永久孤儿且无对账路径）
+        this.logger.error(`删除 R2 备份 ${log.r2Key} 失败，记录已保留可重试: ${(err as Error).message}`);
+        throw new BadRequestException(
+          `R2 备份文件删除失败，记录已保留，请稍后重试（${(err as Error).message.slice(0, 120)}）`,
+        );
       }
     }
     await this.logRepo.delete(id);

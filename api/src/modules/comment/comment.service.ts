@@ -147,15 +147,10 @@ export class CommentService {
   async create(userId: number, dto: CreateCommentDto): Promise<CommentEntity> {
     // 校验目标实体存在（目前只支持 post）
     if (dto.entityType === 'post') {
-      // deletedAt 非自动过滤（非 @DeleteDateColumn），需手动校验未软删
-      const post = await this.postRepo.findOne({
-        where: { id: dto.entityId, deletedAt: IsNull() },
-        select: ['id', 'status'],
-      });
-      if (!post) throw new NotFoundException('评论目标不存在');
-      if (post.status === 'draft') {
-        throw new BadRequestException('文章尚未发布');
-      }
+      // 统一走宿主可见性判定（状态机 P1）：此前只拦 draft，
+      // private 文章任何登录用户都可评论——评论通过后连作者本人都看不到
+      //（create 处 user 传 {id}，author/admin 放行逻辑在 ensureEntityVisible 内）
+      await this.ensureEntityVisible(dto.entityType, dto.entityId, { id: userId });
     } else {
       throw new BadRequestException(`不支持的 entityType: ${dto.entityType}`);
     }

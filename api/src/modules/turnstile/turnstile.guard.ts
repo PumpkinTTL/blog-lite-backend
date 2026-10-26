@@ -10,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import { firstValueFrom } from 'rxjs';
 import { SettingService } from '../setting/setting.service';
 import { getClientIp } from '../../common/utils/get-client-ip';
+import { parseSettingBool } from '../../common/utils/parse-setting-bool';
 import { REQUIRE_TURNSTILE_KEY } from '../../common/decorators/require-turnstile.decorator';
 
 /**
@@ -47,8 +48,7 @@ export class TurnstileGuard implements CanActivate {
 
     // 2. 读配置：开关 + secret_key（走 SettingService 内存缓存）
     const enabledRow = await this.settingService.findByKey('turnstile.enabled');
-    const enabled =
-      enabledRow?.value === 'true' || enabledRow?.value === '1';
+    const enabled = parseSettingBool(enabledRow?.value, false);
     if (!enabled) return true; // 未开启，直接放行
 
     const secretRow = await this.settingService.findByKey('turnstile.secret_key');

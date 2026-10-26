@@ -9,6 +9,7 @@ import {
   IsEnum,
   IsNotEmpty,
   Matches,
+  MaxLength,
 } from 'class-validator';
 
 export class CreateMediaDto {
@@ -130,6 +131,7 @@ export class PresignR2Dto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   note?: string;
 }
 
@@ -142,6 +144,7 @@ export class ConfirmR2Dto {
   key: string;
 
   @IsString()
+  @MaxLength(255)
   originalName: string;
 
   @IsString()

@@ -54,7 +54,7 @@ export class ResourceService {
     // panLinks（JSON）公开列表一并裁掉（列表本就不返回）；admin 列表保留
     // （表格有"网盘链接数"徽章依赖 panLinks.length，且低频使用）。
     const excluded = publicOnly
-      ? ['content', 'panLinks']
+      ? ['content', 'panLinks', 'requiredRoleIds', 'minMemberLevel', 'uploaderId']
       : ['content'];
     const qb = this.repo
       .createQueryBuilder('e')
@@ -211,13 +211,20 @@ export class ResourceService {
       }
     }
 
-    // 全部通过 → 返回完整内容
+    // 全部通过 → 返回完整内容（panLinks 保留；内部配置三列仍剔——泄露审计 L4）
+    resource.requiredRoleIds = null;
+    resource.minMemberLevel = null;
+    resource.uploaderId = null;
     return { resource, accessStatus: 'full' };
   }
 
   /** 抹除敏感字段（锁定时返回预览信息） */
   private stripSensitive(r: ResourceEntity): ResourceEntity {
     r.panLinks = null;
+    // 内部配置列（泄露审计 L4）：角色门禁映射/废弃字段/上传者外键不对匿名暴露
+    r.requiredRoleIds = null;
+    r.minMemberLevel = null;
+    r.uploaderId = null;
     return r;
   }
 

@@ -169,6 +169,7 @@ export class MembershipService implements OnModuleInit {
    */
   async preCheckGrant(userId: number, planId: number): Promise<void> {
     const plan = await this.planService.findById(planId);
+    const durationDaysOf = (pl: { durationDays: number }) => pl.durationDays;
     if (!plan.isActive) {
       throw new BadRequestException(`套餐「${plan.name}」已下架，无法开通`);
     }
@@ -188,6 +189,30 @@ export class MembershipService implements OnModuleInit {
       const higher = higherLevels[0];
       throw new BadRequestException(
         `您当前是「${higher.plan.name}」，未到期无法兑换更低等级「${plan.name}」，请到期后再兑换`,
+      );
+    }
+    // 升级将作废终身低级订阅（状态机 M1）：限时高级码到期后权益归零、
+    // 终身权益被毁且无恢复路径——拦截，交由管理员手动处理
+    const lifetimeLower = validActives.find(
+      (m) =>
+        m.expiresAt === null && LEVEL_WEIGHT[m.plan.level] < newLevelWeight,
+    );
+    if (lifetimeLower) {
+      throw new BadRequestException(
+        `您持有「${lifetimeLower.plan.name}」终身权益，兑换「${plan.name}」到期后将同时失去终身权益。如确认要放弃终身权益，请联系管理员处理`,
+      );
+    }
+    // 终身同级 + 限期码：grant 会静默忽略续期（终身不缩短），
+    // 拦截必须在烧码之前，否则码被消耗、权益零增长（状态机 M3）
+    const sameLevelLifetime = validActives.find(
+      (m) =>
+        m.plan.level === plan.level &&
+        m.expiresAt === null &&
+        durationDaysOf(plan) !== 0,
+    );
+    if (sameLevelLifetime) {
+      throw new BadRequestException(
+        `您已是「${plan.name}」终身会员，无需兑换限时码`,
       );
     }
   }
@@ -407,6 +432,29 @@ export class MembershipService implements OnModuleInit {
     if (wasActive && dto.status && dto.status !== 'active' && m.plan.roleId) {
       await this.safeRevokeRole(null, m.userId, m.plan.roleId, m.id);
     }
+    // 复活转移（状态机 M2）：非 active → active 必须补授角色——等级判定
+    // （memberships）与权益执行（users.roles）是双载体，此前只处理撤角色方向，
+    // 管理员复活过期订阅后 me/status 显示有会员、角色门禁全拒且无自愈
+    if (!wasActive && dto.status === 'active') {
+      if (m.expiresAt && m.expiresAt <= new Date()) {
+        throw new BadRequestException(
+          '复活订阅的到期时间必须晚于当前时间；如需延期请先修改到期时间',
+        );
+      }
+      if (m.plan.roleId) {
+        const user = await this.userRepo.findOne({
+          where: { id: m.userId },
+          relations: ['roles'],
+        });
+        if (user && !user.roles.some((r) => r.id === m.plan.roleId)) {
+          const role = await this.roleRepo.findOne({ where: { id: m.plan.roleId } });
+          if (role) {
+            user.roles = [...user.roles, role];
+            await this.userRepo.save(user);
+          }
+        }
+      }
+    }
     return saved;
   }
 
@@ -497,30 +545,35 @@ export class MembershipService implements OnModuleInit {
   ): Promise<void> {
     if (expired.length === 0) return;
     try {
-      // 1. 标 expired
+      // 标 expired + 撤角色同事务（与 sweepExpired 同修）：
+      // 此前两步分离，撤角色抛错被 catch 吞掉后，记录已离开 active 查询域，
+      // 懒过期与定时 sweep 都不会再处理 → 过期会员角色终身残留
       const ids = expired.map((m) => m.id);
-      await this.memberRepo
-        .createQueryBuilder()
-        .update()
-        .set({ status: 'expired' })
-        .where('id IN (:...ids)', { ids })
-        .execute();
+      await this.dataSource.transaction(async (manager) => {
+        await manager
+          .createQueryBuilder()
+          .update()
+          .set({ status: 'expired' })
+          .where('id IN (:...ids)', { ids })
+          .execute();
 
-      // 2. 撤角色（按 roleId 去重，safeRevokeRole 自带双重订阅防误删）
-      const handled = new Set<string>();
-      for (const m of expired) {
-        const roleId = m.plan.roleId;
-        if (!roleId) continue;
-        const key = `${userId}:${roleId}`;
-        if (handled.has(key)) continue;
-        handled.add(key);
-        await this.safeRevokeRole(null, userId, roleId, m.id);
-      }
+        // 撤角色（按 roleId 去重，safeRevokeRole 自带双重订阅防误删）
+        const handled = new Set<string>();
+        for (const m of expired) {
+          const roleId = m.plan.roleId;
+          if (!roleId) continue;
+          const key = `${userId}:${roleId}`;
+          if (handled.has(key)) continue;
+          handled.add(key);
+          await this.safeRevokeRole(manager, userId, roleId, m.id);
+        }
+      });
       this.logger.log(
         `懒过期：userId=${userId} 清理 ${expired.length} 条过期订阅`,
       );
     } catch (e) {
-      // 懒过期失败不应阻塞业务请求，记录日志即可（下次 sweep 会兜底）
+      // 事务已回滚（记录保持 active）→ 下次 sweep/懒过期重试；
+      // 本次请求按过期前的状态继续（getActiveLevel 外层有剩余过滤）
       this.logger.warn(
         `懒过期清理失败 userId=${userId}: ${(e as Error).message}`,
       );

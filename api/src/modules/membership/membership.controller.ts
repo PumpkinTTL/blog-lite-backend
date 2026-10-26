@@ -248,6 +248,21 @@ export class MembershipController {
       this.memberService.getActiveLevel(userId),
       this.memberService.getUserActiveMemberships(userId),
     ]);
-    return { success: true, data: { level, memberships }, message: 'ok' };
+    // 载荷裁剪（泄露审计 L6）：admin 备注 note、内部关联 source/sourceId、
+    // plan.roleId 是运营/内部字段，本人视角无需回显
+    const data = {
+      level,
+      memberships: memberships.map((m) => ({
+        id: m.id,
+        planId: m.planId,
+        startedAt: m.startedAt,
+        expiresAt: m.expiresAt,
+        status: m.status,
+        plan: m.plan
+          ? { id: m.plan.id, name: m.plan.name, level: m.plan.level, priceCents: m.plan.priceCents }
+          : null,
+      })),
+    };
+    return { success: true, data, message: 'ok' };
   }
 }

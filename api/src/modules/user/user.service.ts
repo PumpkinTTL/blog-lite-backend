@@ -6,6 +6,7 @@ import type Redis from 'ioredis';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { REDIS_CLIENT } from '../redis/redis.module';
+import { parseSettingBool } from '../../common/utils/parse-setting-bool';
 import { UserEntity } from './user.entity';
 import { RoleEntity } from './role.entity';
 import { LoginDto } from './login.dto';
@@ -782,7 +783,7 @@ export class UserService {
     // 0. 站点设置校验：注册开关 + 邮箱后缀白名单（管理员可在后台 site-setting 配置）
     const regEnabled = await this.settingService.findByKey('registration.enabled');
     const enabledVal = regEnabled?.value;
-    if (enabledVal === 'false' || enabledVal === '0') {
+    if (!parseSettingBool(enabledVal, true)) {
       throw new BadRequestException('注册功能暂未开放');
     }
     if (dto.email) {
@@ -1274,7 +1275,16 @@ export class UserService {
       bannedUntil: _bt,
       ...safeUser
     } = user as any;
-    return { ...safeUser, membership: { level, memberships } };
+    // memberships 同步裁剪（泄露审计 L6）：note/source/sourceId/plan.roleId
+    // 不出；前端仅消费 expiresAt / planName / plan.name
+    const safeMemberships = memberships.map((m) => ({
+      id: m.id,
+      expiresAt: m.expiresAt,
+      status: m.status,
+      planName: m.plan?.name ?? null,
+      plan: m.plan ? { id: m.plan.id, name: m.plan.name, level: m.plan.level } : null,
+    }));
+    return { ...safeUser, membership: { level, memberships: safeMemberships } };
   }
 
   /**

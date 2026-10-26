@@ -13,6 +13,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { parseSettingBool } from '../../common/utils/parse-setting-bool';
 import { CommentService } from './comment.service';
 import {
   CreateCommentDto,
@@ -94,7 +95,7 @@ export class CommentController {
     // 历史评论的查看/编辑/删除不受影响（用户仍可管理自己已发的内容）。
     const enabledRow = await this.settingService.findByKey('comments.enabled');
     const enabled =
-      enabledRow?.value === 'false' || enabledRow?.value === '0' ? false : true;
+      parseSettingBool(enabledRow?.value, true);
     if (!enabled) {
       throw new BadRequestException('评论功能暂未开放');
     }

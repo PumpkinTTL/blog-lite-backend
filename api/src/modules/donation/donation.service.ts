@@ -68,6 +68,17 @@ export class DonationService {
   }
 
   async update(id: number, data: Partial<DonationEntity>) {
+    // 终态守卫（状态机 D3）：refunded 无出边，PUT :id 此前可绕过 toggleStatus 的守卫
+    if (data.status && data.status !== 'refunded') {
+      const current = await this.repo.findOne({ where: { id } });
+      if (current?.status === 'refunded') {
+        throw new BadRequestException('已退款的捐赠为终态，不可再变更状态');
+      }
+    }
+    // 转入 refunded → 回收答谢码（状态机 D1，此前无任何回收路径）
+    if (data.status === 'refunded') {
+      await this.revokeRewardCodeOnRefund(id);
+    }
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('捐赠记录不存在');
     Object.assign(entity, data);
@@ -82,6 +93,24 @@ export class DonationService {
     await this.repo.delete(ids);
   }
 
+  /** 退款时回收答谢码（状态机 D1）：未兑换的自动禁用防白嫖；已兑换的告警供人工追讨 */
+  private async revokeRewardCodeOnRefund(donationId: number) {
+    const donation = await this.repo.findOne({ where: { id: donationId } });
+    if (!donation?.rewardCodeId) return;
+    const code = await this.codeService.findById(donation.rewardCodeId);
+    if (!code) return;
+    if (code.status === 'active' && code.usedCount === 0) {
+      await this.codeService.update(code.id, { status: 'disabled' });
+      this.logger.warn(
+        `捐赠 #${donationId} 已退款，答谢码 ${code.code} 未兑换，已自动禁用`,
+      );
+    } else if (code.usedCount > 0) {
+      this.logger.warn(
+        `捐赠 #${donationId} 已退款，但答谢码 ${code.code} 已被兑换（usedCount=${code.usedCount}）——需人工追讨会员权益`,
+      );
+    }
+  }
+
   async toggleStatus(id: number) {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException('捐赠记录不存在');
@@ -94,7 +123,12 @@ export class DonationService {
       entity.status === DONATION_STATUS.CONFIRMED
         ? DONATION_STATUS.PENDING
         : DONATION_STATUS.CONFIRMED;
-    return this.repo.save(entity);
+    const saved = await this.repo.save(entity);
+    // 确认→取消确认（异常单回退）时同样回收答谢码，防“取消确认后码仍可兑换”
+    if (saved.status === DONATION_STATUS.PENDING) {
+      await this.revokeRewardCodeOnRefund(id);
+    }
+    return saved;
   }
 
   async toggleVisible(id: number) {
@@ -139,6 +173,13 @@ export class DonationService {
   ) {
     const donation = await this.repo.findOne({ where: { id: donationId } });
     if (!donation) throw new NotFoundException('捐赠记录不存在');
+
+    // 带码发放仅限已确认单（状态机 D2）：pending 可发纯感谢；refunded 发码=白送会员
+    if (opts.codeId && donation.status !== 'confirmed') {
+      throw new BadRequestException(
+        `仅已确认的捐赠可发放答谢码（当前状态：${donation.status}）`,
+      );
+    }
 
     const effectiveEmail = (opts.email || donation.donorEmail || '').trim();
 

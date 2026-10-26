@@ -8,6 +8,7 @@ import {
   Param,
   ParseIntPipe,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { SettingService } from './setting.service';
@@ -16,7 +17,7 @@ import {
   UpdateSettingDto,
   BatchUpdateSettingDto,
 } from './setting.dto';
-import { maskSettingItem, restoreSecretsBeforeSave } from './setting.mask';
+import { maskSettingItem, restoreSecretsBeforeSave, SENSITIVE_SETTING_KEYS } from './setting.mask';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MailerService } from '../mailer/mailer.service';
 
@@ -128,6 +129,9 @@ export class SettingController {
   @Get()
   async list() {
     const grouped = await this.service.findAll();
+    // rate_limit/backup 组有专属管理页（自带内存态重载）；
+    // 通用面板直接编辑这两组不触发 reload（改了不生效=假编辑入口），从此处隐藏
+    for (const g of ['rate_limit', 'backup']) delete grouped[g];
     // 敏感值出口掩码（smtp.pass / tavily key / turnstile secret / R2 secretAccessKey）
     const data = Object.fromEntries(
       Object.entries(grouped).map(([g, list]) => [
@@ -209,6 +213,28 @@ export class SettingController {
       const entity = await this.service.findByKey(k);
       return entity?.value ?? null;
     });
+
+    // Turnstile 开关与凭证成对校验（审查第5轮 M1/M2）：
+    // enabled=true 而 site_key/secret 缺一 → 全站登录/注册/捐赠 503，
+    // 且管理员自己也进不了后台关开关（只能改库）——必须在保存侧拦死
+    if (group === 'site') {
+      const enabledRaw = items['turnstile.enabled'];
+      const enabledCurrent = await this.service.findByKey('turnstile.enabled');
+      const willEnable =
+        enabledRaw !== undefined
+          ? ['true', '1'].includes(enabledRaw.trim().toLowerCase())
+          : ['true', '1'].includes((enabledCurrent?.value ?? '').trim().toLowerCase());
+      if (willEnable) {
+        const siteKey = (items['turnstile.site_key'] ?? (await this.service.findByKey('turnstile.site_key'))?.value ?? '').trim();
+        const secret = (items['turnstile.secret_key'] ?? (await this.service.findByKey('turnstile.secret_key'))?.value ?? '').trim();
+        if (!siteKey || !secret) {
+          throw new BadRequestException(
+            '开启 Turnstile 需要 Site Key 与 Secret Key 都已填写；请补全后再开启，或先保持关闭',
+          );
+        }
+      }
+    }
+
     const data = await this.service.batchUpdateByGroup(
       group,
       items,
@@ -233,7 +259,13 @@ export class SettingController {
 
   @Put('batch')
   async batchUpdate(@Body() dto: BatchUpdateSettingDto, @Req() req: Request) {
-    const data = await this.service.batchUpdate(dto.items, getOperator(req));
+    // 掩码回填（审查第5轮 N2）：出口掩码把敏感值回显为 ''，
+    // 该路径此前不做 restore——前端原样提交会把真实密钥用空串覆盖
+    const items = await restoreSecretsBeforeSave(dto.items, async (k) => {
+      const entity = await this.service.findByKey(k);
+      return entity?.value ?? null;
+    });
+    const data = await this.service.batchUpdate(items, getOperator(req));
     return { success: true, data: (data as any[]).map(maskSettingItem), message: '更新成功' };
   }
 
@@ -243,8 +275,14 @@ export class SettingController {
     @Body() dto: UpdateSettingDto,
     @Req() req: Request,
   ) {
+    // 掩码回填（同 batch）：敏感 key 提交空串 → 还原 DB 原值
+    if (dto.value !== undefined && dto.key && SENSITIVE_SETTING_KEYS.has(dto.key)) {
+      const entity = await this.service.findByKey(dto.key);
+      if (entity && dto.value.trim() === '') dto.value = entity.value;
+    }
     const data = await this.service.updateById(id, dto, getOperator(req));
-    return { success: true, data, message: '更新成功' };
+    if (!data) throw new BadRequestException('配置项不存在');
+    return { success: true, data: maskSettingItem(data), message: '更新成功' };
   }
 
   @Delete(':id')

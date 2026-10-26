@@ -20,6 +20,7 @@ const FALLBACK_DEFAULT: RateRule = { limit: 100, ttl: 60000 };
 
 /** 敏感接口默认配置（首次启动 seed 进 settings 表） */
 const SENSITIVE_DEFAULTS: RateRuleMeta[] = [
+    { routeKey: 'AdPublicController.track', label: '广告埋点', limit: 30, ttl: 60000 },
   { routeKey: 'UserController.login', label: '登录', limit: 5, ttl: 60000 },
   { routeKey: 'UserController.register', label: '注册', limit: 5, ttl: 60000 },
   { routeKey: 'UserController.clientLogin', label: '客户端登录', limit: 5, ttl: 60000 },

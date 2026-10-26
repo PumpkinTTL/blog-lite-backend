@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SettingService } from '../../modules/setting/setting.service';
+import { parseSettingBool } from '../utils/parse-setting-bool';
 
 /**
  * 维护模式 Guard（全局，只读策略）。
@@ -36,6 +37,11 @@ export class MaintenanceGuard implements CanActivate {
     '/user/login-by-code',
     '/user/send-reset-code',
     '/user/reset-password-by-code',
+    // 维护期注册链路完整性：register 放行但强制邮箱验证码，
+    // 发码接口不放行=维护期注册死路（审查第5轮·配置矩阵 M3）
+    '/user/send-register-code',
+    // 邀请码预校验（register 流程步骤，语义应与 register 同进退）
+    '/code/verify',
   ];
 
   constructor(
@@ -56,7 +62,7 @@ export class MaintenanceGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const enabledRow = await this.settingService.findByKey('maintenance.enabled');
-    const enabled = enabledRow?.value?.trim().toLowerCase() === 'true' || enabledRow?.value?.trim() === '1';
+    const enabled = parseSettingBool(enabledRow?.value, false);
     if (!enabled) return true;
 
     const request = context.switchToHttp().getRequest();

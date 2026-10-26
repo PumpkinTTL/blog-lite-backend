@@ -126,7 +126,8 @@ export class AiProviderService implements OnModuleInit {
     // 兜底：环境变量（迁移过渡期保证不崩）
     return {
       baseUrl: process.env.AI_BASE_URL ?? 'https://9router.bitlesu.com/v1',
-      apiKey: process.env.AI_API_KEY ?? '',
+      // 变量名与 seed/示例对齐（曾读 AI_API_KEY，示例配置下兜底永远拿不到 key）
+      apiKey: process.env.AI_DEFAULT_API_KEY ?? process.env.AI_API_KEY ?? '',
       defaultModel: process.env.AI_DEFAULT_MODEL ?? 'cmc/deepseek/deepseek-v4-flash',
       source: 'env',
     };

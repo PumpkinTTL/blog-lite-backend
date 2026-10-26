@@ -126,10 +126,11 @@ export class AdService {
    * @param type 'impression' 曝光 / 'click' 点击
    */
   async track(id: number, type: 'impression' | 'click') {
-    const exists = await this.repo.exist({ where: { id } });
+    const exists = await this.repo.exist({ where: { id, status: 'active' } });
     if (!exists) {
-      // 埋点接口容错：广告被删了不打 error，静默返回（前台 fire-and-forget）
-      this.logger.debug(`track: 广告 #${id} 不存在，忽略`);
+      // 埋点接口容错：广告被删/暂停不打 error，静默返回（前台 fire-and-forget）。
+      // 此前不验 status——暂停中的广告仍可被刷计数（泄露审计 L2）
+      this.logger.debug(`track: 广告 #${id} 不存在或未投放，忽略`);
       return;
     }
     const column = type === 'impression' ? 'impressions' : 'clicks';

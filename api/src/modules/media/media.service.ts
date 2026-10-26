@@ -381,17 +381,28 @@ export class MediaService {
 
   async batchRemove(ids: number[]) {
     const mediaList = await this.mediaRepo.find({ where: { id: In(ids) } });
-    // 并行删除存储文件（各文件互不依赖，串行会 N 次网络往返）
-    await Promise.all(
+    // 并行删除存储文件（各文件互不依赖，串行会 N 次网络往返）。
+    // 只删"存储删除成功"的记录——此前无条件删记录，R2 删除失败=记录没了
+    // 对象还在，成为无对账路径的永久孤儿（媒体深审 2.2）
+    const results = await Promise.all(
       mediaList.map((media) =>
         this.createStorageProvider(media.storageType, media.ossPlatform)
-          .then((provider) => provider.delete(media.filename))
-          .catch((e) =>
-            this.logger.warn(`删除存储文件失败 ${media.filename}: ${e.message}`),
-          ),
+          .then((provider) => provider.delete(media.filename).then(() => media.id))
+          .catch((e) => {
+            this.logger.warn(`删除存储文件失败 ${media.filename}: ${e.message}`);
+            return null;
+          }),
       ),
     );
-    await this.mediaRepo.delete(ids);
+    const succeeded = results.filter((id): id is number => id !== null);
+    if (succeeded.length > 0) {
+      await this.mediaRepo.delete(succeeded);
+    }
+    if (succeeded.length < mediaList.length) {
+      this.logger.warn(
+        `批量删除：${mediaList.length - succeeded.length} 条因存储删除失败被保留，可重试`,
+      );
+    }
   }
 
   /**

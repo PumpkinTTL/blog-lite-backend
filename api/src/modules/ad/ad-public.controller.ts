@@ -6,6 +6,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { AdService } from './ad.service';
+import { parseSettingBool } from '../../common/utils/parse-setting-bool';
 import { TrackAdDto } from './ad.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { SettingService } from '../setting/setting.service';
@@ -33,7 +34,7 @@ export class AdPublicController {
   async list(@Query('position') position?: string) {
     // 站点开关：ads.enabled 关闭时前台返回空列表（前端也隐藏广告位，防绕过意义不大但保持一致）
     const enabledRow = await this.settingService.findByKey('ads.enabled');
-    const enabled = !(enabledRow?.value === 'false' || enabledRow?.value === '0');
+    const enabled = parseSettingBool(enabledRow?.value, true);
     if (!enabled) {
       return { success: true, data: [], message: 'ok' };
     }
@@ -47,7 +48,7 @@ export class AdPublicController {
   async track(@Body() dto: TrackAdDto) {
     // 广告关闭时无需埋点（前台也不展示，理论上不会触发）
     const enabledRow = await this.settingService.findByKey('ads.enabled');
-    const enabled = !(enabledRow?.value === 'false' || enabledRow?.value === '0');
+    const enabled = parseSettingBool(enabledRow?.value, true);
     if (!enabled) {
       return { success: true, message: 'ok' };
     }

@@ -96,27 +96,15 @@ export class CodeService {
       where: { code: dto.code },
     });
 
-    if (!codeEntity) {
-      return { valid: false, message: '兑换码不存在，请检查输入' };
-    }
-
-    if (dto.type && codeEntity.type !== dto.type) {
-      return { valid: false, message: '此兑换码类型不正确' };
-    }
-
-    if (codeEntity.status !== 'active') {
-      return {
-        valid: false,
-        message: codeStatusToMessage(codeEntity.status),
-      };
-    }
-
-    if (codeEntity.expiresAt && codeEntity.expiresAt < new Date()) {
-      return { valid: false, message: '该兑换码已过期' };
-    }
-
-    if (codeEntity.maxUses > 0 && codeEntity.usedCount >= codeEntity.maxUses) {
-      return { valid: false, message: '该兑换码使用次数已用完' };
+    // 差异化报错构成"存在性+状态"双 oracle（泄露审计 L1）：可批量探出哪些码
+    // 真实存在、是否已用尽，再转投兑换流。统一收敛为一句（仅"不存在/无效"语义）
+    const invalid = !codeEntity ||
+      (dto.type && codeEntity.type !== dto.type) ||
+      codeEntity.status !== 'active' ||
+      (codeEntity.expiresAt && codeEntity.expiresAt < new Date()) ||
+      (codeEntity.maxUses > 0 && codeEntity.usedCount >= codeEntity.maxUses);
+    if (invalid) {
+      return { valid: false, message: '兑换码无效' };
     }
 
     return { valid: true, code: codeEntity };
@@ -171,8 +159,10 @@ export class CodeService {
           .set({
             usedCount: () => 'usedCount - 1',
             status: () =>
+              // 仅 used → active：无条件复活会把管理员禁用的 disabled 码重新激活，
+              // 绕过风控禁用（红队·状态机 C1）
               codeEntity.maxUses > 0 && codeEntity.usedCount <= codeEntity.maxUses
-                ? `'active'`
+                ? `CASE WHEN status = 'used' THEN 'active' ELSE status END`
                 : 'status',
           })
           .where('id = :id', { id: codeId })

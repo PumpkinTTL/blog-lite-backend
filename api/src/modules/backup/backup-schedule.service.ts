@@ -1,4 +1,6 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { BackupService } from './backup.service';
@@ -19,7 +21,7 @@ import { SettingService } from '../setting/setting.service';
  * - weekly:    每周 dayOfWeek hour:minute → (分 时 日 月 周，周为具体数字)
  */
 @Injectable()
-export class BackupScheduleService implements OnModuleInit {
+export class BackupScheduleService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BackupScheduleService.name);
   /** 内存缓存：id → 配置（避免每次都查库） */
   private configs = new Map<string, BackupScheduleConfig>();
@@ -94,7 +96,15 @@ export class BackupScheduleService implements OnModuleInit {
     this.configs.clear();
     for (const cfg of list) {
       this.configs.set(cfg.id, cfg);
-      if (cfg.enabled) this.registerJob(cfg);
+      if (!cfg.enabled) continue;
+      try {
+        this.registerJob(cfg);
+      } catch (e) {
+        // 手改 settings 的脏数据（如 intervalMinutes=0 → */0）只跳过该条，不拖死启动
+        this.logger.error(
+          `定时器「${cfg.name}」(${cfg.id}) cron 表达式非法，已跳过: ${(e as Error).message}`,
+        );
+      }
     }
     const enabledCount = list.filter((c) => c.enabled).length;
     this.logger.log(`加载 ${list.length} 个备份定时器（${enabledCount} 个启用）`);
@@ -169,8 +179,26 @@ export class BackupScheduleService implements OnModuleInit {
     const m = cfg.minute ?? 0;
     const h = cfg.hour ?? 3;
     switch (cfg.type) {
-      case 'interval':
-        return `*/${cfg.intervalMinutes ?? 60} * * * *`;
+      case 'interval': {
+        // cron 分钟域步进上限 59：N>59 时 cron 4.x 不报错但静默退化为"每小时整点"
+        // （*/1440 的"每天"实际每小时 dump）。换算到小时/天域。
+        const mins = cfg.intervalMinutes ?? 60;
+        if (mins <= 59) return `*/${mins} * * * *`;
+        if (mins % 60 === 0 && mins / 60 <= 23) return `0 */${mins / 60} * * *`;
+        // 不足整小时（如 90min）或超过 24h：用秒级补偿不可行（cron 无秒），
+        // 保守取"每 N 小时"整点近似并告警
+        const hours = Math.max(1, Math.round(mins / 60));
+        if (hours <= 23) {
+          this.logger.warn(
+            `定时器「${cfg.name}」间隔 ${mins} 分钟非整小时，已近似为每 ${hours} 小时执行`,
+          );
+          return `0 */${hours} * * *`;
+        }
+        this.logger.warn(
+          `定时器「${cfg.name}」间隔 ${mins} 分钟超过一天，已降级为每天 03:00 执行`,
+        );
+        return '0 3 * * *';
+      }
       case 'weekly':
         return `${m} ${h} * * ${cfg.dayOfWeek ?? 0}`;
       case 'daily':
@@ -207,6 +235,17 @@ export class BackupScheduleService implements OnModuleInit {
     this.schedulerRegistry.addCronJob(this.jobName(cfg.id), job as any);
     job.start();
     this.logger.log(`注册 cron job「${cfg.name}」: ${cron}`);
+  }
+
+  /** 优雅停机：动态 CronJob 持有事件循环引用，@nestjs/schedule 6.x 不代停动态 job，
+   *  不停的话 SIGTERM 后 graceful close 完成进程仍不退出，等编排层 SIGKILL */
+  onModuleDestroy() {
+    for (const cfg of this.configs.values()) {
+      try {
+        this.schedulerRegistry.deleteCronJob(this.jobName(cfg.id));
+      } catch { /* 已注销则忽略 */ }
+    }
+    this.configs.clear();
   }
 
   private unregisterJob(id: string): void {

@@ -224,7 +224,10 @@ export class PostController {
     const type = dto.type;
     // 校验文章存在且未软删（deletedAt 非自动过滤）
     const exists = await this.postService.findByIdRaw(id);
-    if (!exists) {
+    if (!exists || typeof exists !== 'object' ||
+        exists.status === 'draft' || exists.status === 'private') {
+      // 状态机 P2：draft/private 不允许互动——否则收藏列表 JOIN 只排软删，
+      // 未发布文章的标题/封面会经"我的收藏"泄露
       return { success: false, message: '文章不存在', data: null };
     }
     const result = await this.interactionService.toggle(
